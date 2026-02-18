@@ -1,0 +1,16 @@
+{
+  "name": "agentbox",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.12.2",
+  "scripts": {
+    "check": "turbo check",
+    "dev": "turbo dev",
+    "build": "turbo build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.2",
+    "turbo": "^2.8.0",
+    "typescript": "^5.7.0"
+  }
+}
