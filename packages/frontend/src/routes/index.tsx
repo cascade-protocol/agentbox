@@ -227,14 +227,14 @@ function Home() {
 
   if (loading) {
     return (
-      <main className="flex-1 container mx-auto px-4 py-6 md:py-8 max-w-4xl">
+      <main className="flex-1 container mx-auto px-4 py-6 md:py-8 max-w-6xl">
         <p className="text-sm text-muted-foreground">Loading...</p>
       </main>
     );
   }
 
   return (
-    <main className="flex-1 container mx-auto px-4 py-6 md:py-8 max-w-4xl">
+    <main className="flex-1 container mx-auto px-4 py-6 md:py-8 max-w-6xl">
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -343,7 +343,6 @@ function Home() {
                       <th className="pb-3 pr-4 font-medium">Name</th>
                       <th className="pb-3 pr-4 font-medium">User</th>
                       <th className="pb-3 pr-4 font-medium">Status</th>
-                      <th className="pb-3 pr-4 font-medium">IP</th>
                       <th className="pb-3 pr-4 font-medium">Expires</th>
                       <th className="pb-3 font-medium text-right">Actions</th>
                     </tr>
@@ -365,16 +364,13 @@ function Home() {
                             {instance.status}
                           </span>
                         </td>
-                        <td className="py-3 pr-4 text-sm font-mono text-muted-foreground">
-                          {instance.ip}
-                        </td>
                         <td
                           className={`py-3 pr-4 text-sm ${isExpiringSoon(instance.expiresAt) ? "text-destructive font-medium" : "text-muted-foreground"}`}
                           title={formatDate(instance.expiresAt)}
                         >
                           {relativeTime(instance.expiresAt)}
                         </td>
-                        <td className="py-3 text-right">
+                        <td className="py-3 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1">
                             <Button
                               variant="outline"
