@@ -4,7 +4,8 @@
   "type": "module",
   "packageManager": "pnpm@9.12.2",
   "scripts": {
-    "check": "turbo check",
+    "check": "biome check --write && turbo type-check",
+    "check:ci": "turbo type-check && biome check",
     "dev": "turbo dev",
     "build": "turbo build"
   },

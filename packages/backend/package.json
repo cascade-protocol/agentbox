@@ -4,13 +4,15 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "check": "biome check . && tsc --noEmit",
+    "type-check": "tsc --noEmit",
+    "check": "biome check --write && pnpm type-check",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
+    "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.0",
     "hono": "^4.11.0",
     "pg": "^8.18.0",
