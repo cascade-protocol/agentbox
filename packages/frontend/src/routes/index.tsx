@@ -3,13 +3,14 @@ import {
   Activity,
   AlertTriangle,
   Check,
-  ExternalLink,
   Loader2,
+  MessageSquare,
   Pencil,
   Plus,
   RefreshCw,
   RotateCw,
   Server,
+  TerminalSquare,
   Trash2,
   X,
 } from "lucide-react";
@@ -28,7 +29,7 @@ import {
 } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { api, type Instance } from "../lib/api";
+import { api, type Instance, instanceUrls } from "../lib/api";
 import { formatDate, relativeTime } from "../lib/format";
 
 export const Route = createFileRoute("/")({
@@ -375,18 +376,49 @@ function Home() {
                         </td>
                         <td className="py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <Link
-                              to="/instances/$id"
-                              params={{ id: String(instance.id) }}
-                              className="inline-flex items-center justify-center size-8 rounded-md hover:bg-accent transition-colors"
-                              title="View access info"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </Link>
                             <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              title="Restart"
+                              variant="outline"
+                              size="sm"
+                              asChild
+                              disabled={instance.status !== "running"}
+                            >
+                              <a
+                                href={instanceUrls(instance.name).chat}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={
+                                  instance.status !== "running"
+                                    ? "pointer-events-none opacity-50"
+                                    : ""
+                                }
+                              >
+                                <MessageSquare className="h-3.5 w-3.5" />
+                                Chat
+                              </a>
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              asChild
+                              disabled={instance.status !== "running"}
+                            >
+                              <a
+                                href={instanceUrls(instance.name).terminal}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={
+                                  instance.status !== "running"
+                                    ? "pointer-events-none opacity-50"
+                                    : ""
+                                }
+                              >
+                                <TerminalSquare className="h-3.5 w-3.5" />
+                                Terminal
+                              </a>
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
                               onClick={() =>
                                 setConfirmAction({
                                   type: "restart",
@@ -396,11 +428,13 @@ function Home() {
                               disabled={instance.status !== "running"}
                             >
                               <RotateCw className="h-3.5 w-3.5" />
+                              Restart
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon-sm"
                               title="Delete"
+                              className="text-destructive hover:text-destructive"
                               onClick={() =>
                                 setConfirmAction({
                                   type: "delete",

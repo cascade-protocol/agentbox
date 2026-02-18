@@ -24,6 +24,16 @@ export type InstanceHealth = {
   callbackReceived: boolean;
 };
 
+const INSTANCE_BASE_DOMAIN = "agentbox.cascade.fyi";
+
+export function instanceUrls(name: string) {
+  const host = `${name}.${INSTANCE_BASE_DOMAIN}`;
+  return {
+    chat: `https://${host}`,
+    terminal: `https://${host}/terminal/`,
+  };
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

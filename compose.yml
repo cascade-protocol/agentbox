@@ -35,6 +35,9 @@ services:
       API_BASE_URL: ${API_BASE_URL}
       OPERATOR_TOKEN: ${OPERATOR_TOKEN}
       CALLBACK_SECRET: ${CALLBACK_SECRET}
+      CF_API_TOKEN: ${CF_API_TOKEN}
+      CF_ZONE_ID: ${CF_ZONE_ID}
+      INSTANCE_BASE_DOMAIN: ${INSTANCE_BASE_DOMAIN}
     depends_on:
       postgres:
         condition: service_healthy
