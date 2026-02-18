@@ -75,6 +75,17 @@ if [[ -f "$OPENCLAW_CONFIG" ]]; then
   chown openclaw:openclaw "$OPENCLAW_CONFIG"
 fi
 
+# --- Enable silent device pairing ---
+#
+# When the OpenClaw dashboard connects, it sends a pairing request.
+# Silent mode + auto-approve ensures users don't hit a "pairing pending" screen.
+
+
+PENDING_DIR="/home/openclaw/.openclaw/devices"
+mkdir -p "$PENDING_DIR"
+echo '{"silent":true}' > "$PENDING_DIR/pending.json"
+chown -R openclaw:openclaw "$PENDING_DIR"
+
 # --- Create and start systemd service ---
 #
 # We use a system-level service instead of OpenClaw's user-level service to avoid
@@ -100,7 +111,7 @@ Wants=network-online.target
 Type=simple
 User=openclaw
 WorkingDirectory=/home/openclaw
-ExecStart=${OPENCLAW_BIN} gateway run --port 18789 --bind loopback --token ${GATEWAY_TOKEN}
+ExecStart=${OPENCLAW_BIN} gateway run --port 18789 --bind loopback --token ${GATEWAY_TOKEN} --allow-unconfigured
 Restart=always
 RestartSec=5
 KillMode=process
@@ -115,6 +126,51 @@ EOF
 systemctl daemon-reload
 systemctl enable openclaw-gateway
 systemctl start openclaw-gateway
+
+# --- Auto-approve device pairing ---
+#
+# OpenClaw dashboard (openclaw-control-ui) sends a pairing request on first connect.
+# This service auto-approves it so the user sees the chat immediately.
+# Auto-approves operator/openclaw-control-ui pairing requests.
+
+cat > /usr/local/bin/agentbox-auto-pair.sh << 'AUTOPAIREOF'
+#!/usr/bin/env bash
+set -euo pipefail
+PENDING="/home/openclaw/.openclaw/devices/pending.json"
+OPENCLAW_BIN=$(which openclaw)
+
+while true; do
+  if [[ -f "$PENDING" ]]; then
+    REQUESTS=$(jq -r 'to_entries[] | select(.value.role == "operator" and .value.clientId == "openclaw-control-ui") | .key' "$PENDING" 2>/dev/null || true)
+    for req_id in $REQUESTS; do
+      echo "[$(date -Iseconds)] Auto-approving pairing request: $req_id"
+      su - openclaw -c "$OPENCLAW_BIN device approve $req_id" 2>/dev/null || true
+    done
+  fi
+  sleep 2
+done
+AUTOPAIREOF
+chmod +x /usr/local/bin/agentbox-auto-pair.sh
+
+cat > /etc/systemd/system/agentbox-auto-pair.service << 'APEOF'
+[Unit]
+Description=AgentBox auto-pair approver
+After=openclaw-gateway.service
+Requires=openclaw-gateway.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/agentbox-auto-pair.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+APEOF
+
+systemctl daemon-reload
+systemctl enable agentbox-auto-pair
+systemctl start agentbox-auto-pair
 
 # --- Wait for gateway to become healthy ---
 #
@@ -168,21 +224,14 @@ systemctl start ttyd
 #
 # Caddy provides HTTPS via Let's Encrypt (HTTP-01 challenge) and routes:
 #   /            -> OpenClaw gateway (localhost:18789) - gateway handles its own auth
-#   /terminal/*  -> ttyd (localhost:7681) - protected by Caddy basicauth
-#
-# The gateway token is used as the basicauth password for the terminal.
+#   /terminal/*  -> ttyd (localhost:7681)
 
 if [[ -n "${INSTANCE_HOSTNAME:-}" ]]; then
   echo "Configuring Caddy for ${INSTANCE_HOSTNAME}..."
 
-  HASHED_TOKEN=$(caddy hash-password --plaintext "$GATEWAY_TOKEN")
-
   cat > /etc/caddy/Caddyfile << CADDYEOF
 ${INSTANCE_HOSTNAME} {
     handle_path /terminal/* {
-        basicauth {
-            agentbox ${HASHED_TOKEN}
-        }
         reverse_proxy localhost:7681
     }
     redir /terminal /terminal/

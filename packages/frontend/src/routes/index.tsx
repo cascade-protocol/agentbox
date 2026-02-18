@@ -379,7 +379,7 @@ function Home() {
                               disabled={instance.status !== "running"}
                             >
                               <a
-                                href={instanceUrls(instance.name).chat}
+                                href={instanceUrls(instance.name, instance.gatewayToken).chat}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className={
@@ -399,7 +399,7 @@ function Home() {
                               disabled={instance.status !== "running"}
                             >
                               <a
-                                href={instanceUrls(instance.name).terminal}
+                                href={instanceUrls(instance.name, instance.gatewayToken).terminal}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className={

@@ -278,7 +278,7 @@ instanceRoutes.get("/instances/:id/access", auth, async (c) => {
   return c.json({
     ...toInstanceResponse(row),
     ssh: `ssh root@${row.ip}`,
-    chatUrl: `https://${instanceHost}`,
+    chatUrl: `https://${instanceHost}/overview?token=${row.gatewayToken}`,
     terminalUrl: `https://${instanceHost}/terminal/`,
     rootPassword: row.rootPassword,
   });

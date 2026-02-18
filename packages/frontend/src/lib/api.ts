@@ -26,10 +26,10 @@ export type InstanceHealth = {
 
 const INSTANCE_BASE_DOMAIN = "agentbox.cascade.fyi";
 
-export function instanceUrls(name: string) {
+export function instanceUrls(name: string, gatewayToken?: string) {
   const host = `${name}.${INSTANCE_BASE_DOMAIN}`;
   return {
-    chat: `https://${host}`,
+    chat: gatewayToken ? `https://${host}/overview?token=${gatewayToken}` : `https://${host}`,
     terminal: `https://${host}/terminal/`,
   };
 }
