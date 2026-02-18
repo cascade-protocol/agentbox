@@ -1,8 +1,35 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Activity, AlertTriangle, Server } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  Activity,
+  AlertTriangle,
+  Check,
+  ExternalLink,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  RotateCw,
+  Server,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "../components/ui/dialog";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 import { api, type Instance } from "../lib/api";
+import { formatDate, relativeTime } from "../lib/format";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -16,30 +43,183 @@ const statusStyles: Record<string, string> = {
   deleting: "bg-amber-500/10 text-amber-600",
 };
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 function isExpiringSoon(expiresAt: string) {
   return new Date(expiresAt).getTime() - Date.now() < 3 * 24 * 60 * 60 * 1000;
+}
+
+function EditableName({
+  instance,
+  onSave,
+}: {
+  instance: Instance;
+  onSave: (id: number, name: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(instance.name);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  async function save() {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === instance.name) {
+      setValue(instance.name);
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(instance.id, trimmed);
+      setEditing(false);
+    } catch {
+      setValue(instance.name);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          ref={inputRef}
+          className="text-sm font-medium bg-muted px-2 py-0.5 rounded border border-input outline-none focus:ring-1 focus:ring-ring w-full min-w-0"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save();
+            if (e.key === "Escape") {
+              setValue(instance.name);
+              setEditing(false);
+            }
+          }}
+          disabled={saving}
+        />
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="inline-flex items-center justify-center size-6 rounded hover:bg-accent transition-colors shrink-0"
+        >
+          <Check className="h-3 w-3 text-green-600" />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setValue(instance.name);
+            setEditing(false);
+          }}
+          disabled={saving}
+          className="inline-flex items-center justify-center size-6 rounded hover:bg-accent transition-colors shrink-0"
+        >
+          <X className="h-3 w-3 text-muted-foreground" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1 group">
+      <Link
+        to="/instances/$id"
+        params={{ id: String(instance.id) }}
+        className="text-sm font-medium hover:underline truncate"
+      >
+        {instance.name}
+      </Link>
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="inline-flex items-center justify-center size-6 rounded hover:bg-accent transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+      >
+        <Pencil className="h-3 w-3 text-muted-foreground" />
+      </button>
+    </div>
+  );
 }
 
 function Home() {
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastChecked, setLastChecked] = useState<Date | null>(null);
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createUserId, setCreateUserId] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const [confirmAction, setConfirmAction] = useState<{
+    type: "restart" | "delete";
+    instance: Instance;
+  } | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const fetchInstances = useCallback(async () => {
+    try {
+      const data = await api.instances.list();
+      setInstances(data.instances);
+      setLastChecked(new Date());
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    api.instances
-      .list()
-      .then((data) => setInstances(data.instances))
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
+    fetchInstances();
+  }, [fetchInstances]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchInstances();
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchInstances]);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!createUserId.trim()) return;
+    setCreating(true);
+    try {
+      await api.instances.create(createUserId.trim());
+      setCreateUserId("");
+      setCreateOpen(false);
+      await fetchInstances();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Create failed");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleRename(id: number, name: string) {
+    const updated = await api.instances.update(id, { name });
+    setInstances((prev) => prev.map((i) => (i.id === id ? { ...i, name: updated.name } : i)));
+  }
+
+  async function handleConfirm() {
+    if (!confirmAction) return;
+    setActionLoading(true);
+    try {
+      if (confirmAction.type === "restart") {
+        await api.instances.restart(confirmAction.instance.id);
+      } else {
+        await api.instances.delete(confirmAction.instance.id);
+      }
+      setConfirmAction(null);
+      await fetchInstances();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `${confirmAction.type} failed`);
+    } finally {
+      setActionLoading(false);
+    }
+  }
 
   const running = instances.filter((i) => i.status === "running").length;
   const expiring = instances.filter((i) => isExpiringSoon(i.expiresAt)).length;
@@ -52,21 +232,70 @@ function Home() {
     );
   }
 
-  if (error) {
-    return (
-      <main className="flex-1 container mx-auto px-4 py-6 md:py-8 max-w-4xl">
-        <p className="text-sm text-destructive">Error: {error}</p>
-      </main>
-    );
-  }
-
   return (
     <main className="flex-1 container mx-auto px-4 py-6 md:py-8 max-w-4xl">
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Instances</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage your AgentBox instances</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Instances</h1>
+            <p className="text-sm text-muted-foreground mt-1">Manage your AgentBox instances</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {lastChecked && (
+              <span className="text-xs text-muted-foreground hidden sm:inline">
+                {relativeTime(lastChecked.toISOString())}
+              </span>
+            )}
+            <Button variant="outline" size="sm" onClick={() => fetchInstances()}>
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus className="h-4 w-4" />
+                  Create Instance
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Create Instance</DialogTitle>
+                  <DialogDescription>
+                    Provision a new AgentBox VM with OpenClaw and ClawRouter pre-installed.
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleCreate} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="userId">User ID</Label>
+                    <Input
+                      id="userId"
+                      placeholder="telegram:alice"
+                      value={createUserId}
+                      onChange={(e) => setCreateUserId(e.target.value)}
+                      disabled={creating}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Format: platform:username (e.g. telegram:alice)
+                    </p>
+                  </div>
+                  <DialogFooter>
+                    <DialogClose asChild>
+                      <Button type="button" variant="outline" disabled={creating}>
+                        Cancel
+                      </Button>
+                    </DialogClose>
+                    <Button type="submit" disabled={creating || !createUserId.trim()}>
+                      {creating && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {creating ? "Creating..." : "Create"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
+
+        {error && <p className="text-sm text-destructive">Error: {error}</p>}
 
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
@@ -114,20 +343,16 @@ function Home() {
                       <th className="pb-3 pr-4 font-medium">User</th>
                       <th className="pb-3 pr-4 font-medium">Status</th>
                       <th className="pb-3 pr-4 font-medium">IP</th>
-                      <th className="pb-3 font-medium text-right">Expires</th>
+                      <th className="pb-3 pr-4 font-medium">Expires</th>
+                      <th className="pb-3 font-medium text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {instances.map((instance) => (
                       <tr key={instance.id} className="border-b last:border-0">
                         <td className="py-3 pr-4">
-                          <Link
-                            to="/instances/$id"
-                            params={{ id: String(instance.id) }}
-                            className="text-sm font-medium hover:underline"
-                          >
-                            {instance.name}
-                          </Link>
+                          <EditableName instance={instance} onSave={handleRename} />
+                          <p className="text-xs text-muted-foreground">{instance.id}</p>
                         </td>
                         <td className="py-3 pr-4 text-sm text-muted-foreground">
                           {instance.userId}
@@ -143,9 +368,50 @@ function Home() {
                           {instance.ip}
                         </td>
                         <td
-                          className={`py-3 text-sm text-right ${isExpiringSoon(instance.expiresAt) ? "text-destructive font-medium" : "text-muted-foreground"}`}
+                          className={`py-3 pr-4 text-sm ${isExpiringSoon(instance.expiresAt) ? "text-destructive font-medium" : "text-muted-foreground"}`}
+                          title={formatDate(instance.expiresAt)}
                         >
-                          {formatDate(instance.expiresAt)}
+                          {relativeTime(instance.expiresAt)}
+                        </td>
+                        <td className="py-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Link
+                              to="/instances/$id"
+                              params={{ id: String(instance.id) }}
+                              className="inline-flex items-center justify-center size-8 rounded-md hover:bg-accent transition-colors"
+                              title="View access info"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </Link>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              title="Restart"
+                              onClick={() =>
+                                setConfirmAction({
+                                  type: "restart",
+                                  instance,
+                                })
+                              }
+                              disabled={instance.status !== "running"}
+                            >
+                              <RotateCw className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              title="Delete"
+                              onClick={() =>
+                                setConfirmAction({
+                                  type: "delete",
+                                  instance,
+                                })
+                              }
+                              disabled={instance.status === "deleting"}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -156,6 +422,47 @@ function Home() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog
+        open={confirmAction !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmAction(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {confirmAction?.type === "restart" ? "Restart Instance" : "Delete Instance"}
+            </DialogTitle>
+            <DialogDescription>
+              {confirmAction?.type === "restart"
+                ? `This will reboot ${confirmAction.instance.name}. Active sessions will disconnect.`
+                : `This will permanently destroy ${confirmAction?.instance.name}. This action cannot be undone.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={actionLoading}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              variant={confirmAction?.type === "delete" ? "destructive" : "default"}
+              onClick={handleConfirm}
+              disabled={actionLoading}
+            >
+              {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {actionLoading
+                ? confirmAction?.type === "restart"
+                  ? "Restarting..."
+                  : "Deleting..."
+                : confirmAction?.type === "restart"
+                  ? "Restart"
+                  : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

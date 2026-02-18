@@ -3,12 +3,15 @@ import { z } from "zod";
 const envSchema = z.object({
   DATABASE_URL: z.string().default("postgresql://agentbox:agentbox@localhost:5432/agentbox"),
   HETZNER_API_TOKEN: z.string().optional(),
-  HETZNER_SNAPSHOT_ID: z.string().default("359464789"),
+  HETZNER_SNAPSHOT_ID: z.string().default("359513646"),
   HETZNER_LOCATION: z.string().default("nbg1"),
   HETZNER_SERVER_TYPE: z.string().default("cx23"),
   API_BASE_URL: z.string().default("http://localhost:8080"),
   OPERATOR_TOKEN: z.string().default("dev-token"),
   CALLBACK_SECRET: z.string().default("dev-secret"),
+  INSTANCE_BASE_DOMAIN: z.string().default("agentbox.cascade.fyi"),
+  CF_API_TOKEN: z.string().optional(),
+  CF_ZONE_ID: z.string().default("fc4f79a479eed4e1231ecd2f99c5f02a"),
   PORT: z.string().default("8080").transform(Number),
 });
 

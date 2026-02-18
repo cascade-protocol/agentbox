@@ -12,8 +12,8 @@ export type Instance = {
 
 export type InstanceAccess = Instance & {
   ssh: string;
-  tunnel: string;
   chatUrl: string;
+  terminalUrl: string;
   rootPassword: string | null;
 };
 
@@ -72,6 +72,11 @@ export const api = {
       request<Instance>("/instances", {
         method: "POST",
         body: JSON.stringify({ userId }),
+      }),
+    update: (id: number, data: { name: string }) =>
+      request<Instance>(`/instances/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
       }),
     delete: (id: number) => request<{ ok: boolean }>(`/instances/${id}`, { method: "DELETE" }),
     restart: (id: number) =>

@@ -21,7 +21,7 @@ if [[ ! -f "$CALLBACK_ENV" ]]; then
 fi
 # shellcheck source=/dev/null
 source "$CALLBACK_ENV"
-# Expected vars: CALLBACK_URL, CALLBACK_SECRET, SERVER_ID
+# Expected vars: CALLBACK_URL, CALLBACK_SECRET, SERVER_ID, INSTANCE_HOSTNAME
 
 # --- Generate fresh EVM wallet ---
 #
@@ -138,6 +138,65 @@ done
 
 if [[ "$HEALTHY" == "true" ]]; then
   curl -sf "http://127.0.0.1:8402/health?full=true" || true
+fi
+
+# --- ttyd web terminal ---
+
+echo "Starting ttyd service..."
+cat > /etc/systemd/system/ttyd.service << 'TTYDEOF'
+[Unit]
+Description=ttyd web terminal (AgentBox)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+ExecStart=/usr/local/bin/ttyd -p 7681 -i lo -W bash
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+TTYDEOF
+
+systemctl daemon-reload
+systemctl enable ttyd
+systemctl start ttyd
+
+# --- Caddy reverse proxy ---
+#
+# Caddy provides HTTPS via Let's Encrypt (HTTP-01 challenge) and routes:
+#   /            -> OpenClaw gateway (localhost:18789) - gateway handles its own auth
+#   /terminal/*  -> ttyd (localhost:7681) - protected by Caddy basicauth
+#
+# The gateway token is used as the basicauth password for the terminal.
+
+if [[ -n "${INSTANCE_HOSTNAME:-}" ]]; then
+  echo "Configuring Caddy for ${INSTANCE_HOSTNAME}..."
+
+  HASHED_TOKEN=$(caddy hash-password --plaintext "$GATEWAY_TOKEN")
+
+  cat > /etc/caddy/Caddyfile << CADDYEOF
+${INSTANCE_HOSTNAME} {
+    handle_path /terminal/* {
+        basicauth {
+            agentbox ${HASHED_TOKEN}
+        }
+        reverse_proxy localhost:7681
+    }
+    redir /terminal /terminal/
+    handle {
+        reverse_proxy localhost:18789
+    }
+}
+CADDYEOF
+
+  systemctl enable caddy
+  systemctl start caddy
+  echo "Caddy started for ${INSTANCE_HOSTNAME}"
+else
+  echo "WARNING: INSTANCE_HOSTNAME not set, skipping Caddy setup"
 fi
 
 # --- Callback to API ---

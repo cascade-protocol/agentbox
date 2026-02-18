@@ -28,6 +28,47 @@ curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
 apt-get install -y nodejs
 echo "    Node.js $(node --version), npm $(npm --version)"
 
+# --- Caddy ---
+#
+# Installed from the official apt repository. Caddy runs as a TLS-terminating
+# reverse proxy on each instance, providing HTTPS via Let's Encrypt (HTTP-01)
+# and routing to the OpenClaw gateway (:18789) and ttyd terminal (:7681).
+#
+# The service is disabled here - agentbox-init.sh writes the Caddyfile with
+# the instance hostname and gateway token, then enables and starts Caddy.
+
+echo ""
+echo "==> Installing Caddy"
+apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+  | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+  | tee /etc/apt/sources.list.d/caddy-stable.list
+apt-get update
+apt-get install -y caddy
+echo "    Caddy $(caddy version)"
+systemctl stop caddy
+systemctl disable caddy
+
+# --- ttyd ---
+#
+# Web-based terminal (tsl0922/ttyd). Runs as a systemd service on localhost:7681,
+# accessed through the Caddy reverse proxy with basic auth.
+
+echo ""
+echo "==> Installing ttyd"
+TTYD_VERSION=$(curl -sf https://api.github.com/repos/tsl0922/ttyd/releases/latest | jq -r '.tag_name')
+ARCH=$(dpkg --print-architecture)
+case "$ARCH" in
+  amd64) TTYD_ARCH="x86_64" ;;
+  arm64) TTYD_ARCH="aarch64" ;;
+  *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+esac
+curl -sLo /usr/local/bin/ttyd \
+  "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.${TTYD_ARCH}"
+chmod +x /usr/local/bin/ttyd
+echo "    ttyd ${TTYD_VERSION} (${ARCH})"
+
 # --- OpenClaw ---
 
 echo ""
@@ -213,10 +254,12 @@ install -m 755 /tmp/agentbox-init.sh /usr/local/bin/agentbox-init.sh
 # --- Firewall ---
 
 echo ""
-echo "==> Configuring firewall (SSH only, gateway on localhost via SSH tunnel)"
+echo "==> Configuring firewall"
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow 22/tcp
+ufw allow 22/tcp    # SSH
+ufw allow 80/tcp    # ACME HTTP-01 challenge (Let's Encrypt)
+ufw allow 443/tcp   # HTTPS (Caddy reverse proxy)
 ufw --force enable
 
 # --- Cleanup for snapshot ---

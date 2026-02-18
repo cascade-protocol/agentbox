@@ -4,9 +4,14 @@ import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { db } from "../db/connection";
 import { instances } from "../db/schema";
+import * as cloudflare from "../lib/cloudflare";
 import { env } from "../lib/env";
 import * as hetzner from "../lib/hetzner";
-import { callbackInputSchema, createInstanceInputSchema } from "../lib/schemas";
+import {
+  callbackInputSchema,
+  createInstanceInputSchema,
+  updateInstanceInputSchema,
+} from "../lib/schemas";
 
 export const instanceRoutes = new Hono();
 
@@ -31,32 +36,27 @@ function toInstanceResponse(row: typeof instances.$inferSelect) {
   };
 }
 
-function buildUserData(callbackUrl: string, secret: string, gatewayToken: string): string {
+function buildUserData(opts: { callbackUrl: string; secret: string; hostname: string }): string {
+  // cloud-init user_data that writes /etc/agentbox/callback.env and runs
+  // the golden image init script. SERVER_ID comes from Hetzner metadata
+  // since it's not known at user_data creation time.
   return [
     "#!/bin/bash",
     "set -euo pipefail",
     "",
-    `CALLBACK_URL="${callbackUrl}"`,
-    `CALLBACK_SECRET="${secret}"`,
-    `GATEWAY_TOKEN="${gatewayToken}"`,
-    "",
-    "# Run golden image init (generates wallet + starts gateway)",
-    "/usr/local/bin/agentbox-init.sh",
-    "",
-    "# Get server ID from Hetzner metadata",
+    "mkdir -p /etc/agentbox",
     "SERVER_ID=$(curl -s http://169.254.169.254/hetzner/v1/metadata/instance-id)",
     "",
-    "# Get wallet address from init output",
-    "WALLET_ADDRESS=$(grep 'WALLET_ADDRESS=' /home/openclaw/.openclaw/blockrun/wallet-info.txt | cut -d= -f2)",
+    "cat > /etc/agentbox/callback.env << 'ENVEOF'",
+    `CALLBACK_URL="${opts.callbackUrl}"`,
+    `CALLBACK_SECRET="${opts.secret}"`,
+    `INSTANCE_HOSTNAME="${opts.hostname}"`,
+    "ENVEOF",
     "",
-    "# Callback to API",
-    "JSON=$(cat <<ENDJSON",
-    '{"serverId": $SERVER_ID, "walletAddress": "$WALLET_ADDRESS", "gatewayToken": "$GATEWAY_TOKEN", "secret": "$CALLBACK_SECRET"}',
-    "ENDJSON",
-    ")",
-    'curl -sf -X POST "$CALLBACK_URL" \\',
-    '  -H "Content-Type: application/json" \\',
-    '  -d "$JSON"',
+    "# SERVER_ID must be unquoted (numeric) so append outside heredoc",
+    'echo "SERVER_ID=$SERVER_ID" >> /etc/agentbox/callback.env',
+    "",
+    "/usr/local/bin/agentbox-init.sh",
   ].join("\n");
 }
 
@@ -72,13 +72,17 @@ instanceRoutes.post("/instances", auth, async (c) => {
     return c.json({ error: "Hetzner is not configured" }, 503);
   }
 
-  const gatewayToken = randomUUID();
   const shortId = randomUUID().slice(0, 8);
   const sanitizedUserId = input.data.userId.replace(/[^a-z0-9-]/gi, "-").toLowerCase();
   const name = `agentbox-${sanitizedUserId}-${shortId}`;
 
   const callbackUrl = `${env.API_BASE_URL}/api/instances/callback`;
-  const userData = buildUserData(callbackUrl, env.CALLBACK_SECRET, gatewayToken);
+  const hostname = `${name}.${env.INSTANCE_BASE_DOMAIN}`;
+  const userData = buildUserData({
+    callbackUrl,
+    secret: env.CALLBACK_SECRET,
+    hostname,
+  });
 
   let result: Awaited<ReturnType<typeof hetzner.createServer>>;
   try {
@@ -86,6 +90,15 @@ instanceRoutes.post("/instances", auth, async (c) => {
   } catch (err) {
     console.error("Hetzner create failed:", err);
     return c.json({ error: "Failed to provision server" }, 502);
+  }
+
+  // Create DNS record: {name}.agentbox.cascade.fyi -> VM IP
+  if (env.CF_API_TOKEN && env.CF_ZONE_ID) {
+    try {
+      await cloudflare.createDnsRecord(hostname, result.server.public_net.ipv4.ip);
+    } catch (err) {
+      console.error("Cloudflare DNS create failed:", err);
+    }
   }
 
   const expiresAt = new Date();
@@ -99,7 +112,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
       userId: input.data.userId,
       status: "provisioning",
       ip: result.server.public_net.ipv4.ip,
-      gatewayToken,
+      gatewayToken: "pending", // real token set by VM callback
       rootPassword: result.root_password,
       expiresAt,
     })
@@ -140,6 +153,7 @@ instanceRoutes.post("/instances/callback", async (c) => {
     .update(instances)
     .set({
       walletAddress: input.data.walletAddress,
+      gatewayToken: input.data.gatewayToken,
       status: "running",
     })
     .where(eq(instances.id, input.data.serverId))
@@ -150,6 +164,28 @@ instanceRoutes.post("/instances/callback", async (c) => {
   }
 
   return c.json({ ok: true });
+});
+
+// PATCH /api/instances/:id - Update instance name
+instanceRoutes.patch("/instances/:id", auth, async (c) => {
+  const id = Number(c.req.param("id"));
+  const body = await c.req.json();
+  const input = updateInstanceInputSchema.safeParse(body);
+  if (!input.success) {
+    return c.json({ error: "Invalid input", details: input.error.issues }, 400);
+  }
+
+  const [row] = await db
+    .update(instances)
+    .set({ name: input.data.name })
+    .where(eq(instances.id, id))
+    .returning();
+
+  if (!row) {
+    return c.json({ error: "Instance not found" }, 404);
+  }
+
+  return c.json(toInstanceResponse(row));
 });
 
 // GET /api/instances/:id - Get instance details
@@ -176,6 +212,16 @@ instanceRoutes.delete("/instances/:id", auth, async (c) => {
     await hetzner.deleteServer(id);
   } catch (err) {
     console.error(`Failed to delete Hetzner server ${id}:`, err);
+  }
+
+  // Clean up DNS record
+  if (env.CF_API_TOKEN && env.CF_ZONE_ID) {
+    try {
+      const hostname = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
+      await cloudflare.deleteDnsRecord(hostname);
+    } catch (err) {
+      console.error(`Failed to delete DNS record for ${row.name}:`, err);
+    }
   }
 
   await db.delete(instances).where(eq(instances.id, id));
@@ -228,11 +274,12 @@ instanceRoutes.get("/instances/:id/access", auth, async (c) => {
     return c.json({ error: "Instance not found" }, 404);
   }
 
+  const instanceHost = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
   return c.json({
     ...toInstanceResponse(row),
     ssh: `ssh root@${row.ip}`,
-    tunnel: `ssh -L 18789:localhost:18789 root@${row.ip}`,
-    chatUrl: "http://localhost:18789",
+    chatUrl: `https://${instanceHost}`,
+    terminalUrl: `https://${instanceHost}/terminal/`,
     rootPassword: row.rootPassword,
   });
 });

@@ -31,10 +31,14 @@ export const callbackInputSchema = z.object({
   secret: z.string(),
 });
 
+export const updateInstanceInputSchema = z.object({
+  name: z.string().min(1).max(100),
+});
+
 export const instanceAccessSchema = instanceSchema.extend({
   ssh: z.string(),
-  tunnel: z.string(),
   chatUrl: z.string(),
+  terminalUrl: z.string(),
   rootPassword: z.string().nullable(),
 });
 
