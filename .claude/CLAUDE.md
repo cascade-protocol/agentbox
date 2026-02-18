@@ -25,6 +25,7 @@
 - Always use conventional commits: `type(scope): description`
 - Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `style`, `test`, `ci`, `build`
 - Scope is optional, use package name when relevant: `feat(backend):`, `fix(frontend):`
+- Never use `git -C <path>` - run git commands without `-C` since the working directory is already the project root
 
 ## Context
 - `PLAN.md` contains the full product context, architecture, and implementation plan - read it first
