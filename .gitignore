@@ -6,3 +6,4 @@ dist/
 .env.*
 !.env.example
 PLAN.md
+.claude/settings.local.json
