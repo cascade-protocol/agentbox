@@ -1,7 +1,6 @@
 FROM node:24-slim AS production
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN corepack enable
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
