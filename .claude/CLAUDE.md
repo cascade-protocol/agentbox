@@ -21,5 +21,10 @@
 - Validate all inputs at route boundaries, trust validated data internally
 - Use Drizzle query builder, not raw SQL
 
+## Git
+- Always use conventional commits: `type(scope): description`
+- Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `style`, `test`, `ci`, `build`
+- Scope is optional, use package name when relevant: `feat(backend):`, `fix(frontend):`
+
 ## Context
 - `PLAN.md` contains the full product context, architecture, and implementation plan - read it first
