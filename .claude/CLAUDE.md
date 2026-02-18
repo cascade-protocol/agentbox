@@ -27,5 +27,16 @@
 - Scope is optional, use package name when relevant: `feat(backend):`, `fix(frontend):`
 - Never use `git -C <path>` - run git commands without `-C` since the working directory is already the project root
 
+## Frontend Theming (Tailwind v4 + shadcn/ui)
+- This project uses Tailwind v4 CSS-first theming, NOT tailwind.config.js
+- The theme source-of-truth is `packages/frontend/src/app.css` with three layers:
+  1. `@theme inline {}` - maps `--color-*` Tailwind tokens to CSS variables (must include ALL tokens: background, foreground, card, popover, primary, secondary, muted, accent, destructive, border, input, ring, chart-1..5, sidebar-*)
+  2. `:root {}` - light mode CSS variable values (OKLCH)
+  3. `.dark {}` - dark mode CSS variable values (OKLCH) - MUST exist alongside `:root`
+- Dark mode is activated by `class="dark"` on `<html>` in `index.html` and the custom variant `@custom-variant dark (&:is(.dark *))` in app.css
+- When adding new shadcn components or modifying theme colors, update ALL three layers
+- Reference implementation: `~/pj/sati/apps/dashboard/src/react-app/index.css` - keep token parity with it
+- `components.json` configures shadcn generation: style "new-york", baseColor "slate", cssVariables true
+
 ## Context
 - `PLAN.md` contains the full product context, architecture, and implementation plan - read it first

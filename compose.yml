@@ -1,6 +1,27 @@
 name: agentbox
 
 services:
+  caddy:
+    image: agentbox-caddy:latest
+    profiles: [server]
+    build:
+      context: packages/frontend
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./packages/frontend/dist:/srv:ro
+      - ./packages/frontend/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      CF_API_TOKEN: ${CF_API_TOKEN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
   backend:
     image: agentbox-backend:latest
     profiles: [server]
@@ -11,15 +32,9 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://agentbox:${POSTGRES_PASSWORD:-agentbox}@postgres:5432/agentbox
       HETZNER_API_TOKEN: ${HETZNER_API_TOKEN}
-      HETZNER_SNAPSHOT_ID: ${HETZNER_SNAPSHOT_ID}
-      HETZNER_LOCATION: ${HETZNER_LOCATION:-nbg1}
-      HETZNER_SERVER_TYPE: ${HETZNER_SERVER_TYPE:-cx22}
       API_BASE_URL: ${API_BASE_URL}
       OPERATOR_TOKEN: ${OPERATOR_TOKEN}
       CALLBACK_SECRET: ${CALLBACK_SECRET}
-      PORT: '3000'
-    ports:
-      - '3000:3000'
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,3 +58,5 @@ services:
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

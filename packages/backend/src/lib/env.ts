@@ -6,10 +6,10 @@ const envSchema = z.object({
   HETZNER_SNAPSHOT_ID: z.string().default("359464789"),
   HETZNER_LOCATION: z.string().default("nbg1"),
   HETZNER_SERVER_TYPE: z.string().default("cx23"),
-  API_BASE_URL: z.string().default("http://localhost:3000"),
+  API_BASE_URL: z.string().default("http://localhost:8080"),
   OPERATOR_TOKEN: z.string().default("dev-token"),
   CALLBACK_SECRET: z.string().default("dev-secret"),
-  PORT: z.string().default("3000").transform(Number),
+  PORT: z.string().default("8080").transform(Number),
 });
 
 export type Env = z.infer<typeof envSchema>;

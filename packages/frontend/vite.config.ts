@@ -7,8 +7,8 @@ export default defineConfig({
   plugins: [tailwindcss(), TanStackRouterVite({ autoCodeSplitting: true }), react()],
   server: {
     proxy: {
-      "/api": "http://localhost:3000",
-      "/health": "http://localhost:3000",
+      "/api": "http://localhost:8080",
+      "/health": "http://localhost:8080",
     },
   },
 });

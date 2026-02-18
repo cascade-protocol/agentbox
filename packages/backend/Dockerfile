@@ -25,14 +25,14 @@ COPY packages/backend/drizzle ./packages/backend/drizzle
 USER node
 
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=8080
 ENV HOST=0.0.0.0
 
-EXPOSE 3000
+EXPOSE 8080
 
 WORKDIR /app/packages/backend
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:3000/health || exit 1
+    CMD curl -f http://localhost:8080/health || exit 1
 
 CMD ["tsx", "src/index.ts"]
