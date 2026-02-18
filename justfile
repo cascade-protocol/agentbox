@@ -9,4 +9,4 @@ restart-server:
   docker compose --profile server restart
 
 deploy:
-  ssh agentbox 'cd /opt/agentbox && git pull && just start-server'
+  ssh agentbox 'cd /opt/agentbox && git pull && pnpm install --frozen-lockfile && just start-server'
