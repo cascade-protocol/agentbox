@@ -31,7 +31,15 @@ export const callbackInputSchema = z.object({
   secret: z.string(),
 });
 
+export const instanceAccessSchema = instanceSchema.extend({
+  ssh: z.string(),
+  tunnel: z.string(),
+  chatUrl: z.string(),
+  rootPassword: z.string().nullable(),
+});
+
 export type InstanceStatus = z.infer<typeof instanceStatusSchema>;
 export type Instance = z.infer<typeof instanceSchema>;
+export type InstanceAccess = z.infer<typeof instanceAccessSchema>;
 export type CreateInstanceInput = z.infer<typeof createInstanceInputSchema>;
 export type CallbackInput = z.infer<typeof callbackInputSchema>;

@@ -1,0 +1,99 @@
+import { env } from "./env";
+
+const API_BASE = "https://api.hetzner.cloud/v1";
+
+function headers() {
+  if (!env.HETZNER_API_TOKEN) {
+    throw new Error("HETZNER_API_TOKEN is not configured");
+  }
+  return {
+    Authorization: `Bearer ${env.HETZNER_API_TOKEN}`,
+    "Content-Type": "application/json",
+  };
+}
+
+type HetznerServer = {
+  id: number;
+  name: string;
+  status: string;
+  public_net: {
+    ipv4: { ip: string };
+  };
+};
+
+type CreateServerResponse = {
+  server: HetznerServer;
+  action: { id: number; status: string };
+  root_password: string;
+};
+
+type GetServerResponse = {
+  server: HetznerServer;
+};
+
+type ActionResponse = {
+  action: { id: number; status: string };
+};
+
+export async function createServer(name: string, userData: string): Promise<CreateServerResponse> {
+  const res = await fetch(`${API_BASE}/servers`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      name,
+      server_type: env.HETZNER_SERVER_TYPE,
+      image: Number(env.HETZNER_SNAPSHOT_ID),
+      location: env.HETZNER_LOCATION,
+      start_after_create: true,
+      user_data: userData,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Hetzner create server failed (${res.status}): ${body}`);
+  }
+
+  return (await res.json()) as CreateServerResponse;
+}
+
+export async function getServer(id: number): Promise<GetServerResponse> {
+  const res = await fetch(`${API_BASE}/servers/${id}`, {
+    headers: headers(),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Hetzner get server failed (${res.status}): ${body}`);
+  }
+
+  return (await res.json()) as GetServerResponse;
+}
+
+export async function deleteServer(id: number): Promise<ActionResponse> {
+  const res = await fetch(`${API_BASE}/servers/${id}`, {
+    method: "DELETE",
+    headers: headers(),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Hetzner delete server failed (${res.status}): ${body}`);
+  }
+
+  return (await res.json()) as ActionResponse;
+}
+
+export async function restartServer(id: number): Promise<ActionResponse> {
+  const res = await fetch(`${API_BASE}/servers/${id}/actions/reboot`, {
+    method: "POST",
+    headers: headers(),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Hetzner restart server failed (${res.status}): ${body}`);
+  }
+
+  return (await res.json()) as ActionResponse;
+}

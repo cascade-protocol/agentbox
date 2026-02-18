@@ -1,14 +1,45 @@
+name: agentbox
+
 services:
+  backend:
+    image: agentbox-backend:latest
+    profiles: [server]
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://agentbox:${POSTGRES_PASSWORD:-agentbox}@postgres:5432/agentbox
+      HETZNER_API_TOKEN: ${HETZNER_API_TOKEN}
+      HETZNER_SNAPSHOT_ID: ${HETZNER_SNAPSHOT_ID}
+      HETZNER_LOCATION: ${HETZNER_LOCATION:-nbg1}
+      HETZNER_SERVER_TYPE: ${HETZNER_SERVER_TYPE:-cx22}
+      API_BASE_URL: ${API_BASE_URL}
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN}
+      CALLBACK_SECRET: ${CALLBACK_SECRET}
+      PORT: '3000'
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   postgres:
     image: postgres:17
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_USER: agentbox
-      POSTGRES_PASSWORD: agentbox
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentbox}
       POSTGRES_DB: agentbox
+    ports:
+      - '5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U agentbox -d agentbox
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   pgdata:
