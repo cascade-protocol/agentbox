@@ -11,6 +11,7 @@ const envSchema = z.object({
   CALLBACK_SECRET: z.string().default("dev-secret"),
   INSTANCE_BASE_DOMAIN: z.string().default("agentbox.cascade.fyi"),
   CF_API_TOKEN: z.string().optional(),
+  HETZNER_SSH_KEY_IDS: z.string().default("107690222"),
   CF_ZONE_ID: z.string().default("fc4f79a479eed4e1231ecd2f99c5f02a"),
   PORT: z.string().default("8080").transform(Number),
 });

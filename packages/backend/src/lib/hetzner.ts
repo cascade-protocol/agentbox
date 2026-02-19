@@ -36,6 +36,10 @@ type ActionResponse = {
 };
 
 export async function createServer(name: string, userData: string): Promise<CreateServerResponse> {
+  const sshKeyIds = env.HETZNER_SSH_KEY_IDS
+    ? env.HETZNER_SSH_KEY_IDS.split(",").map(Number)
+    : undefined;
+
   const res = await fetch(`${API_BASE}/servers`, {
     method: "POST",
     headers: headers(),
@@ -46,6 +50,7 @@ export async function createServer(name: string, userData: string): Promise<Crea
       location: env.HETZNER_LOCATION,
       start_after_create: true,
       user_data: userData,
+      ...(sshKeyIds && { ssh_keys: sshKeyIds }),
     }),
   });
 
