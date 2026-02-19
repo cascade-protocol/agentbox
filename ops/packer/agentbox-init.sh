@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs on first boot of each AgentBox instance (triggered by cloud-init).
-# Generates a fresh EVM wallet, configures the OpenClaw gateway, and
-# calls back to the AgentBox API with instance credentials.
+# Installs OpenClaw + ClawRouter fresh, generates a wallet, configures
+# the gateway, and calls back to the AgentBox API with instance credentials.
 #
 # The backend's Hetzner provisioning code passes cloud-init user_data that
 # writes /etc/agentbox/callback.env and then runs this script.
@@ -22,6 +22,55 @@ fi
 # shellcheck source=/dev/null
 source "$CALLBACK_ENV"
 # Expected vars: CALLBACK_URL, CALLBACK_SECRET, SERVER_ID, INSTANCE_HOSTNAME
+
+# --- Install OpenClaw ---
+#
+# Fresh install at boot ensures latest stable version and keeps the golden
+# image small (~1.5GB smaller without openclaw node_modules).
+#
+# Pre-requisites (pre-baked in golden image):
+#   Node.js 24, build-essential, python3, cmake, git
+# These make the install fast - no system package compilation needed.
+#
+# --no-prompt skips interactive prompts, --no-onboard skips the wizard.
+# We run onboarding separately below with headless flags.
+
+echo "Installing OpenClaw..."
+export OPENCLAW_NO_PROMPT=1
+curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-prompt --no-onboard
+echo "    OpenClaw $(openclaw --version)"
+
+# --- OpenClaw onboarding ---
+#
+# Runs as the openclaw user so config writes to /home/openclaw/.openclaw/
+# We avoid --install-daemon: it creates a user-level systemd service that
+# breaks on headless VMs (XDG_RUNTIME_DIR, linger issues) and has a
+# token-mismatch footgun when config rotates but the unit file does not.
+# See: https://github.com/openclaw/openclaw/issues/11805
+# See: https://github.com/openclaw/openclaw/issues/17223
+#
+# NOTE: The flag is --non-interactive, NOT --headless.
+
+echo "Running OpenClaw onboarding..."
+su - openclaw -c "openclaw onboard \
+  --non-interactive \
+  --accept-risk \
+  --auth-choice skip \
+  --gateway-port 18789 \
+  --gateway-bind loopback \
+  --skip-channels \
+  --skip-skills \
+  --skip-health"
+
+# --- Install ClawRouter ---
+#
+# Uses the official update script which injects auth profiles, refreshes
+# the model catalog (30+ models), and handles reinstall logic.
+# The bare 'openclaw plugins install' only unpacks the npm package without this setup.
+# See: https://github.com/BlockRunAI/ClawRouter/blob/main/scripts/reinstall.sh
+
+echo "Installing ClawRouter..."
+su - openclaw -c "curl -fsSL https://blockrun.ai/ClawRouter-update | bash"
 
 # --- Generate fresh EVM wallet ---
 #
@@ -58,28 +107,36 @@ echo "Wallet address: $WALLET_ADDRESS"
 GATEWAY_TOKEN=$(openssl rand -hex 32)
 echo "Gateway token generated"
 
-# --- Write gateway token to OpenClaw config ---
+# --- Configure OpenClaw ---
 #
-# FIX: We write the token to BOTH the systemd unit AND openclaw.json to prevent
-# the "device token mismatch" issue. When these diverge, the gateway starts fine
-# but ALL CLI commands and agent tool calls fail silently.
-# See: https://github.com/openclaw/openclaw/issues/17223
-# See: https://github.com/openclaw/openclaw/issues/19409
-# See: https://github.com/openclaw/openclaw/issues/19954
+# Set gateway.mode = "local" (required or gateway refuses to start),
+# write the gateway auth token (keeps unit file and openclaw.json in sync),
+# and lock plugins.allow to clawrouter only.
+#
+# All three settings in one jq pass to avoid multiple file rewrites.
+# See: https://github.com/openclaw/openclaw/issues/17191 (gateway.mode required)
+# See: https://github.com/openclaw/openclaw/issues/17223 (token mismatch footgun)
+# See: https://github.com/openclaw/openclaw/issues/20116 (no plugin signature verification)
 
 OPENCLAW_CONFIG="/home/openclaw/.openclaw/openclaw.json"
-if [[ -f "$OPENCLAW_CONFIG" ]]; then
-  jq --arg token "$GATEWAY_TOKEN" '.gateway.auth.token = $token' \
-    "$OPENCLAW_CONFIG" > "${OPENCLAW_CONFIG}.tmp"
-  mv "${OPENCLAW_CONFIG}.tmp" "$OPENCLAW_CONFIG"
-  chown openclaw:openclaw "$OPENCLAW_CONFIG"
+if [[ ! -f "$OPENCLAW_CONFIG" ]]; then
+  echo "ERROR: openclaw.json not found after onboarding"
+  exit 1
 fi
+
+jq --arg token "$GATEWAY_TOKEN" '
+  .gateway.mode = "local" |
+  .gateway.auth.token = $token |
+  .plugins.allow = ["clawrouter"]
+' "$OPENCLAW_CONFIG" > "${OPENCLAW_CONFIG}.tmp"
+mv "${OPENCLAW_CONFIG}.tmp" "$OPENCLAW_CONFIG"
+chown openclaw:openclaw "$OPENCLAW_CONFIG"
+echo "OpenClaw config: gateway.mode=local, token set, plugins.allow=[clawrouter]"
 
 # --- Enable silent device pairing ---
 #
 # When the OpenClaw dashboard connects, it sends a pairing request.
 # Silent mode + auto-approve ensures users don't hit a "pairing pending" screen.
-
 
 PENDING_DIR="/home/openclaw/.openclaw/devices"
 mkdir -p "$PENDING_DIR"
@@ -141,10 +198,12 @@ OPENCLAW_BIN=$(which openclaw)
 
 while true; do
   if [[ -f "$PENDING" ]]; then
-    REQUESTS=$(jq -r 'to_entries[] | select(.value.role == "operator" and .value.clientId == "openclaw-control-ui") | .key' "$PENDING" 2>/dev/null || true)
+    REQUESTS=$(jq -r 'to_entries[] | select(.value | type == "object") | select(.value.role == "operator" and .value.clientId == "openclaw-control-ui") | .key' "$PENDING" 2>/dev/null || true)
     for req_id in $REQUESTS; do
       echo "[$(date -Iseconds)] Auto-approving pairing request: $req_id"
-      su - openclaw -c "$OPENCLAW_BIN device approve $req_id" 2>/dev/null || true
+      su - openclaw -c "$OPENCLAW_BIN devices approve $req_id" && \
+        echo "[$(date -Iseconds)] Approved $req_id" || \
+        echo "[$(date -Iseconds)] Failed to approve $req_id"
     done
   fi
   sleep 2
