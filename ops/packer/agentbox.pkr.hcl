@@ -20,12 +20,12 @@ variable "location" {
 
 variable "server_type" {
   type    = string
-  default = "cpx42"
+  default = "cx23"
 }
 
 variable "image_version" {
   type    = string
-  default = "7"
+  default = "8"
 }
 
 source "hcloud" "agentbox" {
@@ -33,6 +33,10 @@ source "hcloud" "agentbox" {
   image       = "ubuntu-24.04"
   location    = var.location
   server_type = var.server_type
+
+  # Upgrade CPU for faster builds without changing disk size.
+  # Snapshot inherits the 40GB disk from cx23, compatible with runtime instances.
+  upgrade_server_type = "cpx42"
 
   server_name   = "agentbox-packer-build"
   snapshot_name = "agentbox-golden-v${var.image_version}"
