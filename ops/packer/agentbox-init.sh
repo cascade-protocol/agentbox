@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs on first boot of each AgentBox instance (triggered by cloud-init).
-# Installs OpenClaw + ClawRouter fresh, generates a wallet, configures
+# Uses preloaded OpenClaw, installs ClawRouter, generates a wallet, configures
 # the gateway, and calls back to the AgentBox API with instance credentials.
 #
 # The backend's Hetzner provisioning code passes cloud-init user_data that
@@ -23,22 +23,16 @@ fi
 source "$CALLBACK_ENV"
 # Expected vars: CALLBACK_URL, CALLBACK_SECRET, SERVER_ID, INSTANCE_HOSTNAME
 
-# --- Install OpenClaw ---
+# --- Verify preloaded OpenClaw ---
 #
-# Fresh install at boot ensures latest stable version and keeps the golden
-# image small (~1.5GB smaller without openclaw node_modules).
-#
-# Pre-requisites (pre-baked in golden image):
-#   Node.js 24, build-essential, python3, cmake, git
-# These make the install fast - no system package compilation needed.
-#
-# --no-prompt skips interactive prompts, --no-onboard skips the wizard.
-# We run onboarding separately below with headless flags.
+# OpenClaw is prebuilt into the golden image at /opt/openclaw with a wrapper
+# at /usr/local/bin/openclaw. Boot-time updates run in the background.
 
-echo "Installing OpenClaw..."
-export OPENCLAW_NO_PROMPT=1
-curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-prompt --no-onboard
-echo "    OpenClaw $(openclaw --version)"
+if ! command -v openclaw >/dev/null 2>&1; then
+  echo "ERROR: openclaw binary not found (expected preloaded source install)"
+  exit 1
+fi
+echo "Using preloaded OpenClaw $(openclaw --version)"
 
 # --- OpenClaw onboarding ---
 #
@@ -329,5 +323,49 @@ if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "201" ]]; then
     -H "Content-Type: application/json" \
     -d "$PAYLOAD" || echo "ERROR: callback retry also failed"
 fi
+
+# --- Background OpenClaw refresh ---
+#
+# Boot-speed optimization: serve traffic immediately, then run update in the
+# background and restart gateway only if update succeeds.
+
+cat > /usr/local/bin/agentbox-openclaw-refresh.sh << 'REFRESHEOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG="/var/log/agentbox-openclaw-refresh.log"
+exec >>"$LOG" 2>&1
+
+echo "[$(date -Iseconds)] OpenClaw background refresh starting"
+
+if [[ ! -d /opt/openclaw/.git ]]; then
+  echo "[$(date -Iseconds)] /opt/openclaw is not a git checkout, skipping refresh"
+  exit 0
+fi
+
+if su - openclaw -c "cd /opt/openclaw && openclaw update --channel stable --yes --no-restart"; then
+  echo "[$(date -Iseconds)] OpenClaw refresh succeeded; restarting gateway"
+  systemctl restart openclaw-gateway || echo "[$(date -Iseconds)] gateway restart failed"
+else
+  echo "[$(date -Iseconds)] OpenClaw refresh failed"
+  exit 1
+fi
+REFRESHEOF
+chmod +x /usr/local/bin/agentbox-openclaw-refresh.sh
+
+cat > /etc/systemd/system/agentbox-openclaw-refresh.service << 'UPDATESVCEOF'
+[Unit]
+Description=AgentBox background OpenClaw refresh
+After=openclaw-gateway.service
+Requires=openclaw-gateway.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/agentbox-openclaw-refresh.sh
+UPDATESVCEOF
+
+systemctl daemon-reload
+systemctl start --no-block agentbox-openclaw-refresh.service || true
+echo "Background OpenClaw refresh triggered"
 
 echo "[$(date -Iseconds)] AgentBox init complete"

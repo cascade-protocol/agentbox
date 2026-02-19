@@ -20,12 +20,12 @@ variable "location" {
 
 variable "server_type" {
   type    = string
-  default = "cx23"
+  default = "cpx42"
 }
 
 variable "image_version" {
   type    = string
-  default = "6"
+  default = "7"
 }
 
 source "hcloud" "agentbox" {
@@ -59,10 +59,11 @@ build {
     destination = "/tmp/agentbox-init.sh"
   }
 
-  # Build-time setup: installs Node.js, OpenClaw, ClawRouter, viem, firewall.
+  # Build-time setup: installs Node.js, preloads/builds OpenClaw source,
+  # prepares wallet helper deps, and configures base services/firewall.
   # Packer uploads, executes, and cleans up this script automatically.
   provisioner "shell" {
     script  = "setup.sh"
-    timeout = "15m"
+    timeout = "45m"
   }
 }

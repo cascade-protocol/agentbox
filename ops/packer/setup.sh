@@ -2,9 +2,9 @@
 # Build-time setup for the AgentBox golden image.
 # Run by Packer on a fresh Hetzner CX22 (Ubuntu 24.04), then snapshotted.
 #
-# OpenClaw and ClawRouter are NOT installed here; they install fresh at
-# boot time via agentbox-init.sh using the official installer. This keeps
-# the snapshot small and ensures each instance runs the latest stable release.
+# OpenClaw is preloaded here from git so first boot can start the gateway fast.
+# Instance boot still runs onboarding, installs ClawRouter, and performs a
+# background OpenClaw update without blocking user access.
 #
 # Usage:
 #   cd ops/packer && packer init . && packer build .
@@ -89,6 +89,44 @@ if id openclaw &>/dev/null; then
 else
   useradd -m -s /bin/bash openclaw
 fi
+
+# --- Preload OpenClaw source checkout ---
+#
+# We prebuild OpenClaw in the golden image so first boot can skip install.sh
+# and start immediately. Runtime updates happen in the background.
+
+echo ""
+echo "==> Preloading OpenClaw source checkout"
+OPENCLAW_REPO_DIR="/opt/openclaw"
+OPENCLAW_REPO_URL="https://github.com/openclaw/openclaw.git"
+
+if [[ -d "${OPENCLAW_REPO_DIR}/.git" ]]; then
+  echo "    Existing checkout found, refreshing"
+  git -C "${OPENCLAW_REPO_DIR}" fetch --depth=1 origin main
+  git -C "${OPENCLAW_REPO_DIR}" checkout -f origin/main
+else
+  git clone --depth=1 "${OPENCLAW_REPO_URL}" "${OPENCLAW_REPO_DIR}"
+fi
+
+echo "    Installing pnpm"
+npm install -g pnpm@10
+
+echo "    Building OpenClaw (this can take a few minutes)"
+cd "${OPENCLAW_REPO_DIR}"
+pnpm install --frozen-lockfile
+pnpm build
+OPENCLAW_PREFER_PNPM=1 pnpm ui:build
+cd /
+
+chown -R openclaw:openclaw "${OPENCLAW_REPO_DIR}"
+
+cat > /usr/local/bin/openclaw << 'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exec node /opt/openclaw/openclaw.mjs "$@"
+EOF
+chmod 755 /usr/local/bin/openclaw
+echo "    OpenClaw preloaded: $(openclaw --version || echo unknown)"
 
 # --- Wallet generation helper (viem) ---
 #
