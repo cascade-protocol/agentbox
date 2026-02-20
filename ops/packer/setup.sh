@@ -93,8 +93,8 @@ fi
 # --- Install OpenClaw (official git method) ---
 #
 # Uses the official installer to set up OpenClaw as a source checkout at
-# /opt/openclaw. This ensures `openclaw update` works correctly at runtime
-# (detects git metadata, runs pull + rebuild + doctor).
+# ~/openclaw (default). This ensures `openclaw update` works correctly at
+# runtime (detects git metadata, runs pull + rebuild + doctor).
 #
 # The installer: clones the repo, installs pnpm, builds, creates a wrapper
 # at ~/.local/bin/openclaw, and runs doctor.
@@ -102,11 +102,8 @@ fi
 
 echo ""
 echo "==> Installing OpenClaw via official installer (git method)"
-mkdir -p /opt/openclaw
-chown openclaw:openclaw /opt/openclaw
 su - openclaw -c "curl -fsSL https://openclaw.ai/install.sh | bash -s -- \
   --install-method git \
-  --git-dir /opt/openclaw \
   --no-onboard \
   --no-prompt"
 

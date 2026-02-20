@@ -26,7 +26,7 @@ source "$CALLBACK_ENV"
 # --- Verify preloaded OpenClaw ---
 #
 # OpenClaw is installed via the official installer (git method) into
-# /opt/openclaw, with a wrapper symlinked to /usr/local/bin/openclaw.
+# ~/openclaw, with a wrapper symlinked to /usr/local/bin/openclaw.
 # Boot-time updates run in the background via `openclaw update`.
 
 if ! command -v openclaw >/dev/null 2>&1; then
