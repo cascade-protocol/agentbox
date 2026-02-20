@@ -1,4 +1,5 @@
 import { randomUUID, webcrypto } from "node:crypto";
+import { readFileSync } from "node:fs";
 import * as ed from "@noble/ed25519";
 import bs58 from "bs58";
 import { eq, lte } from "drizzle-orm";
@@ -74,8 +75,14 @@ function toInstanceResponse(row: typeof instances.$inferSelect) {
   };
 }
 
-function buildUserData(opts: { callbackUrl: string; secret: string; hostname: string }): string {
-  return [
+function buildUserData(opts: {
+  callbackUrl: string;
+  secret: string;
+  hostname: string;
+  wildcardCert?: string;
+  wildcardKey?: string;
+}): string {
+  const lines = [
     "#!/bin/bash",
     "set -euo pipefail",
     "",
@@ -90,9 +97,26 @@ function buildUserData(opts: { callbackUrl: string; secret: string; hostname: st
     "",
     "# SERVER_ID must be unquoted (numeric) so append outside heredoc",
     'echo "SERVER_ID=$SERVER_ID" >> /etc/agentbox/callback.env',
-    "",
-    "/usr/local/bin/agentbox-init.sh",
-  ].join("\n");
+  ];
+
+  if (opts.wildcardCert && opts.wildcardKey) {
+    lines.push(
+      "",
+      "# Wildcard TLS cert (managed by backend, avoids per-VM Let's Encrypt)",
+      "mkdir -p /etc/caddy/tls",
+      "cat > /etc/caddy/tls/cert.pem << 'CERTEOF'",
+      opts.wildcardCert.trim(),
+      "CERTEOF",
+      "cat > /etc/caddy/tls/key.pem << 'KEYEOF'",
+      opts.wildcardKey.trim(),
+      "KEYEOF",
+      "chgrp caddy /etc/caddy/tls/key.pem",
+      "chmod 640 /etc/caddy/tls/key.pem",
+    );
+  }
+
+  lines.push("", "/usr/local/bin/agentbox-init.sh");
+  return lines.join("\n");
 }
 
 // POST /api/instances/auth - Wallet sign-in (no bearer auth)
@@ -145,10 +169,24 @@ instanceRoutes.post("/instances", auth, async (c) => {
 
   const callbackUrl = `${env.API_BASE_URL}/api/instances/callback`;
   const hostname = `${name}.${env.INSTANCE_BASE_DOMAIN}`;
+
+  let wildcardCert: string | undefined;
+  let wildcardKey: string | undefined;
+  if (env.WILDCARD_CERT_PATH && env.WILDCARD_KEY_PATH) {
+    try {
+      wildcardCert = readFileSync(env.WILDCARD_CERT_PATH, "utf-8");
+      wildcardKey = readFileSync(env.WILDCARD_KEY_PATH, "utf-8");
+    } catch (err) {
+      console.error("Failed to read wildcard cert, falling back to per-VM Let's Encrypt:", err);
+    }
+  }
+
   const userData = buildUserData({
     callbackUrl,
     secret: env.CALLBACK_SECRET,
     hostname,
+    wildcardCert,
+    wildcardKey,
   });
 
   let result: Awaited<ReturnType<typeof hetzner.createServer>>;

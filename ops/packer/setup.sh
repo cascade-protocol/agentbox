@@ -147,6 +147,12 @@ ufw --force enable
 # https://github.com/hetznercloud/packer-plugin-hcloud/blob/main/example/docker/cleanup.sh
 
 echo ""
+echo "==> Zeroing free space for smaller snapshot"
+dd if=/dev/zero of=/zerofile bs=1M 2>/dev/null || true
+rm -f /zerofile
+fstrim -av
+
+echo ""
 echo "==> Cleaning up for snapshot"
 
 # Clear SSH host keys - each instance must have unique keys (regenerated on boot)

@@ -3,7 +3,7 @@ import { z } from "zod";
 const envSchema = z.object({
   DATABASE_URL: z.string().default("postgresql://agentbox:agentbox@localhost:5432/agentbox"),
   HETZNER_API_TOKEN: z.string().optional(),
-  HETZNER_SNAPSHOT_ID: z.string().default("360018111"),
+  HETZNER_SNAPSHOT_ID: z.string().default("360041394"),
   HETZNER_LOCATIONS: z.string().default("nbg1,fsn1"),
   HETZNER_SERVER_TYPE: z.string().default("cx23"),
   API_BASE_URL: z.string().default("http://localhost:8080"),
@@ -16,6 +16,8 @@ const envSchema = z.object({
   CF_API_TOKEN: z.string().optional(),
   HETZNER_SSH_KEY_IDS: z.string().default("107690222"),
   CF_ZONE_ID: z.string().default("fc4f79a479eed4e1231ecd2f99c5f02a"),
+  WILDCARD_CERT_PATH: z.string().optional(),
+  WILDCARD_KEY_PATH: z.string().optional(),
   PORT: z.string().default("8080").transform(Number),
 });
 

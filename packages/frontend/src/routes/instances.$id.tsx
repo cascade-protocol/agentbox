@@ -247,7 +247,9 @@ function InstanceDetail() {
               </dd>
               <dt className="text-muted-foreground">SATI Agent ID</dt>
               <dd className="font-mono break-all">
-                {instance.agentId ?? <span className="text-muted-foreground italic">Pending publish</span>}
+                {instance.agentId ?? (
+                  <span className="text-muted-foreground italic">Pending publish</span>
+                )}
               </dd>
               <dt className="text-muted-foreground">Created</dt>
               <dd title={formatDate(instance.createdAt)}>{relativeTime(instance.createdAt)}</dd>

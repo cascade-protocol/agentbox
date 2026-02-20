@@ -259,15 +259,24 @@ systemctl start ttyd
 
 # --- Caddy reverse proxy ---
 #
-# Caddy provides HTTPS via Let's Encrypt (HTTP-01 challenge) and routes:
-#   /            -> OpenClaw gateway (localhost:18789) - gateway handles its own auth
-#   /terminal/*  -> ttyd (localhost:7681)
+# Caddy routes: / -> OpenClaw gateway (:18789), /terminal/* -> ttyd (:7681)
+# TLS: uses wildcard cert from /etc/caddy/tls/ if present (written by cloud-init
+# user_data), otherwise falls back to per-VM Let's Encrypt (HTTP-01 challenge).
 
 if [[ -n "${INSTANCE_HOSTNAME:-}" ]]; then
   echo "Configuring Caddy for ${INSTANCE_HOSTNAME}..."
 
+  TLS_DIRECTIVE=""
+  if [[ -f /etc/caddy/tls/cert.pem && -f /etc/caddy/tls/key.pem ]]; then
+    TLS_DIRECTIVE="tls /etc/caddy/tls/cert.pem /etc/caddy/tls/key.pem"
+    echo "Using wildcard TLS cert"
+  else
+    echo "No wildcard cert found, using automatic Let's Encrypt"
+  fi
+
   cat > /etc/caddy/Caddyfile << CADDYEOF
 ${INSTANCE_HOSTNAME} {
+    ${TLS_DIRECTIVE}
     handle_path /terminal/* {
         reverse_proxy localhost:7681
     }
