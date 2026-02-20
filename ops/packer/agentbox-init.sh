@@ -352,7 +352,6 @@ cat > /etc/systemd/system/agentbox-openclaw-refresh.service << 'UPDATESVCEOF'
 [Unit]
 Description=AgentBox background OpenClaw refresh
 After=openclaw-gateway.service
-Requires=openclaw-gateway.service
 
 [Service]
 Type=oneshot
