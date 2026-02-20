@@ -28,7 +28,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../components/ui/dialog";
-import { api, type Instance, instanceUrls } from "../lib/api";
+import { api, getIsAdmin, type Instance, instanceUrls } from "../lib/api";
 import { formatDate, relativeTime } from "../lib/format";
 
 export const Route = createFileRoute("/")({
@@ -144,6 +144,8 @@ function EditableName({
 
 function Home() {
   const { wallet } = useWalletConnection();
+  const admin = getIsAdmin();
+  const [showAll, setShowAll] = useState(false);
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -160,7 +162,7 @@ function Home() {
 
   const fetchInstances = useCallback(async () => {
     try {
-      const data = await api.instances.list();
+      const data = await api.instances.list(showAll);
       setInstances(data.instances);
       setLastChecked(new Date());
       setError(null);
@@ -169,7 +171,7 @@ function Home() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showAll]);
 
   useEffect(() => {
     fetchInstances();
@@ -239,6 +241,17 @@ function Home() {
             <p className="text-sm text-muted-foreground mt-1">Manage your AgentBox instances</p>
           </div>
           <div className="flex items-center gap-2">
+            {admin && (
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showAll}
+                  onChange={(e) => setShowAll(e.target.checked)}
+                  className="accent-primary"
+                />
+                All
+              </label>
+            )}
             {lastChecked && (
               <span className="text-xs text-muted-foreground hidden sm:inline">
                 {relativeTime(lastChecked.toISOString())}

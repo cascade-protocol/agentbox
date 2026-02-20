@@ -51,8 +51,12 @@ const auth = createMiddleware<AppEnv>(async (c, next) => {
   }
 });
 
+function isAdmin(wallet: string): boolean {
+  return wallet === "operator" || wallet === env.PAY_TO_ADDRESS;
+}
+
 function isOwner(row: typeof instances.$inferSelect, wallet: string): boolean {
-  return wallet === "operator" || row.userId === wallet;
+  return isAdmin(wallet) || row.userId === wallet;
 }
 
 function toInstanceResponse(row: typeof instances.$inferSelect) {
@@ -120,7 +124,7 @@ instanceRoutes.post("/instances/auth", async (c) => {
     .setIssuedAt()
     .sign(secret);
 
-  return c.json({ token });
+  return c.json({ token, isAdmin: input.data.walletAddress === env.PAY_TO_ADDRESS });
 });
 
 // POST /api/instances - Create instance (wallet from JWT used as userId)
@@ -182,13 +186,13 @@ instanceRoutes.post("/instances", auth, async (c) => {
   return c.json(toInstanceResponse(row), 201);
 });
 
-// GET /api/instances - List instances (wallet-scoped, operator sees all)
+// GET /api/instances - List instances (wallet-scoped, admin can see all with ?all=true)
 instanceRoutes.get("/instances", auth, async (c) => {
   const wallet = c.get("walletAddress");
-  const rows =
-    wallet === "operator"
-      ? await db.select().from(instances)
-      : await db.select().from(instances).where(eq(instances.userId, wallet));
+  const showAll = c.req.query("all") === "true" && isAdmin(wallet);
+  const rows = showAll
+    ? await db.select().from(instances)
+    : await db.select().from(instances).where(eq(instances.userId, wallet));
   return c.json({ instances: rows.map(toInstanceResponse) });
 });
 
@@ -199,8 +203,9 @@ instanceRoutes.get("/instances/expiring", auth, async (c) => {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() + days);
 
+  const showAll = c.req.query("all") === "true" && isAdmin(wallet);
   const rows = await db.select().from(instances).where(lte(instances.expiresAt, cutoff));
-  const filtered = wallet === "operator" ? rows : rows.filter((r) => r.userId === wallet);
+  const filtered = showAll ? rows : rows.filter((r) => r.userId === wallet);
   return c.json({ instances: filtered.map(toInstanceResponse) });
 });
 

@@ -60,6 +60,15 @@ export function setToken(token: string) {
 
 export function clearToken() {
   localStorage.removeItem("agentbox-token");
+  localStorage.removeItem("agentbox-admin");
+}
+
+export function getIsAdmin(): boolean {
+  return localStorage.getItem("agentbox-admin") === "true";
+}
+
+export function setIsAdmin(value: boolean) {
+  localStorage.setItem("agentbox-admin", String(value));
 }
 
 function authHeaders(): Record<string, string> {
@@ -96,7 +105,8 @@ function createPaymentFetch(session: WalletSession) {
 
 export const api = {
   instances: {
-    list: () => request<{ instances: Instance[] }>("/instances"),
+    list: (all?: boolean) =>
+      request<{ instances: Instance[] }>(`/instances${all ? "?all=true" : ""}`),
     get: (id: number) => request<Instance>(`/instances/${id}`),
     create: async (session: WalletSession) => {
       const payFetch = createPaymentFetch(session);

@@ -4,7 +4,7 @@ import { Loader2, LogOut, Wallet } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { clearToken, getToken, setToken } from "../lib/api";
+import { clearToken, getToken, setIsAdmin, setToken } from "../lib/api";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -48,9 +48,10 @@ function RootLayout() {
         throw new Error(body.error ?? "Auth failed");
       }
 
-      const { token: jwt } = await res.json();
-      setToken(jwt);
-      setTokenState(jwt);
+      const data = await res.json();
+      setToken(data.token);
+      setIsAdmin(data.isAdmin ?? false);
+      setTokenState(data.token);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed");
     } finally {
