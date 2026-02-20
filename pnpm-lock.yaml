@@ -36,8 +36,8 @@ importers:
         specifier: ^2.2.0
         version: 2.3.0(ethers@6.16.0)(hono@4.12.0)(typescript@5.9.3)
       '@x402/svm':
-        specifier: ^2.2.0
-        version: 2.3.0(@solana/sysvars@6.1.0(typescript@5.9.3))(typescript@5.9.3)
+        specifier: 2.2.0
+        version: 2.2.0(@solana/sysvars@6.1.0(typescript@5.9.3))(typescript@5.9.3)
       bs58:
         specifier: ^6.0.0
         version: 6.0.0
@@ -103,8 +103,8 @@ importers:
         specifier: ^2.2.0
         version: 2.3.0(typescript@5.9.3)
       '@x402/svm':
-        specifier: ^2.3.0
-        version: 2.3.0(@solana/sysvars@6.1.0(typescript@5.9.3))(typescript@5.9.3)
+        specifier: 2.2.0
+        version: 2.2.0(@solana/sysvars@6.1.0(typescript@5.9.3))(typescript@5.9.3)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -2354,8 +2354,8 @@ packages:
       '@x402/paywall':
         optional: true
 
-  '@x402/svm@2.3.0':
-    resolution: {integrity: sha512-Lh02bBBwv9fHSTId8Iqj+SGl9zjSYCrUHaJ0VsrN/GKBcFJwXoDNXgqc7qJGKbkdriBnvAHMxtFR1snpAaBm+w==}
+  '@x402/svm@2.2.0':
+    resolution: {integrity: sha512-DJkEalO1G1T+o3xl23ZAvK5d0SJ+0gkJ04BZKT8SkMIZoZlR1wWhJXPwL+yvFapBEFoBSii8H5VcFiaBfFALDw==}
 
   abitype@1.2.3:
     resolution: {integrity: sha512-Ofer5QUnuUdTFsBRwARMoWKOH1ND5ehwYhJ3OJ/BQO+StkwQjHw0XyVh4vDttzHB7QOFhPHa/o413PJ82gU/Tg==}
@@ -5387,7 +5387,7 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@x402/svm@2.3.0(@solana/sysvars@6.1.0(typescript@5.9.3))(typescript@5.9.3)':
+  '@x402/svm@2.2.0(@solana/sysvars@6.1.0(typescript@5.9.3))(typescript@5.9.3)':
     dependencies:
       '@solana-program/compute-budget': 0.11.0(@solana/kit@6.1.0(typescript@5.9.3))
       '@solana-program/token': 0.9.0(@solana/kit@6.1.0(typescript@5.9.3))

@@ -19,7 +19,7 @@
     "@wallet-standard/react": "^1.0.0",
     "@x402/core": "^2.2.0",
     "@x402/fetch": "^2.2.0",
-    "@x402/svm": "^2.3.0",
+    "@x402/svm": "2.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.574.0",
