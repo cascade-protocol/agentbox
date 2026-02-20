@@ -35,31 +35,53 @@ type ActionResponse = {
   action: { id: number; status: string };
 };
 
+const FALLBACK_LOCATIONS = ["fsn1"];
+
 export async function createServer(name: string, userData: string): Promise<CreateServerResponse> {
   const sshKeyIds = env.HETZNER_SSH_KEY_IDS
     ? env.HETZNER_SSH_KEY_IDS.split(",").map(Number)
     : undefined;
 
-  const res = await fetch(`${API_BASE}/servers`, {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify({
-      name,
-      server_type: env.HETZNER_SERVER_TYPE,
-      image: Number(env.HETZNER_SNAPSHOT_ID),
-      location: env.HETZNER_LOCATION,
-      start_after_create: true,
-      user_data: userData,
-      ...(sshKeyIds && { ssh_keys: sshKeyIds }),
-    }),
-  });
+  const locations = [
+    env.HETZNER_LOCATION,
+    ...FALLBACK_LOCATIONS.filter((l) => l !== env.HETZNER_LOCATION),
+  ];
 
-  if (!res.ok) {
+  for (const location of locations) {
+    const res = await fetch(`${API_BASE}/servers`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({
+        name,
+        server_type: env.HETZNER_SERVER_TYPE,
+        image: Number(env.HETZNER_SNAPSHOT_ID),
+        location,
+        start_after_create: true,
+        user_data: userData,
+        ...(sshKeyIds && { ssh_keys: sshKeyIds }),
+      }),
+    });
+
+    if (res.ok) {
+      if (location !== env.HETZNER_LOCATION) {
+        console.log(
+          `Hetzner: created in fallback location ${location} (${env.HETZNER_LOCATION} unavailable)`,
+        );
+      }
+      return (await res.json()) as CreateServerResponse;
+    }
+
     const body = await res.text();
-    throw new Error(`Hetzner create server failed (${res.status}): ${body}`);
+    const isUnavailable = res.status === 412 && body.includes("resource_unavailable");
+    if (!isUnavailable) {
+      throw new Error(`Hetzner create server failed (${res.status}): ${body}`);
+    }
+    console.log(`Hetzner: ${location} unavailable, trying next location...`);
   }
 
-  return (await res.json()) as CreateServerResponse;
+  throw new Error(
+    `Hetzner create server failed: no capacity in any location (${locations.join(", ")})`,
+  );
 }
 
 export async function getServer(id: number): Promise<GetServerResponse> {
