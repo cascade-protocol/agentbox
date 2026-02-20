@@ -1,4 +1,11 @@
-import { useWalletAccountTransactionSigner } from "@solana/react";
+import {
+  type Address,
+  address,
+  getTransactionCodec,
+  type SignatureDictionary,
+  type TransactionSigner,
+} from "@solana/kit";
+import { useSignTransaction } from "@solana/react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Activity,
@@ -15,7 +22,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -227,7 +234,30 @@ function CreateInstanceDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: () => Promise<void>;
 }) {
-  const signer = useWalletAccountTransactionSigner(account, "solana:mainnet");
+  const signTransaction = useSignTransaction(account, "solana:mainnet");
+  const signer: TransactionSigner = useMemo(() => {
+    const signerAddress = address(account.address) as Address;
+    const codec = getTransactionCodec();
+    return {
+      address: signerAddress,
+      async signTransactions(
+        transactions: readonly Parameters<typeof codec.encode>[0][],
+      ): Promise<readonly SignatureDictionary[]> {
+        const signatures: SignatureDictionary[] = [];
+        for (const tx of transactions) {
+          const wireBytes = codec.encode(tx);
+          const { signedTransaction } = await signTransaction({
+            transaction: wireBytes as Uint8Array,
+          });
+          const decoded = codec.decode(signedTransaction);
+          const sig = decoded.signatures[signerAddress];
+          if (!sig) throw new Error("Wallet did not return a signature");
+          signatures.push(Object.freeze({ [signerAddress]: sig }) as SignatureDictionary);
+        }
+        return Object.freeze(signatures);
+      },
+    };
+  }, [account.address, signTransaction]);
   const [creating, setCreating] = useState(false);
 
   async function handleCreate() {
