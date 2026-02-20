@@ -35,17 +35,12 @@ type ActionResponse = {
   action: { id: number; status: string };
 };
 
-const FALLBACK_LOCATIONS = ["fsn1"];
-
 export async function createServer(name: string, userData: string): Promise<CreateServerResponse> {
   const sshKeyIds = env.HETZNER_SSH_KEY_IDS
     ? env.HETZNER_SSH_KEY_IDS.split(",").map(Number)
     : undefined;
 
-  const locations = [
-    env.HETZNER_LOCATION,
-    ...FALLBACK_LOCATIONS.filter((l) => l !== env.HETZNER_LOCATION),
-  ];
+  const locations = env.HETZNER_LOCATIONS.split(",").map((l) => l.trim());
 
   for (const location of locations) {
     const res = await fetch(`${API_BASE}/servers`, {
@@ -63,10 +58,8 @@ export async function createServer(name: string, userData: string): Promise<Crea
     });
 
     if (res.ok) {
-      if (location !== env.HETZNER_LOCATION) {
-        console.log(
-          `Hetzner: created in fallback location ${location} (${env.HETZNER_LOCATION} unavailable)`,
-        );
+      if (location !== locations[0]) {
+        console.log(`Hetzner: created in fallback location ${location}`);
       }
       return (await res.json()) as CreateServerResponse;
     }
