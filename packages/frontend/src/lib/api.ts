@@ -30,7 +30,8 @@ export type InstanceHealth = {
   callbackReceived: boolean;
 };
 
-const INSTANCE_BASE_DOMAIN = "agentbox.cascade.fyi";
+const API_URL = import.meta.env.VITE_API_URL ?? "";
+const INSTANCE_BASE_DOMAIN = import.meta.env.VITE_INSTANCE_BASE_DOMAIN ?? "agentbox.fyi";
 const HELIUS_KEY = import.meta.env.VITE_HELIUS_API_KEY ?? "";
 const RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_KEY}`;
 
@@ -81,7 +82,7 @@ function authHeaders(): Record<string, string> {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`${API_URL}/api${path}`, {
     ...options,
     headers: {
       ...authHeaders(),
@@ -111,7 +112,7 @@ export const api = {
     get: (id: number) => request<Instance>(`/instances/${id}`),
     create: async (session: WalletSession) => {
       const payFetch = createPaymentFetch(session);
-      const res = await payFetch("/api/instances", {
+      const res = await payFetch(`${API_URL}/api/instances`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({}),
