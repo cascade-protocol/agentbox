@@ -66,8 +66,9 @@ function toInstanceResponse(row: typeof instances.$inferSelect) {
     userId: row.userId,
     status: row.status,
     ip: row.ip,
-    walletAddress: row.walletAddress,
+    solanaWalletAddress: row.solanaWalletAddress,
     gatewayToken: row.gatewayToken,
+    agentId: row.agentId,
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
   };
@@ -110,7 +111,7 @@ instanceRoutes.post("/instances/auth", async (c) => {
   const message = `Sign in to AgentBox\nTimestamp: ${input.data.timestamp}`;
   const messageBytes = new TextEncoder().encode(message);
   const signatureBytes = Buffer.from(input.data.signature, "base64");
-  const publicKeyBytes = bs58.decode(input.data.walletAddress);
+  const publicKeyBytes = bs58.decode(input.data.solanaWalletAddress);
 
   const valid = await ed.verifyAsync(signatureBytes, messageBytes, publicKeyBytes);
   if (!valid) {
@@ -118,13 +119,13 @@ instanceRoutes.post("/instances/auth", async (c) => {
   }
 
   const secret = new TextEncoder().encode(env.JWT_SECRET);
-  const token = await new SignJWT({ sub: input.data.walletAddress })
+  const token = await new SignJWT({ sub: input.data.solanaWalletAddress })
     .setProtectedHeader({ alg: "HS256" })
     .setExpirationTime("24h")
     .setIssuedAt()
     .sign(secret);
 
-  return c.json({ token, isAdmin: input.data.walletAddress === env.PAY_TO_ADDRESS });
+  return c.json({ token, isAdmin: input.data.solanaWalletAddress === env.PAY_TO_ADDRESS });
 });
 
 // POST /api/instances - Create instance (wallet from JWT used as userId)
@@ -178,6 +179,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
       status: "provisioning",
       ip: result.server.public_net.ipv4.ip,
       gatewayToken: "pending",
+      agentId: null,
       rootPassword: result.root_password,
       expiresAt,
     })
@@ -224,8 +226,9 @@ instanceRoutes.post("/instances/callback", async (c) => {
   const [row] = await db
     .update(instances)
     .set({
-      walletAddress: input.data.walletAddress,
+      solanaWalletAddress: input.data.solanaWalletAddress,
       gatewayToken: input.data.gatewayToken,
+      agentId: input.data.agentId ?? null,
       status: "running",
     })
     .where(eq(instances.id, input.data.serverId))
@@ -371,6 +374,6 @@ instanceRoutes.get("/instances/:id/health", auth, async (c) => {
     healthy,
     hetznerStatus,
     instanceStatus: row.status,
-    callbackReceived: row.walletAddress !== null,
+    callbackReceived: row.solanaWalletAddress !== null,
   });
 });

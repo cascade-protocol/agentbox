@@ -37,7 +37,7 @@ function RootLayout() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          walletAddress: w.account.address,
+          solanaWalletAddress: w.account.address,
           signature,
           timestamp,
         }),

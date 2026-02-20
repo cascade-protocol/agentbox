@@ -349,6 +349,9 @@ function Home() {
                         <td className="py-3 pr-4">
                           <EditableName instance={instance} onSave={handleRename} />
                           <p className="text-xs text-muted-foreground">{instance.id}</p>
+                          <p className="text-xs text-muted-foreground truncate max-w-64" title={instance.agentId ?? ""}>
+                            {instance.agentId ? `SATI: ${instance.agentId}` : "SATI: pending"}
+                          </p>
                         </td>
                         <td className="py-3 pr-4 text-sm text-muted-foreground">
                           {instance.userId}

@@ -14,8 +14,9 @@ export const instanceSchema = z.object({
   userId: z.string(),
   status: instanceStatusSchema,
   ip: z.string(),
-  walletAddress: z.string().nullable(),
+  solanaWalletAddress: z.string().nullable(),
   gatewayToken: z.string(),
+  agentId: z.string().nullable().optional(),
   createdAt: z.string().datetime(),
   expiresAt: z.string().datetime(),
 });
@@ -23,15 +24,16 @@ export const instanceSchema = z.object({
 export const createInstanceInputSchema = z.object({});
 
 export const authInputSchema = z.object({
-  walletAddress: z.string(),
+  solanaWalletAddress: z.string(),
   signature: z.string(),
   timestamp: z.number(),
 });
 
 export const callbackInputSchema = z.object({
   serverId: z.number(),
-  walletAddress: z.string(),
+  solanaWalletAddress: z.string(),
   gatewayToken: z.string(),
+  agentId: z.string().optional(),
   secret: z.string(),
 });
 

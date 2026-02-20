@@ -3,7 +3,7 @@
 # Run by Packer on a fresh Hetzner CX22 (Ubuntu 24.04), then snapshotted.
 #
 # OpenClaw is installed globally via npm so the binary is ready at boot.
-# Instance boot runs onboarding, installs ClawRouter, and performs a
+# Instance boot runs onboarding, creates Solana/SATI identity, and performs a
 # lightweight background `npm i -g openclaw@latest` without blocking access.
 #
 # Usage:
@@ -102,41 +102,23 @@ echo "==> Installing OpenClaw via npm"
 npm install -g openclaw@latest
 echo "    OpenClaw $(openclaw --version) at $(which openclaw)"
 
-# --- Wallet generation helper (viem) ---
+# --- Solana CLI + SATI identity CLI ---
 #
-# We install viem in a local directory because Node.js does not resolve imports
-# from global node_modules in a plain `node` context. agentbox-init.sh runs
-# inline JS from this directory to generate wallets at boot time.
-#
-# ClawRouter also auto-generates a wallet on first gateway start, but we
-# pre-generate so we know the address immediately for the API callback.
-# See: https://github.com/BlockRunAI/ClawRouter (src/auth.ts)
+# AgentBox instances create a Solana wallet + SATI agent identity on first boot.
+# We preinstall both CLIs in the golden image to keep boot fast and deterministic.
 
 echo ""
-echo "==> Setting up viem for wallet generation"
-mkdir -p /usr/local/lib/agentbox
-cat > /usr/local/lib/agentbox/package.json << 'EOF'
-{
-  "name": "agentbox-wallet-gen",
-  "private": true,
-  "type": "module",
-  "dependencies": { "viem": "^2.46.0" }
-}
-EOF
-cd /usr/local/lib/agentbox && npm install --omit=dev --silent
-cd /
+echo "==> Installing Solana CLI"
+SOLANA_VERSION="v2.3.8"
+sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_VERSION}/install)"
+ln -sf /root/.local/share/solana/install/active_release/bin/solana /usr/local/bin/solana
+ln -sf /root/.local/share/solana/install/active_release/bin/solana-keygen /usr/local/bin/solana-keygen
+echo "    Solana $(solana --version)"
 
-echo "    Testing wallet generation..."
-WALLET_TEST_ADDR=$(cd /usr/local/lib/agentbox && node --input-type=module -e "
-import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-console.log(privateKeyToAccount(generatePrivateKey()).address);
-")
-if [[ "$WALLET_TEST_ADDR" == 0x* ]]; then
-  echo "    OK: generated test wallet $WALLET_TEST_ADDR"
-else
-  echo "    ERROR: wallet generation failed"
-  exit 1
-fi
+echo ""
+echo "==> Installing create-sati-agent CLI"
+npm install -g create-sati-agent@latest
+echo "    create-sati-agent $(create-sati-agent --version 2>/dev/null || echo installed)"
 
 # --- Install agentbox-init.sh ---
 # Uploaded by Packer's file provisioner to /tmp/

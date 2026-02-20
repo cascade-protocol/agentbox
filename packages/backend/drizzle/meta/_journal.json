@@ -15,6 +15,13 @@
       "when": 1771551364391,
       "tag": "0001_youthful_gauntlet",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1771562000000,
+      "tag": "0002_sati_agent_id",
+      "breakpoints": true
     }
   ]
 }

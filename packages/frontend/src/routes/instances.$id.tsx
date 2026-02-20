@@ -239,11 +239,15 @@ function InstanceDetail() {
             <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
               <dt className="text-muted-foreground">IP Address</dt>
               <dd className="font-mono">{instance.ip}</dd>
-              <dt className="text-muted-foreground">Wallet</dt>
+              <dt className="text-muted-foreground">Solana Wallet</dt>
               <dd className="font-mono">
-                {instance.walletAddress ?? (
+                {instance.solanaWalletAddress ?? (
                   <span className="text-muted-foreground italic">Pending callback</span>
                 )}
+              </dd>
+              <dt className="text-muted-foreground">SATI Agent ID</dt>
+              <dd className="font-mono break-all">
+                {instance.agentId ?? <span className="text-muted-foreground italic">Pending publish</span>}
               </dd>
               <dt className="text-muted-foreground">Created</dt>
               <dd title={formatDate(instance.createdAt)}>{relativeTime(instance.createdAt)}</dd>

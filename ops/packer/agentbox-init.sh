@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs on first boot of each AgentBox instance (triggered by cloud-init).
-# Uses preloaded OpenClaw, installs ClawRouter, generates a wallet, configures
+# Uses preloaded OpenClaw, creates Solana/SATI identity on devnet, configures
 # the gateway, and calls back to the AgentBox API with instance credentials.
 #
 # The backend's Hetzner provisioning code passes cloud-init user_data that
@@ -56,45 +56,36 @@ su - openclaw -c "openclaw onboard \
   --skip-skills \
   --skip-health"
 
-# --- Install ClawRouter ---
+# --- Create Solana wallet + SATI identity (devnet) ---
 #
-# Uses the official update script which injects auth profiles, refreshes
-# the model catalog (30+ models), and handles reinstall logic.
-# The bare 'openclaw plugins install' only unpacks the npm package without this setup.
-# See: https://github.com/BlockRunAI/ClawRouter/blob/main/scripts/reinstall.sh
+# We create the Solana keypair and publish agent identity on first boot.
+# This replaces prior ClawRouter/EVM wallet provisioning.
 
-echo "Installing ClawRouter..."
-su - openclaw -c "curl -fsSL https://blockrun.ai/ClawRouter-update | bash"
+echo "Creating Solana wallet and SATI agent identity..."
+IDENTITY_DIR="/home/openclaw/agent-identity"
+mkdir -p "$IDENTITY_DIR"
+chown -R openclaw:openclaw "$IDENTITY_DIR"
 
-# --- Generate fresh EVM wallet ---
-#
-# We pre-generate BEFORE starting the gateway so we know the address immediately
-# for the API callback. ClawRouter also auto-generates on first start if none
-# exists, but that would require waiting for the full boot cycle.
-#
-# Wallet format: raw hex private key "0x" + 64 hex chars, written to the path
-# ClawRouter checks on every start. If this file exists, the BLOCKRUN_WALLET_KEY
-# env var is completely ignored.
-# See: https://github.com/BlockRunAI/ClawRouter (src/auth.ts)
+su - openclaw -c "cd $IDENTITY_DIR && create-sati-agent init --force"
 
-echo "Generating EVM wallet..."
-WALLET_DIR="/home/openclaw/.openclaw/blockrun"
-mkdir -p "$WALLET_DIR"
+# Fill template with runtime values so publish is non-interactive and deterministic.
+# Keep services empty for now - we'll define runtime endpoints/skills later.
+su - openclaw -c "cd $IDENTITY_DIR && jq --arg host \"${INSTANCE_HOSTNAME:-}\" '
+  .name = (\"AgentBox-\" + ($host | if . == \"\" then \"instance\" else . end)) |
+  .description = \"OpenClaw instance provisioned by AgentBox\" |
+  .image = \"https://api.dicebear.com/9.x/bottts/svg?seed=agentbox\" |
+  .services = [] |
+  .supportedTrust = [\"reputation\"] |
+  .active = false |
+  .x402Support = false
+' agent-registration.json > agent-registration.json.tmp && mv agent-registration.json.tmp agent-registration.json"
 
-WALLET_JSON=$(cd /usr/local/lib/agentbox && node --input-type=module <<'NODEOF'
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-const key = generatePrivateKey();
-const account = privateKeyToAccount(key);
-console.log(JSON.stringify({ privateKey: key, address: account.address }));
-NODEOF
-)
-WALLET_KEY=$(echo "$WALLET_JSON" | jq -r '.privateKey')
-WALLET_ADDRESS=$(echo "$WALLET_JSON" | jq -r '.address')
+PUBLISH_JSON=$(su - openclaw -c "cd $IDENTITY_DIR && create-sati-agent publish --network devnet --json")
+AGENT_ID=$(echo "$PUBLISH_JSON" | jq -r '.agentId // empty')
+SOLANA_WALLET_ADDRESS=$(su - openclaw -c "solana address")
 
-echo -n "$WALLET_KEY" > "$WALLET_DIR/wallet.key"
-chmod 600 "$WALLET_DIR/wallet.key"
-chown -R openclaw:openclaw "$WALLET_DIR"
-echo "Wallet address: $WALLET_ADDRESS"
+echo "Solana wallet: $SOLANA_WALLET_ADDRESS"
+echo "SATI agent id: ${AGENT_ID:-unknown}"
 
 # --- Generate gateway auth token ---
 
@@ -103,14 +94,12 @@ echo "Gateway token generated"
 
 # --- Configure OpenClaw ---
 #
-# Set gateway.mode = "local" (required or gateway refuses to start),
-# write the gateway auth token (keeps unit file and openclaw.json in sync),
-# and lock plugins.allow to clawrouter only.
+# Set gateway.mode = "local" (required or gateway refuses to start) and
+# write the gateway auth token (keeps unit file and openclaw.json in sync).
 #
-# All three settings in one jq pass to avoid multiple file rewrites.
+# One jq pass to avoid multiple file rewrites.
 # See: https://github.com/openclaw/openclaw/issues/17191 (gateway.mode required)
 # See: https://github.com/openclaw/openclaw/issues/17223 (token mismatch footgun)
-# See: https://github.com/openclaw/openclaw/issues/20116 (no plugin signature verification)
 
 OPENCLAW_CONFIG="/home/openclaw/.openclaw/openclaw.json"
 if [[ ! -f "$OPENCLAW_CONFIG" ]]; then
@@ -120,12 +109,11 @@ fi
 
 jq --arg token "$GATEWAY_TOKEN" '
   .gateway.mode = "local" |
-  .gateway.auth.token = $token |
-  .plugins.allow = ["clawrouter"]
+  .gateway.auth.token = $token
 ' "$OPENCLAW_CONFIG" > "${OPENCLAW_CONFIG}.tmp"
 mv "${OPENCLAW_CONFIG}.tmp" "$OPENCLAW_CONFIG"
 chown openclaw:openclaw "$OPENCLAW_CONFIG"
-echo "OpenClaw config: gateway.mode=local, token set, plugins.allow=[clawrouter]"
+echo "OpenClaw config: gateway.mode=local, token set"
 
 # --- Enable silent device pairing ---
 #
@@ -227,15 +215,14 @@ systemctl start agentbox-auto-pair
 
 # --- Wait for gateway to become healthy ---
 #
-# FIX: The OpenClaw gateway has NO plain HTTP /health endpoint - it's WebSocket
-# RPC requiring auth. We check ClawRouter's proxy at :8402 instead, which has a
-# proper HTTP health endpoint returning {"status":"ok","wallet":"0x..."}.
+# OpenClaw gateway has no plain HTTP /health endpoint. Validate readiness by
+# checking service state and that port 18789 is listening on loopback.
 
-echo "Waiting for gateway and ClawRouter..."
+echo "Waiting for OpenClaw gateway..."
 HEALTHY=false
 for i in $(seq 1 30); do
-  if curl -sf http://127.0.0.1:8402/health > /dev/null 2>&1; then
-    echo "ClawRouter proxy healthy on :8402"
+  if systemctl is-active --quiet openclaw-gateway && ss -ltn '( sport = :18789 )' | grep -q 18789; then
+    echo "OpenClaw gateway healthy on :18789"
     HEALTHY=true
     break
   fi
@@ -244,10 +231,6 @@ for i in $(seq 1 30); do
   fi
   sleep 2
 done
-
-if [[ "$HEALTHY" == "true" ]]; then
-  curl -sf "http://127.0.0.1:8402/health?full=true" || true
-fi
 
 # --- ttyd web terminal ---
 
@@ -306,10 +289,11 @@ fi
 echo "Calling back to API..."
 PAYLOAD=$(jq -n \
   --argjson serverId "$SERVER_ID" \
-  --arg walletAddress "$WALLET_ADDRESS" \
+  --arg solanaWalletAddress "$SOLANA_WALLET_ADDRESS" \
   --arg gatewayToken "$GATEWAY_TOKEN" \
+  --arg agentId "$AGENT_ID" \
   --arg secret "$CALLBACK_SECRET" \
-  '{serverId: $serverId, walletAddress: $walletAddress, gatewayToken: $gatewayToken, secret: $secret}')
+  '{serverId: $serverId, solanaWalletAddress: $solanaWalletAddress, gatewayToken: $gatewayToken, agentId: $agentId, secret: $secret}')
 
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$CALLBACK_URL" \
   -H "Content-Type: application/json" \

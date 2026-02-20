@@ -9,8 +9,9 @@ export type Instance = {
   userId: string;
   status: string;
   ip: string;
-  walletAddress: string | null;
+  solanaWalletAddress: string | null;
   gatewayToken: string;
+  agentId?: string | null;
   createdAt: string;
   expiresAt: string;
 };
