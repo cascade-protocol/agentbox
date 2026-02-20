@@ -1,3 +1,4 @@
+import { useWalletConnection } from "@solana/react-hooks";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Activity,
@@ -27,8 +28,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../components/ui/dialog";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
 import { api, type Instance, instanceUrls } from "../lib/api";
 import { formatDate, relativeTime } from "../lib/format";
 
@@ -144,13 +143,13 @@ function EditableName({
 }
 
 function Home() {
+  const { wallet } = useWalletConnection();
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [createUserId, setCreateUserId] = useState("");
   const [creating, setCreating] = useState(false);
 
   const [confirmAction, setConfirmAction] = useState<{
@@ -183,13 +182,11 @@ function Home() {
     return () => clearInterval(interval);
   }, [fetchInstances]);
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!createUserId.trim()) return;
+  async function handleCreate() {
+    if (!wallet) return;
     setCreating(true);
     try {
-      await api.instances.create(createUserId.trim());
-      setCreateUserId("");
+      await api.instances.create(wallet);
       setCreateOpen(false);
       await fetchInstances();
     } catch (err) {
@@ -262,35 +259,21 @@ function Home() {
                 <DialogHeader>
                   <DialogTitle>Create Instance</DialogTitle>
                   <DialogDescription>
-                    Provision a new AgentBox VM with OpenClaw and ClawRouter pre-installed.
+                    Provision a new AgentBox VM for $1 USDC (30 days). Your wallet will be prompted
+                    to approve the payment.
                   </DialogDescription>
                 </DialogHeader>
-                <form onSubmit={handleCreate} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="userId">User ID</Label>
-                    <Input
-                      id="userId"
-                      placeholder="telegram:alice"
-                      value={createUserId}
-                      onChange={(e) => setCreateUserId(e.target.value)}
-                      disabled={creating}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Format: platform:username (e.g. telegram:alice)
-                    </p>
-                  </div>
-                  <DialogFooter>
-                    <DialogClose asChild>
-                      <Button type="button" variant="outline" disabled={creating}>
-                        Cancel
-                      </Button>
-                    </DialogClose>
-                    <Button type="submit" disabled={creating || !createUserId.trim()}>
-                      {creating && <Loader2 className="h-4 w-4 animate-spin" />}
-                      {creating ? "Creating..." : "Create"}
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button type="button" variant="outline" disabled={creating}>
+                      Cancel
                     </Button>
-                  </DialogFooter>
-                </form>
+                  </DialogClose>
+                  <Button onClick={handleCreate} disabled={creating || !wallet}>
+                    {creating && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {creating ? "Creating..." : "Pay $1 & Create"}
+                  </Button>
+                </DialogFooter>
               </DialogContent>
             </Dialog>
           </div>

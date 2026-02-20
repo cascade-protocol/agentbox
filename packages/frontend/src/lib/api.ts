@@ -1,3 +1,8 @@
+import type { WalletSession } from "@solana/client";
+import { createWalletTransactionSigner } from "@solana/client";
+import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
+import { ExactSvmScheme } from "@x402/svm/exact/client";
+
 export type Instance = {
   id: number;
   name: string;
@@ -25,6 +30,8 @@ export type InstanceHealth = {
 };
 
 const INSTANCE_BASE_DOMAIN = "agentbox.cascade.fyi";
+const HELIUS_KEY = import.meta.env.VITE_HELIUS_API_KEY ?? "";
+const RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_KEY}`;
 
 export function instanceUrls(name: string, gatewayToken?: string) {
   const host = `${name}.${INSTANCE_BASE_DOMAIN}`;
@@ -55,13 +62,19 @@ export function clearToken() {
   localStorage.removeItem("agentbox-token");
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+function authHeaders(): Record<string, string> {
   const token = getToken();
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api${path}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...authHeaders(),
       ...options.headers,
     },
   });
@@ -74,15 +87,30 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
+function createPaymentFetch(session: WalletSession) {
+  const { signer } = createWalletTransactionSigner(session);
+  const client = new x402Client();
+  client.register("solana:*", new ExactSvmScheme(signer, { rpcUrl: RPC_URL }));
+  return wrapFetchWithPayment(fetch, client);
+}
+
 export const api = {
   instances: {
     list: () => request<{ instances: Instance[] }>("/instances"),
     get: (id: number) => request<Instance>(`/instances/${id}`),
-    create: (userId: string) =>
-      request<Instance>("/instances", {
+    create: async (session: WalletSession) => {
+      const payFetch = createPaymentFetch(session);
+      const res = await payFetch("/api/instances", {
         method: "POST",
-        body: JSON.stringify({ userId }),
-      }),
+        headers: authHeaders(),
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }));
+        throw new ApiError(res.status, body.error ?? "Request failed");
+      }
+      return res.json() as Promise<Instance>;
+    },
     update: (id: number, data: { name: string }) =>
       request<Instance>(`/instances/${id}`, {
         method: "PATCH",

@@ -20,8 +20,12 @@ export const instanceSchema = z.object({
   expiresAt: z.string().datetime(),
 });
 
-export const createInstanceInputSchema = z.object({
-  userId: z.string(),
+export const createInstanceInputSchema = z.object({});
+
+export const authInputSchema = z.object({
+  walletAddress: z.string(),
+  signature: z.string(),
+  timestamp: z.number(),
 });
 
 export const callbackInputSchema = z.object({
@@ -47,3 +51,4 @@ export type Instance = z.infer<typeof instanceSchema>;
 export type InstanceAccess = z.infer<typeof instanceAccessSchema>;
 export type CreateInstanceInput = z.infer<typeof createInstanceInputSchema>;
 export type CallbackInput = z.infer<typeof callbackInputSchema>;
+export type AuthInput = z.infer<typeof authInputSchema>;

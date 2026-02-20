@@ -8,6 +8,13 @@
       "when": 1771431947773,
       "tag": "0000_breezy_agent_zero",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1771551364391,
+      "tag": "0001_youthful_gauntlet",
+      "breakpoints": true
     }
   ]
 }

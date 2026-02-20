@@ -1,26 +1,59 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, webcrypto } from "node:crypto";
+import * as ed from "@noble/ed25519";
+import bs58 from "bs58";
 import { eq, lte } from "drizzle-orm";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
+import { jwtVerify, SignJWT } from "jose";
 import { db } from "../db/connection";
 import { instances } from "../db/schema";
 import * as cloudflare from "../lib/cloudflare";
 import { env } from "../lib/env";
 import * as hetzner from "../lib/hetzner";
-import {
-  callbackInputSchema,
-  createInstanceInputSchema,
-  updateInstanceInputSchema,
-} from "../lib/schemas";
+import { authInputSchema, callbackInputSchema, updateInstanceInputSchema } from "../lib/schemas";
 
-export const instanceRoutes = new Hono();
+// @noble/ed25519 v2 requires SHA-512 configuration
+if (!ed.etc.sha512Async) {
+  ed.etc.sha512Async = async (...msgs: Uint8Array[]) => {
+    const merged = ed.etc.concatBytes(...msgs);
+    return new Uint8Array(await webcrypto.subtle.digest("SHA-512", merged));
+  };
+}
 
-const auth = createMiddleware(async (c, next) => {
-  if (c.req.header("Authorization") !== `Bearer ${env.OPERATOR_TOKEN}`) {
+type AppEnv = { Variables: { walletAddress: string } };
+
+export const instanceRoutes = new Hono<AppEnv>();
+
+const auth = createMiddleware<AppEnv>(async (c, next) => {
+  const header = c.req.header("Authorization");
+  if (!header?.startsWith("Bearer ")) {
     return c.json({ error: "Unauthorized" }, 401);
   }
-  await next();
+  const token = header.slice(7);
+
+  // Operator token (dev/admin bypass)
+  if (token === env.OPERATOR_TOKEN) {
+    c.set("walletAddress", "operator");
+    return next();
+  }
+
+  // JWT wallet auth
+  try {
+    const secret = new TextEncoder().encode(env.JWT_SECRET);
+    const { payload } = await jwtVerify(token, secret);
+    if (typeof payload.sub !== "string") {
+      return c.json({ error: "Invalid token" }, 401);
+    }
+    c.set("walletAddress", payload.sub);
+    return next();
+  } catch {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
 });
+
+function isOwner(row: typeof instances.$inferSelect, wallet: string): boolean {
+  return wallet === "operator" || row.userId === wallet;
+}
 
 function toInstanceResponse(row: typeof instances.$inferSelect) {
   return {
@@ -37,9 +70,6 @@ function toInstanceResponse(row: typeof instances.$inferSelect) {
 }
 
 function buildUserData(opts: { callbackUrl: string; secret: string; hostname: string }): string {
-  // cloud-init user_data that writes /etc/agentbox/callback.env and runs
-  // the golden image init script. SERVER_ID comes from Hetzner metadata
-  // since it's not known at user_data creation time.
   return [
     "#!/bin/bash",
     "set -euo pipefail",
@@ -60,21 +90,53 @@ function buildUserData(opts: { callbackUrl: string; secret: string; hostname: st
   ].join("\n");
 }
 
-// POST /api/instances - Create instance
-instanceRoutes.post("/instances", auth, async (c) => {
+// POST /api/instances/auth - Wallet sign-in (no bearer auth)
+instanceRoutes.post("/instances/auth", async (c) => {
   const body = await c.req.json();
-  const input = createInstanceInputSchema.safeParse(body);
+  const input = authInputSchema.safeParse(body);
   if (!input.success) {
     return c.json({ error: "Invalid input", details: input.error.issues }, 400);
   }
+
+  const age = Date.now() - input.data.timestamp;
+  if (age > 5 * 60 * 1000 || age < -60_000) {
+    return c.json({ error: "Timestamp expired" }, 400);
+  }
+
+  const message = `Sign in to AgentBox\nTimestamp: ${input.data.timestamp}`;
+  const messageBytes = new TextEncoder().encode(message);
+  const signatureBytes = Buffer.from(input.data.signature, "base64");
+  const publicKeyBytes = bs58.decode(input.data.walletAddress);
+
+  const valid = await ed.verifyAsync(signatureBytes, messageBytes, publicKeyBytes);
+  if (!valid) {
+    return c.json({ error: "Invalid signature" }, 401);
+  }
+
+  const secret = new TextEncoder().encode(env.JWT_SECRET);
+  const token = await new SignJWT({ sub: input.data.walletAddress })
+    .setProtectedHeader({ alg: "HS256" })
+    .setExpirationTime("24h")
+    .setIssuedAt()
+    .sign(secret);
+
+  return c.json({ token });
+});
+
+// POST /api/instances - Create instance (wallet from JWT used as userId)
+instanceRoutes.post("/instances", auth, async (c) => {
+  const wallet = c.get("walletAddress");
 
   if (!env.HETZNER_API_TOKEN || !env.HETZNER_SNAPSHOT_ID) {
     return c.json({ error: "Hetzner is not configured" }, 503);
   }
 
   const shortId = randomUUID().slice(0, 8);
-  const sanitizedUserId = input.data.userId.replace(/[^a-z0-9-]/gi, "-").toLowerCase();
-  const name = `agentbox-${sanitizedUserId}-${shortId}`;
+  const sanitizedWallet = wallet
+    .replace(/[^a-z0-9-]/gi, "-")
+    .toLowerCase()
+    .slice(0, 12);
+  const name = `agentbox-${sanitizedWallet}-${shortId}`;
 
   const callbackUrl = `${env.API_BASE_URL}/api/instances/callback`;
   const hostname = `${name}.${env.INSTANCE_BASE_DOMAIN}`;
@@ -92,7 +154,6 @@ instanceRoutes.post("/instances", auth, async (c) => {
     return c.json({ error: "Failed to provision server" }, 502);
   }
 
-  // Create DNS record: {name}.agentbox.cascade.fyi -> VM IP
   if (env.CF_API_TOKEN && env.CF_ZONE_ID) {
     try {
       await cloudflare.createDnsRecord(hostname, result.server.public_net.ipv4.ip);
@@ -109,10 +170,10 @@ instanceRoutes.post("/instances", auth, async (c) => {
     .values({
       id: result.server.id,
       name,
-      userId: input.data.userId,
+      userId: wallet,
       status: "provisioning",
       ip: result.server.public_net.ipv4.ip,
-      gatewayToken: "pending", // real token set by VM callback
+      gatewayToken: "pending",
       rootPassword: result.root_password,
       expiresAt,
     })
@@ -121,23 +182,29 @@ instanceRoutes.post("/instances", auth, async (c) => {
   return c.json(toInstanceResponse(row), 201);
 });
 
-// GET /api/instances - List all instances
+// GET /api/instances - List instances (wallet-scoped, operator sees all)
 instanceRoutes.get("/instances", auth, async (c) => {
-  const rows = await db.select().from(instances);
+  const wallet = c.get("walletAddress");
+  const rows =
+    wallet === "operator"
+      ? await db.select().from(instances)
+      : await db.select().from(instances).where(eq(instances.userId, wallet));
   return c.json({ instances: rows.map(toInstanceResponse) });
 });
 
-// GET /api/instances/expiring - List instances expiring within N days
+// GET /api/instances/expiring - List expiring instances (wallet-scoped)
 instanceRoutes.get("/instances/expiring", auth, async (c) => {
+  const wallet = c.get("walletAddress");
   const days = Number(c.req.query("days") ?? 3);
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() + days);
 
   const rows = await db.select().from(instances).where(lte(instances.expiresAt, cutoff));
-  return c.json({ instances: rows.map(toInstanceResponse) });
+  const filtered = wallet === "operator" ? rows : rows.filter((r) => r.userId === wallet);
+  return c.json({ instances: filtered.map(toInstanceResponse) });
 });
 
-// POST /api/instances/callback - VM cloud-init callback (validates secret, no bearer auth)
+// POST /api/instances/callback - VM cloud-init callback (secret-based, no bearer auth)
 instanceRoutes.post("/instances/callback", async (c) => {
   const body = await c.req.json();
   const input = callbackInputSchema.safeParse(body);
@@ -175,15 +242,15 @@ instanceRoutes.patch("/instances/:id", auth, async (c) => {
     return c.json({ error: "Invalid input", details: input.error.issues }, 400);
   }
 
+  const [existing] = await db.select().from(instances).where(eq(instances.id, id));
+  if (!existing) return c.json({ error: "Instance not found" }, 404);
+  if (!isOwner(existing, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
+
   const [row] = await db
     .update(instances)
     .set({ name: input.data.name })
     .where(eq(instances.id, id))
     .returning();
-
-  if (!row) {
-    return c.json({ error: "Instance not found" }, 404);
-  }
 
   return c.json(toInstanceResponse(row));
 });
@@ -192,19 +259,17 @@ instanceRoutes.patch("/instances/:id", auth, async (c) => {
 instanceRoutes.get("/instances/:id", auth, async (c) => {
   const id = Number(c.req.param("id"));
   const [row] = await db.select().from(instances).where(eq(instances.id, id));
-  if (!row) {
-    return c.json({ error: "Instance not found" }, 404);
-  }
+  if (!row) return c.json({ error: "Instance not found" }, 404);
+  if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
   return c.json(toInstanceResponse(row));
 });
 
-// DELETE /api/instances/:id - Delete instance (tears down VM)
+// DELETE /api/instances/:id - Delete instance
 instanceRoutes.delete("/instances/:id", auth, async (c) => {
   const id = Number(c.req.param("id"));
   const [row] = await db.select().from(instances).where(eq(instances.id, id));
-  if (!row) {
-    return c.json({ error: "Instance not found" }, 404);
-  }
+  if (!row) return c.json({ error: "Instance not found" }, 404);
+  if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
   await db.update(instances).set({ status: "deleting" }).where(eq(instances.id, id));
 
@@ -214,7 +279,6 @@ instanceRoutes.delete("/instances/:id", auth, async (c) => {
     console.error(`Failed to delete Hetzner server ${id}:`, err);
   }
 
-  // Clean up DNS record
   if (env.CF_API_TOKEN && env.CF_ZONE_ID) {
     try {
       const hostname = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
@@ -232,9 +296,8 @@ instanceRoutes.delete("/instances/:id", auth, async (c) => {
 instanceRoutes.post("/instances/:id/restart", auth, async (c) => {
   const id = Number(c.req.param("id"));
   const [row] = await db.select().from(instances).where(eq(instances.id, id));
-  if (!row) {
-    return c.json({ error: "Instance not found" }, 404);
-  }
+  if (!row) return c.json({ error: "Instance not found" }, 404);
+  if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
   try {
     await hetzner.restartServer(id);
@@ -246,13 +309,12 @@ instanceRoutes.post("/instances/:id/restart", auth, async (c) => {
   return c.json({ ok: true });
 });
 
-// POST /api/instances/:id/extend - Extend expiry 30 days
+// POST /api/instances/:id/extend - Extend expiry
 instanceRoutes.post("/instances/:id/extend", auth, async (c) => {
   const id = Number(c.req.param("id"));
   const [row] = await db.select().from(instances).where(eq(instances.id, id));
-  if (!row) {
-    return c.json({ error: "Instance not found" }, 404);
-  }
+  if (!row) return c.json({ error: "Instance not found" }, 404);
+  if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
   const newExpiry = new Date(row.expiresAt);
   newExpiry.setDate(newExpiry.getDate() + 30);
@@ -270,9 +332,8 @@ instanceRoutes.post("/instances/:id/extend", auth, async (c) => {
 instanceRoutes.get("/instances/:id/access", auth, async (c) => {
   const id = Number(c.req.param("id"));
   const [row] = await db.select().from(instances).where(eq(instances.id, id));
-  if (!row) {
-    return c.json({ error: "Instance not found" }, 404);
-  }
+  if (!row) return c.json({ error: "Instance not found" }, 404);
+  if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
   const instanceHost = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
   return c.json({
@@ -288,9 +349,8 @@ instanceRoutes.get("/instances/:id/access", auth, async (c) => {
 instanceRoutes.get("/instances/:id/health", auth, async (c) => {
   const id = Number(c.req.param("id"));
   const [row] = await db.select().from(instances).where(eq(instances.id, id));
-  if (!row) {
-    return c.json({ error: "Instance not found" }, 404);
-  }
+  if (!row) return c.json({ error: "Instance not found" }, 404);
+  if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
   let hetznerStatus = "unknown";
   try {
