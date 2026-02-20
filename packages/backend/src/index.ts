@@ -24,7 +24,12 @@ app.use(
   "/*",
   cors({
     origin: env.CORS_ORIGIN === "*" ? "*" : env.CORS_ORIGIN.split(",").map((o) => o.trim()),
-    allowHeaders: ["Content-Type", "Authorization", "PAYMENT-SIGNATURE"],
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "PAYMENT-SIGNATURE",
+      "Access-Control-Expose-Headers",
+    ],
     exposeHeaders: ["PAYMENT-REQUIRED", "PAYMENT-RESPONSE"],
   }),
 );
