@@ -67,7 +67,8 @@ export async function createServer(name: string, userData: string): Promise<Crea
     const body = await res.text();
     const isUnavailable = res.status === 412 && body.includes("resource_unavailable");
     if (!isUnavailable) {
-      throw new Error(`Hetzner create server failed (${res.status}): ${body}`);
+      console.error(`Hetzner create server failed (${res.status}):`, body);
+      throw new Error(`Hetzner create server failed (${res.status})`);
     }
     console.log(`Hetzner: ${location} unavailable, trying next location...`);
   }
@@ -84,7 +85,8 @@ export async function getServer(id: number): Promise<GetServerResponse> {
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Hetzner get server failed (${res.status}): ${body}`);
+    console.error(`Hetzner get server failed (${res.status}):`, body);
+    throw new Error(`Hetzner get server failed (${res.status})`);
   }
 
   return (await res.json()) as GetServerResponse;
@@ -98,7 +100,8 @@ export async function deleteServer(id: number): Promise<ActionResponse> {
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Hetzner delete server failed (${res.status}): ${body}`);
+    console.error(`Hetzner delete server failed (${res.status}):`, body);
+    throw new Error(`Hetzner delete server failed (${res.status})`);
   }
 
   return (await res.json()) as ActionResponse;
@@ -112,7 +115,8 @@ export async function restartServer(id: number): Promise<ActionResponse> {
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Hetzner restart server failed (${res.status}): ${body}`);
+    console.error(`Hetzner restart server failed (${res.status}):`, body);
+    throw new Error(`Hetzner restart server failed (${res.status})`);
   }
 
   return (await res.json()) as ActionResponse;

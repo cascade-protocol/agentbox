@@ -1,5 +1,4 @@
-import type { WalletSession } from "@solana/client";
-import { createWalletTransactionSigner } from "@solana/client";
+import type { TransactionSigner } from "@solana/kit";
 import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import { ExactSvmScheme } from "@x402/svm/exact/client";
 import { toast } from "sonner";
@@ -11,7 +10,8 @@ export type Instance = {
   status: string;
   ip: string;
   solanaWalletAddress: string | null;
-  gatewayToken: string;
+  gatewayToken?: string;
+  terminalToken?: string | null;
   agentId?: string | null;
   provisioningStep?: string | null;
   createdAt: string;
@@ -32,16 +32,17 @@ export type InstanceHealth = {
   callbackReceived: boolean;
 };
 
-const API_URL = import.meta.env.VITE_API_URL ?? "";
+export const API_URL = import.meta.env.VITE_API_URL ?? "";
 const INSTANCE_BASE_DOMAIN = import.meta.env.VITE_INSTANCE_BASE_DOMAIN ?? "agentbox.fyi";
 const HELIUS_KEY = import.meta.env.VITE_HELIUS_API_KEY ?? "";
 const RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_KEY}`;
 
-export function instanceUrls(name: string, gatewayToken?: string) {
+export function instanceUrls(name: string, gatewayToken?: string, terminalToken?: string | null) {
   const host = `${name}.${INSTANCE_BASE_DOMAIN}`;
+  const terminalPath = terminalToken ? `/terminal/${terminalToken}/` : "/terminal/";
   return {
-    chat: gatewayToken ? `https://${host}/overview?token=${gatewayToken}` : `https://${host}`,
-    terminal: `https://${host}/terminal/`,
+    chat: gatewayToken ? `https://${host}/overview#token=${gatewayToken}` : `https://${host}`,
+    terminal: `https://${host}${terminalPath}`,
   };
 }
 
@@ -116,8 +117,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
-function createPaymentFetch(session: WalletSession) {
-  const { signer } = createWalletTransactionSigner(session);
+function createPaymentFetch(signer: TransactionSigner) {
   const client = new x402Client();
   client.register("solana:*", new ExactSvmScheme(signer, { rpcUrl: RPC_URL }));
   return wrapFetchWithPayment(fetch, client);
@@ -128,8 +128,8 @@ export const api = {
     list: (all?: boolean) =>
       request<{ instances: Instance[] }>(`/instances${all ? "?all=true" : ""}`),
     get: (id: number) => request<Instance>(`/instances/${id}`),
-    create: async (session: WalletSession) => {
-      const payFetch = createPaymentFetch(session);
+    create: async (signer: TransactionSigner) => {
+      const payFetch = createPaymentFetch(signer);
       const res = await payFetch(`${API_URL}/api/instances`, {
         method: "POST",
         headers: authHeaders(),

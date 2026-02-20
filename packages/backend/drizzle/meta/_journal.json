@@ -29,6 +29,13 @@
       "when": 1771608000000,
       "tag": "0003_provisioning_step",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1771700000000,
+      "tag": "0004_instance_tokens",
+      "breakpoints": true
     }
   ]
 }

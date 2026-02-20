@@ -18,6 +18,7 @@ export const instanceSchema = z.object({
   ip: z.string(),
   solanaWalletAddress: z.string().nullable(),
   gatewayToken: z.string(),
+  terminalToken: z.string().nullable().optional(),
   agentId: z.string().nullable().optional(),
   provisioningStep: z.string().nullable().optional(),
   createdAt: z.string().datetime(),
@@ -27,23 +28,23 @@ export const instanceSchema = z.object({
 export const createInstanceInputSchema = z.object({});
 
 export const authInputSchema = z.object({
-  solanaWalletAddress: z.string(),
-  signature: z.string(),
+  solanaWalletAddress: z.string().min(32).max(44),
+  signature: z.string().min(1).max(256),
   timestamp: z.number(),
 });
 
 export const callbackInputSchema = z.object({
   serverId: z.number(),
-  solanaWalletAddress: z.string(),
-  gatewayToken: z.string(),
-  agentId: z.string().optional(),
+  solanaWalletAddress: z.string().min(32).max(44),
+  gatewayToken: z.string().min(1).max(256),
+  agentId: z.string().max(256).optional(),
   provisioningStep: provisioningStepSchema.optional(),
-  secret: z.string(),
+  secret: z.string().min(1).max(256),
 });
 
 export const provisioningUpdateInputSchema = z.object({
   serverId: z.number(),
-  secret: z.string(),
+  secret: z.string().min(1).max(256),
   step: provisioningStepSchema,
 });
 

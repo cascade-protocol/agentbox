@@ -1,13 +1,15 @@
-import { useWalletConnection } from "@solana/react-hooks";
+import type { SolanaSignMessageFeature } from "@solana/wallet-standard-features";
 import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
+import { getWalletAccountFeature } from "@wallet-standard/react";
 import { BadgeCheck, Coins, Loader2, LogOut, ShieldCheck, Wallet } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ErrorBoundary } from "../components/error-boundary";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Toaster } from "../components/ui/sonner";
-import { clearToken, getToken, setIsAdmin, setToken } from "../lib/api";
+import { API_URL, clearToken, getToken, setIsAdmin, setToken } from "../lib/api";
 import { truncateAddress } from "../lib/format";
+import { type UiWalletAccount, useWallet } from "../lib/wallet";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -16,29 +18,31 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   const [token, setTokenState] = useState(() => getToken());
-  const { connectors, connect, disconnect, wallet, connected } = useWalletConnection();
+  const { wallets, wallet, account, connected, connect, disconnect } = useWallet();
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const signIn = useCallback(async (w: NonNullable<typeof wallet>) => {
+  const signIn = useCallback(async (acct: UiWalletAccount) => {
     setSigningIn(true);
     setError(null);
     try {
       const timestamp = Date.now();
       const message = `Sign in to AgentBox\nTimestamp: ${timestamp}`;
       const encoded = new TextEncoder().encode(message);
-      if (!w.signMessage) {
-        throw new Error("Wallet does not support message signing");
-      }
-      const sigBytes = await w.signMessage(encoded);
-      const signature = btoa(String.fromCharCode(...sigBytes));
 
-      const res = await fetch("/api/instances/auth", {
+      const feature = getWalletAccountFeature(
+        acct,
+        "solana:signMessage",
+      ) as SolanaSignMessageFeature["solana:signMessage"];
+      const [{ signature }] = await feature.signMessage({ account: acct, message: encoded });
+      const sig = btoa(String.fromCharCode(...new Uint8Array(signature)));
+
+      const res = await fetch(`${API_URL}/api/instances/auth`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          solanaWalletAddress: w.account.address,
-          signature,
+          solanaWalletAddress: acct.address,
+          signature: sig,
           timestamp,
         }),
       });
@@ -60,10 +64,10 @@ function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (connected && wallet && !getToken()) {
-      signIn(wallet);
+    if (connected && account && !getToken()) {
+      signIn(account);
     }
-  }, [connected, wallet, signIn]);
+  }, [connected, account, signIn]);
 
   if (!token) {
     return (
@@ -95,10 +99,10 @@ function RootLayout() {
                 Signing in...
               </Button>
             ) : (
-              connectors.map((c) => (
-                <Button key={c.id} onClick={() => connect(c.id)} variant="outline">
+              wallets.map((w) => (
+                <Button key={w.name} onClick={() => connect(w)} variant="outline">
                   <Wallet className="size-4" />
-                  {c.name}
+                  {w.name}
                 </Button>
               ))
             )}
@@ -120,9 +124,9 @@ function RootLayout() {
             AgentBox
           </Link>
           <div className="flex items-center gap-3">
-            {wallet && (
+            {wallet && account && (
               <span className="font-mono text-sm text-muted-foreground">
-                {truncateAddress(wallet.account.address)}
+                {truncateAddress(account.address)}
               </span>
             )}
             <button

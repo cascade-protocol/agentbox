@@ -35,7 +35,6 @@
   3. `.dark {}` - dark mode CSS variable values (OKLCH) - MUST exist alongside `:root`
 - Dark mode is activated by `class="dark"` on `<html>` in `index.html` and the custom variant `@custom-variant dark (&:is(.dark *))` in app.css
 - When adding new shadcn components or modifying theme colors, update ALL three layers
-- Reference implementation: `~/pj/sati/apps/dashboard/src/react-app/index.css` - keep token parity with it
 - `components.json` configures shadcn generation: style "new-york", baseColor "slate", cssVariables true
 
 ## Product
@@ -45,15 +44,16 @@
 
 ## VM Golden Image (Packer)
 - Config: `ops/packer/` - `agentbox.pkr.hcl`, `setup.sh` (build-time), `agentbox-init.sh` (boot-time)
-- Base: `ubuntu-24.04`, built on cpx42 (fast compile), snapshotted for cx23 (40GB disk)
+- Base: `ubuntu-24.04`, built on cpx42 (fast compile), snapshotted for cx33 (80GB disk)
 - Pre-installed: Node.js 24, OpenClaw (npm global + native modules), Caddy, ttyd, Solana CLI, create-sati-agent, build-essential/cmake/python3 (for node-gyp)
 - Boot flow: cloud-init writes `/etc/agentbox/callback.env` -> runs `agentbox-init.sh` -> onboards OpenClaw, creates wallet/SATI identity, starts services, callbacks to API
-- Services on VM: `openclaw-gateway` (:18789), `ttyd` (:7681), `caddy` (HTTPS :443), `agentbox-auto-pair`
+- Services on VM: `openclaw-gateway` (:18789), `ttyd` (:7681), `caddy` (HTTPS :443)
 
 ## Backend Provisioning
 - `POST /api/instances` -> Hetzner server from snapshot + Cloudflare DNS A record
 - Cloud-init user_data triggers `agentbox-init.sh` on first boot
-- VM calls back `POST /api/instances/callback` with wallet, token, agentId
+- VM calls back `POST /api/instances/callback` with wallet, token, agentId (authenticated by per-instance `callbackToken`)
+- Each instance gets unique `callbackToken` (for VM-to-API auth) and `terminalToken` (for ttyd URL auth) - both generated at provision time
 - Hourly cleanup deletes expired instances (Hetzner + Cloudflare)
 - `buildUserData()` in `instances.ts` and `agentbox-init.sh` MUST stay in sync - the env vars written by cloud-init user_data must match what the init script sources from `/etc/agentbox/callback.env`
 
@@ -61,6 +61,18 @@
 - Uses `set -euo pipefail` - any command that fails kills the entire script and the VM never calls back
 - New commands that can fail non-critically MUST use `|| true` or explicit error handling
 - Shell variables (`$foo`) inside double-quoted heredocs/strings are expanded by bash - use `\$foo` when the variable is meant for jq, awk, or other tools
+
+## Security - Public Repository
+- NEVER commit IPs, hostnames, SSH configs, server credentials, or any private infrastructure details into the codebase
+- NEVER write developer machine paths, internal network info, or deployment targets into checked-in files (including CLAUDE.md)
+- This is a public repo - treat all committed content as publicly visible
+
+## Release & Deploy
+- Validate: `pnpm check` (biome + type-check)
+- Commit: conventional commit on `main`
+- Push: `git push`
+- Deploy: `just deploy` (see `justfile` for details)
+- Full sequence: `pnpm check && git add ... && git commit && git push && just deploy`
 
 ## Hetzner Operations
 - Use `hcloud server ssh <server-name> '<command>'` to SSH into instances - never raw `ssh root@<ip>` (avoids known_hosts conflicts when IPs get reused across VMs)

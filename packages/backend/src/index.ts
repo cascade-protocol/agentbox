@@ -23,7 +23,7 @@ const app = new Hono();
 app.use(
   "/*",
   cors({
-    origin: "*",
+    origin: env.CORS_ORIGIN === "*" ? "*" : env.CORS_ORIGIN.split(",").map((o) => o.trim()),
     allowHeaders: ["Content-Type", "Authorization", "X-PAYMENT"],
     exposeHeaders: ["X-PAYMENT-REQUIRED", "X-PAYMENT-RESPONSE"],
   }),

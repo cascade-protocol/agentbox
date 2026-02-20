@@ -1,8 +1,8 @@
-import { randomUUID, webcrypto } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import * as ed from "@noble/ed25519";
 import bs58 from "bs58";
-import { eq, lte } from "drizzle-orm";
+import { and, eq, lte } from "drizzle-orm";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { jwtVerify, SignJWT } from "jose";
@@ -17,14 +17,6 @@ import {
   provisioningUpdateInputSchema,
   updateInstanceInputSchema,
 } from "../lib/schemas";
-
-// @noble/ed25519 v2 requires SHA-512 configuration
-if (!ed.etc.sha512Async) {
-  ed.etc.sha512Async = async (...msgs: Uint8Array[]) => {
-    const merged = ed.etc.concatBytes(...msgs);
-    return new Uint8Array(await webcrypto.subtle.digest("SHA-512", merged));
-  };
-}
 
 type AppEnv = { Variables: { walletAddress: string } };
 
@@ -65,6 +57,25 @@ function isOwner(row: typeof instances.$inferSelect, wallet: string): boolean {
   return isAdmin(wallet) || row.userId === wallet;
 }
 
+const encryptionKey = Buffer.from(env.ENCRYPTION_KEY, "hex");
+
+function encrypt(plaintext: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", encryptionKey, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
+}
+
+function decrypt(ciphertext: string): string {
+  const parts = ciphertext.split(":");
+  if (parts.length !== 3) throw new Error("Malformed ciphertext");
+  const [ivHex, tagHex, dataHex] = parts;
+  const decipher = createDecipheriv("aes-256-gcm", encryptionKey, Buffer.from(ivHex, "hex"));
+  decipher.setAuthTag(Buffer.from(tagHex, "hex"));
+  return decipher.update(dataHex, "hex", "utf8") + decipher.final("utf8");
+}
+
 function toInstanceResponse(row: typeof instances.$inferSelect) {
   return {
     id: row.id,
@@ -74,6 +85,7 @@ function toInstanceResponse(row: typeof instances.$inferSelect) {
     ip: row.ip,
     solanaWalletAddress: row.solanaWalletAddress,
     gatewayToken: row.gatewayToken,
+    terminalToken: row.terminalToken,
     agentId: row.agentId,
     provisioningStep: row.provisioningStep,
     createdAt: row.createdAt.toISOString(),
@@ -83,7 +95,8 @@ function toInstanceResponse(row: typeof instances.$inferSelect) {
 
 function buildUserData(opts: {
   callbackUrl: string;
-  secret: string;
+  callbackToken: string;
+  terminalToken: string;
   hostname: string;
   wildcardCert?: string;
   wildcardKey?: string;
@@ -97,12 +110,14 @@ function buildUserData(opts: {
     "",
     "cat > /etc/agentbox/callback.env << 'ENVEOF'",
     `CALLBACK_URL="${opts.callbackUrl}"`,
-    `CALLBACK_SECRET="${opts.secret}"`,
+    `CALLBACK_SECRET="${opts.callbackToken}"`,
+    `TERMINAL_TOKEN="${opts.terminalToken}"`,
     `INSTANCE_HOSTNAME="${opts.hostname}"`,
     "ENVEOF",
     "",
     "# SERVER_ID must be unquoted (numeric) so append outside heredoc",
     'echo "SERVER_ID=$SERVER_ID" >> /etc/agentbox/callback.env',
+    "chmod 600 /etc/agentbox/callback.env",
   ];
 
   if (opts.wildcardCert && opts.wildcardKey) {
@@ -187,9 +202,13 @@ instanceRoutes.post("/instances", auth, async (c) => {
     }
   }
 
+  const callbackToken = randomUUID();
+  const terminalToken = randomUUID();
+
   const userData = buildUserData({
     callbackUrl,
-    secret: env.CALLBACK_SECRET,
+    callbackToken,
+    terminalToken,
     hostname,
     wildcardCert,
     wildcardKey,
@@ -223,9 +242,11 @@ instanceRoutes.post("/instances", auth, async (c) => {
       status: "provisioning",
       ip: result.server.public_net.ipv4.ip,
       gatewayToken: "pending",
+      callbackToken,
+      terminalToken,
       agentId: null,
       provisioningStep: "vm_created",
-      rootPassword: result.root_password,
+      rootPassword: result.root_password ? encrypt(result.root_password) : null,
       expiresAt,
     })
     .returning();
@@ -256,7 +277,7 @@ instanceRoutes.get("/instances/expiring", auth, async (c) => {
   return c.json({ instances: filtered.map(toInstanceResponse) });
 });
 
-// POST /api/instances/callback - VM cloud-init callback (secret-based, no bearer auth)
+// POST /api/instances/callback/step - VM provisioning step update (per-instance token)
 instanceRoutes.post("/instances/callback/step", async (c) => {
   const body = await c.req.json();
   const input = provisioningUpdateInputSchema.safeParse(body);
@@ -264,16 +285,18 @@ instanceRoutes.post("/instances/callback/step", async (c) => {
     return c.json({ error: "Invalid input", details: input.error.issues }, 400);
   }
 
-  if (input.data.secret !== env.CALLBACK_SECRET) {
-    return c.json({ error: "Invalid secret" }, 403);
-  }
-
   const [row] = await db
     .update(instances)
     .set({
       provisioningStep: input.data.step,
     })
-    .where(eq(instances.id, input.data.serverId))
+    .where(
+      and(
+        eq(instances.id, input.data.serverId),
+        eq(instances.status, "provisioning"),
+        eq(instances.callbackToken, input.data.secret),
+      ),
+    )
     .returning();
 
   if (!row) {
@@ -283,16 +306,12 @@ instanceRoutes.post("/instances/callback/step", async (c) => {
   return c.json({ ok: true });
 });
 
-// POST /api/instances/callback - VM cloud-init callback (secret-based, no bearer auth)
+// POST /api/instances/callback - VM cloud-init final callback (per-instance token)
 instanceRoutes.post("/instances/callback", async (c) => {
   const body = await c.req.json();
   const input = callbackInputSchema.safeParse(body);
   if (!input.success) {
     return c.json({ error: "Invalid input", details: input.error.issues }, 400);
-  }
-
-  if (input.data.secret !== env.CALLBACK_SECRET) {
-    return c.json({ error: "Invalid secret" }, 403);
   }
 
   const [row] = await db
@@ -303,8 +322,15 @@ instanceRoutes.post("/instances/callback", async (c) => {
       agentId: input.data.agentId ?? null,
       status: "running",
       provisioningStep: null,
+      callbackToken: null,
     })
-    .where(eq(instances.id, input.data.serverId))
+    .where(
+      and(
+        eq(instances.id, input.data.serverId),
+        eq(instances.status, "provisioning"),
+        eq(instances.callbackToken, input.data.secret),
+      ),
+    )
     .returning();
 
   if (!row) {
@@ -397,8 +423,15 @@ instanceRoutes.post("/instances/:id/extend", auth, async (c) => {
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
+  const maxExpiry = new Date(row.createdAt);
+  maxExpiry.setDate(maxExpiry.getDate() + 90);
+
   const newExpiry = new Date(row.expiresAt);
   newExpiry.setDate(newExpiry.getDate() + 30);
+
+  if (newExpiry > maxExpiry) {
+    return c.json({ error: "Maximum lifetime of 90 days reached" }, 400);
+  }
 
   const [updated] = await db
     .update(instances)
@@ -417,12 +450,13 @@ instanceRoutes.get("/instances/:id/access", auth, async (c) => {
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
   const instanceHost = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
+  const terminalPath = row.terminalToken ? `/terminal/${row.terminalToken}/` : "/terminal/";
   return c.json({
     ...toInstanceResponse(row),
     ssh: `ssh root@${row.ip}`,
-    chatUrl: `https://${instanceHost}/overview?token=${row.gatewayToken}`,
-    terminalUrl: `https://${instanceHost}/terminal/`,
-    rootPassword: row.rootPassword,
+    chatUrl: `https://${instanceHost}/overview#token=${row.gatewayToken}`,
+    terminalUrl: `https://${instanceHost}${terminalPath}`,
+    rootPassword: row.rootPassword ? decrypt(row.rootPassword) : null,
   });
 });
 

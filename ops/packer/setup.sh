@@ -2,9 +2,9 @@
 # Build-time setup for the AgentBox golden image.
 # Run by Packer on a fresh Hetzner CX22 (Ubuntu 24.04), then snapshotted.
 #
-# OpenClaw is installed globally via npm so the binary is ready at boot.
-# Instance boot runs onboarding, creates Solana/SATI identity, and performs a
-# lightweight background `npm i -g openclaw@latest` without blocking access.
+# OpenClaw is installed via npm under the openclaw user so it can be
+# Gateway config, systemd units, and workspace are pre-baked here so boot
+# only needs to: generate a token, create wallet/SATI, and start services.
 #
 # Usage:
 #   cd ops/packer && packer init . && packer build .
@@ -68,15 +68,16 @@ systemctl disable caddy
 
 echo ""
 echo "==> Installing ttyd"
-TTYD_VERSION=$(curl -sf https://api.github.com/repos/tsl0922/ttyd/releases/latest | jq -r '.tag_name')
+TTYD_VERSION="1.7.7"
 ARCH=$(dpkg --print-architecture)
 case "$ARCH" in
-  amd64) TTYD_ARCH="x86_64" ;;
-  arm64) TTYD_ARCH="aarch64" ;;
+  amd64) TTYD_ARCH="x86_64"; TTYD_SHA256="8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55" ;;
+  arm64) TTYD_ARCH="aarch64"; TTYD_SHA256="b38acadd89d1d396a0f5649aa52c539edbad07f4bc7348b27b4f4b7219dd4165" ;;
   *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 curl -sLo /usr/local/bin/ttyd \
   "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.${TTYD_ARCH}"
+echo "${TTYD_SHA256}  /usr/local/bin/ttyd" | sha256sum -c -
 chmod +x /usr/local/bin/ttyd
 echo "    ttyd ${TTYD_VERSION} (${ARCH})"
 
@@ -90,17 +91,55 @@ else
   useradd -m -s /bin/bash openclaw
 fi
 
-# --- Install OpenClaw (npm global) ---
+# Configure npm per-user global directory (openclaw owns its packages, no root for npm)
+su - openclaw -c "mkdir -p /home/openclaw/.npm-global && npm config set prefix /home/openclaw/.npm-global"
+echo 'export PATH="/home/openclaw/.npm-global/bin:$PATH"' >> /home/openclaw/.profile
+
+# --- Install OpenClaw (npm, openclaw user) ---
 #
-# Pre-baked via npm so the binary is immediately available at boot.
+# Installed under openclaw's npm prefix (~/.npm-global) so the user owns its
+# packages. Symlinked to /usr/local/bin for system-wide access (systemd, init).
 # Native modules (node-pty, sharp, sqlite-vec) compile here against the
-# build-essential toolchain installed above, so boot-time updates skip rebuilds.
-# See: https://openclaw.ai/docs/install
+# build-essential toolchain installed above.
 
 echo ""
 echo "==> Installing OpenClaw via npm"
-npm install -g openclaw@latest
+su - openclaw -c "npm install -g openclaw@latest"
+ln -sf /home/openclaw/.npm-global/bin/openclaw /usr/local/bin/openclaw
 echo "    OpenClaw $(openclaw --version) at $(which openclaw)"
+
+# --- Pre-configure OpenClaw gateway ---
+#
+# Write config at build time so boot skips `openclaw onboard` entirely.
+# The gateway resolves OPENCLAW_GATEWAY_TOKEN from the environment at startup
+# (set via systemd drop-in written by agentbox-init.sh).
+# dangerouslyDisableDeviceAuth disables device pairing for Control UI - the
+# gateway token is the sole auth boundary on these single-tenant VMs.
+
+echo ""
+echo "==> Pre-configuring OpenClaw gateway"
+mkdir -p /home/openclaw/.openclaw/devices /home/openclaw/openclaw
+cat > /home/openclaw/.openclaw/openclaw.json << 'OCEOF'
+{
+  "gateway": {
+    "mode": "local",
+    "port": 18789,
+    "bind": "loopback",
+    "auth": {
+      "mode": "token"
+    },
+    "controlUi": {
+      "dangerouslyDisableDeviceAuth": true
+    }
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "/home/openclaw/openclaw"
+    }
+  }
+}
+OCEOF
+chown -R openclaw:openclaw /home/openclaw/.openclaw /home/openclaw/openclaw
 
 # --- Solana CLI + SATI identity CLI ---
 #
@@ -119,8 +158,69 @@ echo "    Solana $(solana --version)"
 
 echo ""
 echo "==> Installing create-sati-agent CLI"
-npm install -g create-sati-agent@latest
+su - openclaw -c "npm install -g create-sati-agent@latest"
+ln -sf /home/openclaw/.npm-global/bin/create-sati-agent /usr/local/bin/create-sati-agent
 echo "    create-sati-agent $(create-sati-agent --version 2>/dev/null || echo installed)"
+
+# --- Pre-install systemd services ---
+#
+# Unit files written at build time. Only the gateway token (per-instance) is
+# injected at boot via a systemd drop-in. ttyd is pre-enabled (no runtime deps).
+# Gateway is NOT pre-enabled - agentbox-init.sh enables it after writing the token.
+
+echo ""
+echo "==> Installing systemd services"
+
+OPENCLAW_BIN=$(which openclaw)
+
+# Gateway: token injected at boot via drop-in Environment= directive.
+# KillMode=process prevents child processes from blocking systemd shutdown.
+# OPENCLAW_GATEWAY_PORT env is needed because gateway.port config is IGNORED
+# at runtime - only the env var or CLI flag takes effect.
+# See: https://github.com/openclaw/openclaw/issues/7626
+cat > /etc/systemd/system/openclaw-gateway.service << EOF
+[Unit]
+Description=OpenClaw Gateway (AgentBox)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+WorkingDirectory=/home/openclaw
+ExecStart=${OPENCLAW_BIN} gateway run --port 18789 --bind loopback
+Restart=always
+RestartSec=5
+KillMode=process
+Environment=HOME=/home/openclaw
+Environment=OPENCLAW_GATEWAY_PORT=18789
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+mkdir -p /etc/systemd/system/openclaw-gateway.service.d
+
+# ttyd web terminal - pre-enabled, no runtime config needed
+cat > /etc/systemd/system/ttyd.service << 'EOF'
+[Unit]
+Description=ttyd web terminal (AgentBox)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+ExecStart=/usr/local/bin/ttyd -p 7681 -i lo -W bash
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable ttyd
 
 # --- Install agentbox-init.sh ---
 # Uploaded by Packer's file provisioner to /tmp/

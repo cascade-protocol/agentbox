@@ -2,7 +2,7 @@
   "name": "agentbox",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@9.12.2",
+  "packageManager": "pnpm@10.30.1+sha512.3590e550d5384caa39bd5c7c739f72270234b2f6059e13018f975c313b1eb9fefcc09714048765d4d9efe961382c312e624572c0420762bdc5d5940cdf9be73a",
   "scripts": {
     "check": "biome check --write && turbo type-check",
     "check:ci": "turbo type-check && biome check",
@@ -13,5 +13,10 @@
     "@biomejs/biome": "^2.4.2",
     "turbo": "^2.8.0",
     "typescript": "^5.7.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@solana/kit": "^6.0.0"
+    }
   }
 }

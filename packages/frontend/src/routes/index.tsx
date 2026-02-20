@@ -1,4 +1,4 @@
-import { useWalletConnection } from "@solana/react-hooks";
+import { useWalletAccountTransactionSigner } from "@solana/react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Activity,
@@ -42,6 +42,7 @@ import {
 import { api, getIsAdmin, type Instance, instanceUrls } from "../lib/api";
 import { formatDate, relativeTime, shortDate, truncateAddress } from "../lib/format";
 import { getProvisioningStepLabel, getStatusVariant } from "../lib/status";
+import { type UiWalletAccount, useWallet } from "../lib/wallet";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -215,8 +216,68 @@ function HomeSkeleton() {
   );
 }
 
+function CreateInstanceDialog({
+  account,
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  account: UiWalletAccount;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreated: () => Promise<void>;
+}) {
+  const signer = useWalletAccountTransactionSigner(account, "solana:mainnet");
+  const [creating, setCreating] = useState(false);
+
+  async function handleCreate() {
+    setCreating(true);
+    try {
+      await api.instances.create(signer);
+      toast.success("Instance created - provisioning will take ~2 minutes");
+      onOpenChange(false);
+      await onCreated();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Create failed");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button size="sm">
+          <Plus className="size-4" />
+          Create Instance
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create Instance</DialogTitle>
+          <DialogDescription>
+            Provision a new AgentBox VM for $1 USDC (30 days). Your wallet will be prompted to
+            approve the payment.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="outline" disabled={creating}>
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button onClick={() => void handleCreate()} disabled={creating}>
+            {creating && <Loader2 className="size-4 animate-spin" />}
+            {creating ? "Creating..." : "Pay $1 & Create"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function Home() {
-  const { wallet } = useWalletConnection();
+  const { account } = useWallet();
   const admin = getIsAdmin();
   const [showAll, setShowAll] = useState(false);
   const [instances, setInstances] = useState<Instance[]>([]);
@@ -225,7 +286,6 @@ function Home() {
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
 
   const [confirmAction, setConfirmAction] = useState<{
     type: "restart" | "delete";
@@ -268,24 +328,6 @@ function Home() {
     }, intervalMs);
     return () => clearInterval(interval);
   }, [fetchInstances, hasProvisioning]);
-
-  async function handleCreate() {
-    if (!wallet) {
-      return;
-    }
-
-    setCreating(true);
-    try {
-      await api.instances.create(wallet);
-      toast.success("Instance created - provisioning will take ~2 minutes");
-      setCreateOpen(false);
-      await fetchInstances();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Create failed");
-    } finally {
-      setCreating(false);
-    }
-  }
 
   async function handleRename(id: number, name: string) {
     try {
@@ -368,34 +410,19 @@ function Home() {
               <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
               Refresh
             </Button>
-            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm">
-                  <Plus className="size-4" />
-                  Create Instance
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Create Instance</DialogTitle>
-                  <DialogDescription>
-                    Provision a new AgentBox VM for $1 USDC (30 days). Your wallet will be prompted
-                    to approve the payment.
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <DialogClose asChild>
-                    <Button type="button" variant="outline" disabled={creating}>
-                      Cancel
-                    </Button>
-                  </DialogClose>
-                  <Button onClick={() => void handleCreate()} disabled={creating || !wallet}>
-                    {creating && <Loader2 className="size-4 animate-spin" />}
-                    {creating ? "Creating..." : "Pay $1 & Create"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            {account ? (
+              <CreateInstanceDialog
+                account={account}
+                open={createOpen}
+                onOpenChange={setCreateOpen}
+                onCreated={() => fetchInstances()}
+              />
+            ) : (
+              <Button size="sm" disabled>
+                <Plus className="size-4" />
+                Create Instance
+              </Button>
+            )}
           </div>
         </div>
 
@@ -441,7 +468,7 @@ function Home() {
                 <p className="mt-1 text-sm text-muted-foreground">
                   Create your first AgentBox VM - it takes about 2 minutes
                 </p>
-                <Button className="mt-4" onClick={() => setCreateOpen(true)}>
+                <Button className="mt-4" onClick={() => setCreateOpen(true)} disabled={!account}>
                   <Plus className="size-4" />
                   Create Instance
                 </Button>
@@ -462,7 +489,11 @@ function Home() {
                     </TableHeader>
                     <TableBody>
                       {instances.map((instance) => {
-                        const urls = instanceUrls(instance.name, instance.gatewayToken);
+                        const urls = instanceUrls(
+                          instance.name,
+                          instance.gatewayToken,
+                          instance.terminalToken,
+                        );
                         return (
                           <TableRow key={instance.id}>
                             <TableCell className="max-w-[240px] pl-3">
@@ -577,7 +608,11 @@ function Home() {
 
                 <div className="space-y-3 md:hidden">
                   {instances.map((instance) => {
-                    const urls = instanceUrls(instance.name, instance.gatewayToken);
+                    const urls = instanceUrls(
+                      instance.name,
+                      instance.gatewayToken,
+                      instance.terminalToken,
+                    );
                     return (
                       <Card key={instance.id}>
                         <CardContent className="space-y-3 px-4 py-4">
