@@ -25,8 +25,9 @@ source "$CALLBACK_ENV"
 
 # --- Verify preloaded OpenClaw ---
 #
-# OpenClaw is prebuilt into the golden image at /opt/openclaw with a wrapper
-# at /usr/local/bin/openclaw. Boot-time updates run in the background.
+# OpenClaw is installed via the official installer (git method) into
+# /opt/openclaw, with a wrapper symlinked to /usr/local/bin/openclaw.
+# Boot-time updates run in the background via `openclaw update`.
 
 if ! command -v openclaw >/dev/null 2>&1; then
   echo "ERROR: openclaw binary not found (expected preloaded source install)"
@@ -338,12 +339,7 @@ exec >>"$LOG" 2>&1
 
 echo "[$(date -Iseconds)] OpenClaw background refresh starting"
 
-if [[ ! -d /opt/openclaw/.git ]]; then
-  echo "[$(date -Iseconds)] /opt/openclaw is not a git checkout, skipping refresh"
-  exit 0
-fi
-
-if su - openclaw -c "cd /opt/openclaw && openclaw update --channel stable --yes --no-restart"; then
+if su - openclaw -c "openclaw update --no-restart"; then
   echo "[$(date -Iseconds)] OpenClaw refresh succeeded; restarting gateway"
   systemctl restart openclaw-gateway || echo "[$(date -Iseconds)] gateway restart failed"
 else

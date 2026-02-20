@@ -90,43 +90,30 @@ else
   useradd -m -s /bin/bash openclaw
 fi
 
-# --- Preload OpenClaw source checkout ---
+# --- Install OpenClaw (official git method) ---
 #
-# We prebuild OpenClaw in the golden image so first boot can skip install.sh
-# and start immediately. Runtime updates happen in the background.
+# Uses the official installer to set up OpenClaw as a source checkout at
+# /opt/openclaw. This ensures `openclaw update` works correctly at runtime
+# (detects git metadata, runs pull + rebuild + doctor).
+#
+# The installer: clones the repo, installs pnpm, builds, creates a wrapper
+# at ~/.local/bin/openclaw, and runs doctor.
+# See: https://openclaw.ai/docs/install/installer
 
 echo ""
-echo "==> Preloading OpenClaw source checkout"
-OPENCLAW_REPO_DIR="/opt/openclaw"
-OPENCLAW_REPO_URL="https://github.com/openclaw/openclaw.git"
+echo "==> Installing OpenClaw via official installer (git method)"
+mkdir -p /opt/openclaw
+chown openclaw:openclaw /opt/openclaw
+su - openclaw -c "curl -fsSL https://openclaw.ai/install.sh | bash -s -- \
+  --install-method git \
+  --git-dir /opt/openclaw \
+  --no-onboard \
+  --no-prompt"
 
-if [[ -d "${OPENCLAW_REPO_DIR}/.git" ]]; then
-  echo "    Existing checkout found, refreshing"
-  git -C "${OPENCLAW_REPO_DIR}" fetch --depth=1 origin main
-  git -C "${OPENCLAW_REPO_DIR}" checkout -f origin/main
-else
-  git clone --depth=1 "${OPENCLAW_REPO_URL}" "${OPENCLAW_REPO_DIR}"
-fi
-
-echo "    Installing pnpm"
-npm install -g pnpm@10
-
-echo "    Building OpenClaw (this can take a few minutes)"
-cd "${OPENCLAW_REPO_DIR}"
-pnpm install --frozen-lockfile
-pnpm build
-OPENCLAW_PREFER_PNPM=1 pnpm ui:build
-cd /
-
-chown -R openclaw:openclaw "${OPENCLAW_REPO_DIR}"
-
-cat > /usr/local/bin/openclaw << 'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-exec node /opt/openclaw/openclaw.mjs "$@"
-EOF
-chmod 755 /usr/local/bin/openclaw
-echo "    OpenClaw preloaded: $(openclaw --version || echo unknown)"
+# Symlink the installer's wrapper so openclaw is available system-wide
+# (needed by systemd units and root-level scripts in agentbox-init.sh)
+ln -sf /home/openclaw/.local/bin/openclaw /usr/local/bin/openclaw
+echo "    OpenClaw installed: $(openclaw --version || echo unknown)"
 
 # --- Wallet generation helper (viem) ---
 #
@@ -216,15 +203,6 @@ find /var/log -type f -name '*.gz' -delete
 unset HISTFILE
 rm -rf /root/.cache /root/.npm
 rm -f /root/.bash_history /root/.lesshst /root/.viminfo
-
-# Zero-fill unused blocks so Hetzner's snapshot compression skips empty space.
-# `|| true` because the fill always fails when the disk is full - that's expected.
-dd if=/dev/zero of=/zero.fill bs=1M || true
-rm -f /zero.fill
-
-# fstrim discards unused blocks so Hetzner's snapshot skips empty space
-fstrim --all || true
-sync
 
 echo ""
 echo "==> Golden image ready"
