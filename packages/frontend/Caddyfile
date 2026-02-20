@@ -2,18 +2,12 @@
 	email {$ACME_EMAIL}
 }
 
-agentbox.cascade.fyi {
+{$FRONTEND_DOMAIN:agentbox.fyi} {
 	tls {
 		dns cloudflare {env.CF_API_TOKEN}
 		resolvers 1.1.1.1
 	}
 
-	handle /api/* {
-		reverse_proxy backend:8080
-	}
-	handle /health {
-		reverse_proxy backend:8080
-	}
 	handle {
 		root * /srv
 		try_files {path} /index.html
@@ -21,13 +15,13 @@ agentbox.cascade.fyi {
 	}
 }
 
-*.agentbox.cascade.fyi {
+{$API_DOMAIN:api.agentbox.fyi} {
 	tls {
 		dns cloudflare {env.CF_API_TOKEN}
 		resolvers 1.1.1.1
 	}
 
 	handle {
-		abort
+		reverse_proxy backend:8080
 	}
 }

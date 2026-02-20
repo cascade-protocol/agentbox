@@ -140,7 +140,7 @@ function buildUserData(opts: {
   return lines.join("\n");
 }
 
-// POST /api/instances/auth - Wallet sign-in (no bearer auth)
+// POST /instances/auth - Wallet sign-in (no bearer auth)
 instanceRoutes.post("/instances/auth", async (c) => {
   const body = await c.req.json();
   const input = authInputSchema.safeParse(body);
@@ -173,7 +173,7 @@ instanceRoutes.post("/instances/auth", async (c) => {
   return c.json({ token, isAdmin: input.data.solanaWalletAddress === env.PAY_TO_ADDRESS });
 });
 
-// POST /api/instances - Create instance (wallet from JWT used as userId)
+// POST /instances - Create instance (wallet from JWT used as userId)
 instanceRoutes.post("/instances", auth, async (c) => {
   const wallet = c.get("walletAddress");
 
@@ -188,7 +188,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
     .slice(0, 12);
   const name = `agentbox-${sanitizedWallet}-${shortId}`;
 
-  const callbackUrl = `${env.API_BASE_URL}/api/instances/callback`;
+  const callbackUrl = `${env.API_BASE_URL}/instances/callback`;
   const hostname = `${name}.${env.INSTANCE_BASE_DOMAIN}`;
 
   let wildcardCert: string | undefined;
@@ -254,7 +254,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
   return c.json(toInstanceResponse(row), 201);
 });
 
-// GET /api/instances - List instances (wallet-scoped, admin can see all with ?all=true)
+// GET /instances - List instances (wallet-scoped, admin can see all with ?all=true)
 instanceRoutes.get("/instances", auth, async (c) => {
   const wallet = c.get("walletAddress");
   const showAll = c.req.query("all") === "true" && isAdmin(wallet);
@@ -264,7 +264,7 @@ instanceRoutes.get("/instances", auth, async (c) => {
   return c.json({ instances: rows.map(toInstanceResponse) });
 });
 
-// GET /api/instances/expiring - List expiring instances (wallet-scoped)
+// GET /instances/expiring - List expiring instances (wallet-scoped)
 instanceRoutes.get("/instances/expiring", auth, async (c) => {
   const wallet = c.get("walletAddress");
   const days = Number(c.req.query("days") ?? 3);
@@ -277,7 +277,7 @@ instanceRoutes.get("/instances/expiring", auth, async (c) => {
   return c.json({ instances: filtered.map(toInstanceResponse) });
 });
 
-// POST /api/instances/callback/step - VM provisioning step update (per-instance token)
+// POST /instances/callback/step - VM provisioning step update (per-instance token)
 instanceRoutes.post("/instances/callback/step", async (c) => {
   const body = await c.req.json();
   const input = provisioningUpdateInputSchema.safeParse(body);
@@ -306,7 +306,7 @@ instanceRoutes.post("/instances/callback/step", async (c) => {
   return c.json({ ok: true });
 });
 
-// POST /api/instances/callback - VM cloud-init final callback (per-instance token)
+// POST /instances/callback - VM cloud-init final callback (per-instance token)
 instanceRoutes.post("/instances/callback", async (c) => {
   const body = await c.req.json();
   const input = callbackInputSchema.safeParse(body);
@@ -340,7 +340,7 @@ instanceRoutes.post("/instances/callback", async (c) => {
   return c.json({ ok: true });
 });
 
-// PATCH /api/instances/:id - Update instance name
+// PATCH /instances/:id - Update instance name
 instanceRoutes.patch("/instances/:id", auth, async (c) => {
   const id = Number(c.req.param("id"));
   const body = await c.req.json();
@@ -362,7 +362,7 @@ instanceRoutes.patch("/instances/:id", auth, async (c) => {
   return c.json(toInstanceResponse(row));
 });
 
-// GET /api/instances/:id - Get instance details
+// GET /instances/:id - Get instance details
 instanceRoutes.get("/instances/:id", auth, async (c) => {
   const id = Number(c.req.param("id"));
   const [row] = await db.select().from(instances).where(eq(instances.id, id));
@@ -371,7 +371,7 @@ instanceRoutes.get("/instances/:id", auth, async (c) => {
   return c.json(toInstanceResponse(row));
 });
 
-// DELETE /api/instances/:id - Delete instance
+// DELETE /instances/:id - Delete instance
 instanceRoutes.delete("/instances/:id", auth, async (c) => {
   const id = Number(c.req.param("id"));
   const [row] = await db.select().from(instances).where(eq(instances.id, id));
@@ -399,7 +399,7 @@ instanceRoutes.delete("/instances/:id", auth, async (c) => {
   return c.json({ ok: true });
 });
 
-// POST /api/instances/:id/restart - Restart VM
+// POST /instances/:id/restart - Restart VM
 instanceRoutes.post("/instances/:id/restart", auth, async (c) => {
   const id = Number(c.req.param("id"));
   const [row] = await db.select().from(instances).where(eq(instances.id, id));
@@ -416,7 +416,7 @@ instanceRoutes.post("/instances/:id/restart", auth, async (c) => {
   return c.json({ ok: true });
 });
 
-// POST /api/instances/:id/extend - Extend expiry
+// POST /instances/:id/extend - Extend expiry
 instanceRoutes.post("/instances/:id/extend", auth, async (c) => {
   const id = Number(c.req.param("id"));
   const [row] = await db.select().from(instances).where(eq(instances.id, id));
@@ -442,7 +442,7 @@ instanceRoutes.post("/instances/:id/extend", auth, async (c) => {
   return c.json(toInstanceResponse(updated));
 });
 
-// GET /api/instances/:id/access - Access credentials
+// GET /instances/:id/access - Access credentials
 instanceRoutes.get("/instances/:id/access", auth, async (c) => {
   const id = Number(c.req.param("id"));
   const [row] = await db.select().from(instances).where(eq(instances.id, id));
@@ -460,7 +460,7 @@ instanceRoutes.get("/instances/:id/access", auth, async (c) => {
   });
 });
 
-// GET /api/instances/:id/health - Probe instance health
+// GET /instances/:id/health - Probe instance health
 instanceRoutes.get("/instances/:id/health", auth, async (c) => {
   const id = Number(c.req.param("id"));
   const [row] = await db.select().from(instances).where(eq(instances.id, id));

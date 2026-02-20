@@ -100,7 +100,7 @@ function handleUnauthorized(status: number) {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_URL}/api${path}`, {
+  const res = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: {
       ...authHeaders(),
@@ -130,7 +130,7 @@ export const api = {
     get: (id: number) => request<Instance>(`/instances/${id}`),
     create: async (signer: TransactionSigner) => {
       const payFetch = createPaymentFetch(signer);
-      const res = await payFetch(`${API_URL}/api/instances`, {
+      const res = await payFetch(`${API_URL}/instances`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({}),

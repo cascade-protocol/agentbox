@@ -37,7 +37,7 @@ function RootLayout() {
       const [{ signature }] = await feature.signMessage({ account: acct, message: encoded });
       const sig = btoa(String.fromCharCode(...new Uint8Array(signature)));
 
-      const res = await fetch(`${API_URL}/api/instances/auth`, {
+      const res = await fetch(`${API_URL}/instances/auth`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

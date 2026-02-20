@@ -39,7 +39,7 @@ const resourceServer = new x402ResourceServer([facilitator]).register(
 
 const x402Payment = paymentMiddleware(
   {
-    "POST /api/instances": {
+    "POST /instances": {
       accepts: [
         {
           scheme: "exact",
@@ -56,7 +56,7 @@ const x402Payment = paymentMiddleware(
 );
 
 // Skip x402 payment for operator token
-app.use("/api/instances", async (c, next) => {
+app.use("/instances", async (c, next) => {
   const auth = c.req.header("Authorization");
   if (auth === `Bearer ${env.OPERATOR_TOKEN}`) {
     return next();
@@ -65,7 +65,7 @@ app.use("/api/instances", async (c, next) => {
 });
 
 app.route("/", healthRoutes);
-app.route("/api", instanceRoutes);
+app.route("/", instanceRoutes);
 
 // Expiry cleanup - delete expired instances every hour
 setInterval(
