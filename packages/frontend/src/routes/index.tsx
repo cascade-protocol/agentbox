@@ -16,6 +16,8 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import {
@@ -28,23 +30,42 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../components/ui/dialog";
+import { Skeleton } from "../components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import { api, getIsAdmin, type Instance, instanceUrls } from "../lib/api";
-import { formatDate, relativeTime } from "../lib/format";
+import { formatDate, relativeTime, shortDate, truncateAddress } from "../lib/format";
+import { getProvisioningStepLabel, getStatusVariant } from "../lib/status";
 
 export const Route = createFileRoute("/")({
   component: Home,
 });
 
-const statusStyles: Record<string, string> = {
-  provisioning: "bg-blue-500/10 text-blue-600",
-  running: "bg-green-500/10 text-green-600",
-  stopped: "bg-gray-500/10 text-gray-500",
-  error: "bg-red-500/10 text-red-600",
-  deleting: "bg-amber-500/10 text-amber-600",
-};
-
 function isExpiringSoon(expiresAt: string) {
   return new Date(expiresAt).getTime() - Date.now() < 3 * 24 * 60 * 60 * 1000;
+}
+
+function formatStatus(status: string): string {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function StatusDisplay({ instance }: { instance: Instance }) {
+  return (
+    <div className="space-y-1">
+      <Badge variant={getStatusVariant(instance.status)}>{formatStatus(instance.status)}</Badge>
+      {instance.status === "provisioning" && (
+        <p className="animate-pulse text-xs text-muted-foreground">
+          {getProvisioningStepLabel(instance.provisioningStep)}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function EditableName({
@@ -60,7 +81,9 @@ function EditableName({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (editing) inputRef.current?.select();
+    if (editing) {
+      inputRef.current?.select();
+    }
   }, [editing]);
 
   async function save() {
@@ -70,6 +93,7 @@ function EditableName({
       setEditing(false);
       return;
     }
+
     setSaving(true);
     try {
       await onSave(instance.id, trimmed);
@@ -87,11 +111,13 @@ function EditableName({
       <div className="flex items-center gap-1">
         <input
           ref={inputRef}
-          className="text-sm font-medium bg-muted px-2 py-0.5 rounded border border-input outline-none focus:ring-1 focus:ring-ring w-full min-w-0"
+          className="w-full min-w-0 rounded border border-input bg-muted px-2 py-0.5 text-sm font-medium outline-none focus:ring-1 focus:ring-ring"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") save();
+            if (e.key === "Enter") {
+              void save();
+            }
             if (e.key === "Escape") {
               setValue(instance.name);
               setEditing(false);
@@ -101,11 +127,11 @@ function EditableName({
         />
         <button
           type="button"
-          onClick={save}
+          onClick={() => void save()}
           disabled={saving}
-          className="inline-flex items-center justify-center size-6 rounded hover:bg-accent transition-colors shrink-0"
+          className="inline-flex size-6 shrink-0 items-center justify-center rounded transition-colors hover:bg-accent"
         >
-          <Check className="h-3 w-3 text-green-600" />
+          <Check className="size-3 text-success" />
         </button>
         <button
           type="button"
@@ -114,31 +140,78 @@ function EditableName({
             setEditing(false);
           }}
           disabled={saving}
-          className="inline-flex items-center justify-center size-6 rounded hover:bg-accent transition-colors shrink-0"
+          className="inline-flex size-6 shrink-0 items-center justify-center rounded transition-colors hover:bg-accent"
         >
-          <X className="h-3 w-3 text-muted-foreground" />
+          <X className="size-3 text-muted-foreground" />
         </button>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-1 group">
+    <div className="group flex items-center gap-1">
       <Link
         to="/instances/$id"
         params={{ id: String(instance.id) }}
-        className="text-sm font-medium hover:underline truncate"
+        className="truncate text-sm font-medium hover:underline"
       >
         {instance.name}
       </Link>
       <button
         type="button"
         onClick={() => setEditing(true)}
-        className="inline-flex items-center justify-center size-6 rounded hover:bg-accent transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+        className="inline-flex size-6 shrink-0 items-center justify-center rounded opacity-0 transition-colors group-hover:opacity-100 hover:bg-accent"
       >
-        <Pencil className="h-3 w-3 text-muted-foreground" />
+        <Pencil className="size-3 text-muted-foreground" />
       </button>
     </div>
+  );
+}
+
+function HomeSkeleton() {
+  return (
+    <main className="container mx-auto flex-1 max-w-6xl px-4 py-6 md:py-8">
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-40" />
+            <Skeleton className="h-4 w-56" />
+          </div>
+          <Skeleton className="h-8 w-28" />
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          {["total", "running", "expiring"].map((item) => (
+            <Card key={item}>
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-24" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-12" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-32" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="hidden space-y-2 md:block">
+              {["row-1", "row-2", "row-3", "row-4", "row-5"].map((item) => (
+                <Skeleton key={item} className="h-10 w-full" />
+              ))}
+            </div>
+            <div className="space-y-3 md:hidden">
+              {["card-1", "card-2", "card-3"].map((item) => (
+                <Skeleton key={item} className="h-28 w-full" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </main>
   );
 }
 
@@ -148,7 +221,7 @@ function Home() {
   const [showAll, setShowAll] = useState(false);
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -160,89 +233,116 @@ function Home() {
   } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  const fetchInstances = useCallback(async () => {
-    try {
-      const data = await api.instances.list(showAll);
-      setInstances(data.instances);
-      setLastChecked(new Date());
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load");
-    } finally {
-      setLoading(false);
-    }
-  }, [showAll]);
+  const fetchInstances = useCallback(
+    async ({ showErrorToast = false }: { showErrorToast?: boolean } = {}) => {
+      try {
+        const data = await api.instances.list(showAll);
+        setInstances(data.instances);
+        setLastChecked(new Date());
+      } catch (err) {
+        if (showErrorToast) {
+          const message = err instanceof Error ? err.message : "Failed to load instances";
+          toast.error(message);
+        }
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [showAll],
+  );
 
   useEffect(() => {
-    fetchInstances();
+    setLoading(true);
+    void fetchInstances({ showErrorToast: true });
   }, [fetchInstances]);
 
+  const hasProvisioning = instances.some((instance) => instance.status === "provisioning");
+
   useEffect(() => {
+    const intervalMs = hasProvisioning ? 10_000 : 30_000;
     const interval = setInterval(() => {
-      if (!document.hidden) fetchInstances();
-    }, 30_000);
+      if (!document.hidden) {
+        void fetchInstances();
+      }
+    }, intervalMs);
     return () => clearInterval(interval);
-  }, [fetchInstances]);
+  }, [fetchInstances, hasProvisioning]);
 
   async function handleCreate() {
-    if (!wallet) return;
+    if (!wallet) {
+      return;
+    }
+
     setCreating(true);
     try {
       await api.instances.create(wallet);
+      toast.success("Instance created - provisioning will take ~2 minutes");
       setCreateOpen(false);
       await fetchInstances();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Create failed");
+      toast.error(err instanceof Error ? err.message : "Create failed");
     } finally {
       setCreating(false);
     }
   }
 
   async function handleRename(id: number, name: string) {
-    const updated = await api.instances.update(id, { name });
-    setInstances((prev) => prev.map((i) => (i.id === id ? { ...i, name: updated.name } : i)));
+    try {
+      const updated = await api.instances.update(id, { name });
+      setInstances((prev) =>
+        prev.map((instance) =>
+          instance.id === id ? { ...instance, name: updated.name } : instance,
+        ),
+      );
+      toast.success("Instance renamed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Rename failed");
+      throw err;
+    }
   }
 
   async function handleConfirm() {
-    if (!confirmAction) return;
+    if (!confirmAction) {
+      return;
+    }
+
     setActionLoading(true);
     try {
       if (confirmAction.type === "restart") {
         await api.instances.restart(confirmAction.instance.id);
+        toast.success("Instance restarting");
       } else {
         await api.instances.delete(confirmAction.instance.id);
+        toast.success("Instance deleted");
       }
       setConfirmAction(null);
       await fetchInstances();
     } catch (err) {
-      setError(err instanceof Error ? err.message : `${confirmAction.type} failed`);
+      toast.error(err instanceof Error ? err.message : `${confirmAction.type} failed`);
     } finally {
       setActionLoading(false);
     }
   }
 
-  const running = instances.filter((i) => i.status === "running").length;
-  const expiring = instances.filter((i) => isExpiringSoon(i.expiresAt)).length;
+  const running = instances.filter((instance) => instance.status === "running").length;
+  const expiring = instances.filter((instance) => isExpiringSoon(instance.expiresAt)).length;
 
   if (loading) {
-    return (
-      <main className="flex-1 container mx-auto px-4 py-6 md:py-8 max-w-6xl">
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </main>
-    );
+    return <HomeSkeleton />;
   }
 
   return (
-    <main className="flex-1 container mx-auto px-4 py-6 md:py-8 max-w-6xl">
+    <main className="container mx-auto flex-1 max-w-6xl px-4 py-6 md:py-8">
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Instances</h1>
-            <p className="text-sm text-muted-foreground mt-1">Manage your AgentBox instances</p>
+            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Instances</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Manage your AgentBox instances</p>
           </div>
           <div className="flex items-center gap-2">
             {admin && (
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+              <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-muted-foreground">
                 <input
                   type="checkbox"
                   checked={showAll}
@@ -253,18 +353,25 @@ function Home() {
               </label>
             )}
             {lastChecked && (
-              <span className="text-xs text-muted-foreground hidden sm:inline">
+              <span className="hidden text-xs text-muted-foreground sm:inline">
                 {relativeTime(lastChecked.toISOString())}
               </span>
             )}
-            <Button variant="outline" size="sm" onClick={() => fetchInstances()}>
-              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setRefreshing(true);
+                void fetchInstances({ showErrorToast: true });
+              }}
+            >
+              <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
               Refresh
             </Button>
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
               <DialogTrigger asChild>
                 <Button size="sm">
-                  <Plus className="h-4 w-4" />
+                  <Plus className="size-4" />
                   Create Instance
                 </Button>
               </DialogTrigger>
@@ -282,8 +389,8 @@ function Home() {
                       Cancel
                     </Button>
                   </DialogClose>
-                  <Button onClick={handleCreate} disabled={creating || !wallet}>
-                    {creating && <Loader2 className="h-4 w-4 animate-spin" />}
+                  <Button onClick={() => void handleCreate()} disabled={creating || !wallet}>
+                    {creating && <Loader2 className="size-4 animate-spin" />}
                     {creating ? "Creating..." : "Pay $1 & Create"}
                   </Button>
                 </DialogFooter>
@@ -292,13 +399,11 @@ function Home() {
           </div>
         </div>
 
-        {error && <p className="text-sm text-destructive">Error: {error}</p>}
-
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total</CardTitle>
-              <Server className="h-4 w-4 text-muted-foreground" />
+              <Server className="size-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{instances.length}</div>
@@ -307,7 +412,7 @@ function Home() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Running</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
+              <Activity className="size-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{running}</div>
@@ -316,7 +421,7 @@ function Home() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+              <AlertTriangle className="size-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{expiring}</div>
@@ -330,93 +435,235 @@ function Home() {
           </CardHeader>
           <CardContent>
             {instances.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No instances yet</p>
+              <div className="py-6 text-center">
+                <Server className="mx-auto size-10 text-muted-foreground" />
+                <h3 className="mt-3 text-lg font-semibold">No instances yet</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Create your first AgentBox VM - it takes about 2 minutes
+                </p>
+                <Button className="mt-4" onClick={() => setCreateOpen(true)}>
+                  <Plus className="size-4" />
+                  Create Instance
+                </Button>
+              </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b text-left text-sm text-muted-foreground">
-                      <th className="pb-3 pr-4 font-medium">Name</th>
-                      <th className="pb-3 pr-4 font-medium">User</th>
-                      <th className="pb-3 pr-4 font-medium">Status</th>
-                      <th className="pb-3 pr-4 font-medium">Expires</th>
-                      <th className="pb-3 font-medium text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {instances.map((instance) => (
-                      <tr key={instance.id} className="border-b last:border-0">
-                        <td className="py-3 pr-4">
-                          <EditableName instance={instance} onSave={handleRename} />
-                          <p className="text-xs text-muted-foreground">{instance.id}</p>
-                          <p
-                            className="text-xs text-muted-foreground truncate max-w-64"
-                            title={instance.agentId ?? ""}
-                          >
-                            {instance.agentId ? `SATI: ${instance.agentId}` : "SATI: pending"}
-                          </p>
-                        </td>
-                        <td className="py-3 pr-4 text-sm text-muted-foreground">
-                          {instance.userId}
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusStyles[instance.status] ?? "bg-gray-500/10 text-gray-500"}`}
-                          >
-                            {instance.status}
-                          </span>
-                        </td>
-                        <td
-                          className={`py-3 pr-4 text-sm ${isExpiringSoon(instance.expiresAt) ? "text-destructive font-medium" : "text-muted-foreground"}`}
-                          title={formatDate(instance.expiresAt)}
-                        >
-                          {relativeTime(instance.expiresAt)}
-                        </td>
-                        <td className="py-3 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              asChild
-                              disabled={instance.status !== "running"}
+              <>
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader className="bg-muted/50">
+                      <TableRow className="hover:bg-muted/50">
+                        <TableHead className="pl-3">Name</TableHead>
+                        <TableHead>User</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Created</TableHead>
+                        <TableHead>Expires</TableHead>
+                        <TableHead className="pr-3 text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {instances.map((instance) => {
+                        const urls = instanceUrls(instance.name, instance.gatewayToken);
+                        return (
+                          <TableRow key={instance.id}>
+                            <TableCell className="max-w-[240px] pl-3">
+                              <EditableName instance={instance} onSave={handleRename} />
+                            </TableCell>
+                            <TableCell
+                              title={instance.userId}
+                              className="text-sm text-muted-foreground"
                             >
-                              <a
-                                href={instanceUrls(instance.name, instance.gatewayToken).chat}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={
-                                  instance.status !== "running"
-                                    ? "pointer-events-none opacity-50"
-                                    : ""
-                                }
-                              >
-                                <MessageSquare className="h-3.5 w-3.5" />
-                                Chat
-                              </a>
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              asChild
-                              disabled={instance.status !== "running"}
+                              {truncateAddress(instance.userId)}
+                            </TableCell>
+                            <TableCell>
+                              <StatusDisplay instance={instance} />
+                            </TableCell>
+                            <TableCell
+                              title={formatDate(instance.createdAt)}
+                              className="text-sm text-muted-foreground"
                             >
-                              <a
-                                href={instanceUrls(instance.name, instance.gatewayToken).terminal}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={
-                                  instance.status !== "running"
-                                    ? "pointer-events-none opacity-50"
-                                    : ""
-                                }
+                              {shortDate(instance.createdAt)}
+                            </TableCell>
+                            <TableCell
+                              title={formatDate(instance.expiresAt)}
+                              className={`text-sm ${isExpiringSoon(instance.expiresAt) ? "font-medium text-destructive" : "text-muted-foreground"}`}
+                            >
+                              {relativeTime(instance.expiresAt)}
+                            </TableCell>
+                            <TableCell className="pr-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                {instance.status === "running" ? (
+                                  <Button
+                                    variant="outline"
+                                    size="icon-sm"
+                                    asChild
+                                    title="Open Chat"
+                                  >
+                                    <a href={urls.chat} target="_blank" rel="noopener noreferrer">
+                                      <MessageSquare className="size-3.5" />
+                                    </a>
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="outline"
+                                    size="icon-sm"
+                                    title="Open Chat"
+                                    disabled
+                                  >
+                                    <MessageSquare className="size-3.5" />
+                                  </Button>
+                                )}
+                                {instance.status === "running" ? (
+                                  <Button
+                                    variant="outline"
+                                    size="icon-sm"
+                                    asChild
+                                    title="Open Terminal"
+                                  >
+                                    <a
+                                      href={urls.terminal}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      <TerminalSquare className="size-3.5" />
+                                    </a>
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="outline"
+                                    size="icon-sm"
+                                    title="Open Terminal"
+                                    disabled
+                                  >
+                                    <TerminalSquare className="size-3.5" />
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="outline"
+                                  size="icon-sm"
+                                  title="Restart"
+                                  onClick={() =>
+                                    setConfirmAction({
+                                      type: "restart",
+                                      instance,
+                                    })
+                                  }
+                                  disabled={instance.status !== "running"}
+                                >
+                                  <RotateCw className="size-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  title="Delete"
+                                  className="text-destructive hover:text-destructive"
+                                  onClick={() =>
+                                    setConfirmAction({
+                                      type: "delete",
+                                      instance,
+                                    })
+                                  }
+                                  disabled={instance.status === "deleting"}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="space-y-3 md:hidden">
+                  {instances.map((instance) => {
+                    const urls = instanceUrls(instance.name, instance.gatewayToken);
+                    return (
+                      <Card key={instance.id}>
+                        <CardContent className="space-y-3 px-4 py-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <Link
+                              to="/instances/$id"
+                              params={{ id: String(instance.id) }}
+                              className="truncate text-sm font-semibold hover:underline"
+                            >
+                              {instance.name}
+                            </Link>
+                            <StatusDisplay instance={instance} />
+                          </div>
+                          <div className="space-y-1 text-xs">
+                            <p className="text-muted-foreground" title={instance.userId}>
+                              User {truncateAddress(instance.userId)}
+                            </p>
+                            <p
+                              className="text-muted-foreground"
+                              title={formatDate(instance.createdAt)}
+                            >
+                              Created {relativeTime(instance.createdAt)}
+                            </p>
+                            <p
+                              className={
+                                isExpiringSoon(instance.expiresAt)
+                                  ? "font-medium text-destructive"
+                                  : "text-muted-foreground"
+                              }
+                              title={formatDate(instance.expiresAt)}
+                            >
+                              Expires {relativeTime(instance.expiresAt)}
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-4 gap-2">
+                            {instance.status === "running" ? (
+                              <Button
+                                variant="outline"
+                                size="icon-sm"
+                                asChild
+                                title="Open Chat"
+                                className="w-full"
                               >
-                                <TerminalSquare className="h-3.5 w-3.5" />
-                                Terminal
-                              </a>
-                            </Button>
+                                <a href={urls.chat} target="_blank" rel="noopener noreferrer">
+                                  <MessageSquare className="size-3.5" />
+                                </a>
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="icon-sm"
+                                title="Open Chat"
+                                className="w-full"
+                                disabled
+                              >
+                                <MessageSquare className="size-3.5" />
+                              </Button>
+                            )}
+                            {instance.status === "running" ? (
+                              <Button
+                                variant="outline"
+                                size="icon-sm"
+                                asChild
+                                title="Open Terminal"
+                                className="w-full"
+                              >
+                                <a href={urls.terminal} target="_blank" rel="noopener noreferrer">
+                                  <TerminalSquare className="size-3.5" />
+                                </a>
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="icon-sm"
+                                title="Open Terminal"
+                                className="w-full"
+                                disabled
+                              >
+                                <TerminalSquare className="size-3.5" />
+                              </Button>
+                            )}
                             <Button
                               variant="outline"
-                              size="sm"
+                              size="icon-sm"
+                              className="w-full"
+                              title="Restart"
                               onClick={() =>
                                 setConfirmAction({
                                   type: "restart",
@@ -425,14 +672,13 @@ function Home() {
                               }
                               disabled={instance.status !== "running"}
                             >
-                              <RotateCw className="h-3.5 w-3.5" />
-                              Restart
+                              <RotateCw className="size-3.5" />
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon-sm"
+                              className="w-full text-destructive hover:text-destructive"
                               title="Delete"
-                              className="text-destructive hover:text-destructive"
                               onClick={() =>
                                 setConfirmAction({
                                   type: "delete",
@@ -441,15 +687,15 @@ function Home() {
                               }
                               disabled={instance.status === "deleting"}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="size-3.5" />
                             </Button>
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
@@ -458,7 +704,9 @@ function Home() {
       <Dialog
         open={confirmAction !== null}
         onOpenChange={(open) => {
-          if (!open) setConfirmAction(null);
+          if (!open) {
+            setConfirmAction(null);
+          }
         }}
       >
         <DialogContent className="sm:max-w-md">
@@ -480,10 +728,10 @@ function Home() {
             </DialogClose>
             <Button
               variant={confirmAction?.type === "delete" ? "destructive" : "default"}
-              onClick={handleConfirm}
+              onClick={() => void handleConfirm()}
               disabled={actionLoading}
             >
-              {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {actionLoading && <Loader2 className="size-4 animate-spin" />}
               {actionLoading
                 ? confirmAction?.type === "restart"
                   ? "Restarting..."

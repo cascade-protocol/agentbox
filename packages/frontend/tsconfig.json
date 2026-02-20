@@ -6,7 +6,8 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "sonner": ["./src/lib/sonner-shim.tsx"]
     }
   },
   "include": ["src", "vite.config.ts"]

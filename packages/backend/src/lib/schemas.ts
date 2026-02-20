@@ -8,6 +8,8 @@ export const instanceStatusSchema = z.enum([
   "deleting",
 ]);
 
+export const provisioningStepSchema = z.string().min(1).max(64);
+
 export const instanceSchema = z.object({
   id: z.number(),
   name: z.string(),
@@ -17,6 +19,7 @@ export const instanceSchema = z.object({
   solanaWalletAddress: z.string().nullable(),
   gatewayToken: z.string(),
   agentId: z.string().nullable().optional(),
+  provisioningStep: z.string().nullable().optional(),
   createdAt: z.string().datetime(),
   expiresAt: z.string().datetime(),
 });
@@ -34,7 +37,14 @@ export const callbackInputSchema = z.object({
   solanaWalletAddress: z.string(),
   gatewayToken: z.string(),
   agentId: z.string().optional(),
+  provisioningStep: provisioningStepSchema.optional(),
   secret: z.string(),
+});
+
+export const provisioningUpdateInputSchema = z.object({
+  serverId: z.number(),
+  secret: z.string(),
+  step: provisioningStepSchema,
 });
 
 export const updateInstanceInputSchema = z.object({
@@ -53,4 +63,5 @@ export type Instance = z.infer<typeof instanceSchema>;
 export type InstanceAccess = z.infer<typeof instanceAccessSchema>;
 export type CreateInstanceInput = z.infer<typeof createInstanceInputSchema>;
 export type CallbackInput = z.infer<typeof callbackInputSchema>;
+export type ProvisioningUpdateInput = z.infer<typeof provisioningUpdateInputSchema>;
 export type AuthInput = z.infer<typeof authInputSchema>;

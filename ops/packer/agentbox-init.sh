@@ -23,6 +23,25 @@ fi
 source "$CALLBACK_ENV"
 # Expected vars: CALLBACK_URL, CALLBACK_SECRET, SERVER_ID, INSTANCE_HOSTNAME
 
+CALLBACK_STEP_URL="${CALLBACK_URL%/}/step"
+
+report_step() {
+  local step="$1"
+  local payload
+  payload=$(jq -n \
+    --argjson serverId "$SERVER_ID" \
+    --arg secret "$CALLBACK_SECRET" \
+    --arg step "$step" \
+    '{serverId: $serverId, secret: $secret, step: $step}')
+
+  curl -sf -X POST "$CALLBACK_STEP_URL" \
+    -H "Content-Type: application/json" \
+    -d "$payload" >/dev/null || true
+  echo "Reported provisioning step: $step"
+}
+
+report_step "configuring"
+
 # --- Verify preloaded OpenClaw ---
 #
 # OpenClaw is installed globally via npm in the golden image.
@@ -55,11 +74,11 @@ su - openclaw -c "openclaw onboard \
   --skip-channels \
   --skip-skills \
   --skip-health"
+report_step "openclaw_ready"
 
 # --- Create Solana wallet + SATI identity (devnet) ---
 #
 # We create the Solana keypair and publish agent identity on first boot.
-# This replaces prior ClawRouter/EVM wallet provisioning.
 
 echo "Creating Solana wallet and SATI agent identity..."
 IDENTITY_DIR="/home/openclaw/agent-identity"
@@ -84,9 +103,11 @@ su - openclaw -c "cd $IDENTITY_DIR && jq --arg name \"$SHORT_NAME\" '
 PUBLISH_JSON=$(su - openclaw -c "cd $IDENTITY_DIR && create-sati-agent publish --network devnet --json")
 AGENT_ID=$(echo "$PUBLISH_JSON" | jq -r '.agentId // empty')
 SOLANA_WALLET_ADDRESS=$(su - openclaw -c "solana address")
+report_step "wallet_created"
 
 echo "Solana wallet: $SOLANA_WALLET_ADDRESS"
 echo "SATI agent id: ${AGENT_ID:-unknown}"
+report_step "sati_published"
 
 # --- Generate gateway auth token ---
 
@@ -293,6 +314,8 @@ CADDYEOF
 else
   echo "WARNING: INSTANCE_HOSTNAME not set, skipping Caddy setup"
 fi
+
+report_step "services_starting"
 
 # --- Callback to API ---
 

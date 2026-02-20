@@ -5,7 +5,7 @@ const envSchema = z.object({
   HETZNER_API_TOKEN: z.string().optional(),
   HETZNER_SNAPSHOT_ID: z.string().default("360041394"),
   HETZNER_LOCATIONS: z.string().default("nbg1,fsn1"),
-  HETZNER_SERVER_TYPE: z.string().default("cx23"),
+  HETZNER_SERVER_TYPE: z.string().default("cx33"),
   API_BASE_URL: z.string().default("http://localhost:8080"),
   OPERATOR_TOKEN: z.string().default("dev-token"),
   CALLBACK_SECRET: z.string().default("dev-secret"),

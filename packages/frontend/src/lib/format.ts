@@ -28,3 +28,16 @@ export function formatDate(iso: string): string {
     minute: "2-digit",
   });
 }
+
+export function shortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function truncateAddress(addr: string): string {
+  return `${addr.slice(0, 4)}...${addr.slice(-4)}`;
+}

@@ -11,6 +11,7 @@ export const instances = pgTable(
     solanaWalletAddress: text("wallet_address"),
     gatewayToken: text("gateway_token").notNull(),
     agentId: text("agent_id"),
+    provisioningStep: text("provisioning_step"),
     rootPassword: text("root_password"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

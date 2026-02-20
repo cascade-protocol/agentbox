@@ -2,6 +2,7 @@ import type { WalletSession } from "@solana/client";
 import { createWalletTransactionSigner } from "@solana/client";
 import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import { ExactSvmScheme } from "@x402/svm/exact/client";
+import { toast } from "sonner";
 
 export type Instance = {
   id: number;
@@ -12,6 +13,7 @@ export type Instance = {
   solanaWalletAddress: string | null;
   gatewayToken: string;
   agentId?: string | null;
+  provisioningStep?: string | null;
   createdAt: string;
   expiresAt: string;
 };
@@ -81,6 +83,21 @@ function authHeaders(): Record<string, string> {
   };
 }
 
+let handledUnauthorized = false;
+
+function handleUnauthorized(status: number) {
+  if (status !== 401 || handledUnauthorized) {
+    return;
+  }
+
+  handledUnauthorized = true;
+  clearToken();
+  toast.error("Session expired, please reconnect");
+  setTimeout(() => {
+    window.location.reload();
+  }, 300);
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_URL}/api${path}`, {
     ...options,
@@ -91,6 +108,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
 
   if (!res.ok) {
+    handleUnauthorized(res.status);
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new ApiError(res.status, body.error ?? "Request failed");
   }
@@ -118,6 +136,7 @@ export const api = {
         body: JSON.stringify({}),
       });
       if (!res.ok) {
+        handleUnauthorized(res.status);
         const body = await res.json().catch(() => ({ error: res.statusText }));
         throw new ApiError(res.status, body.error ?? "Request failed");
       }

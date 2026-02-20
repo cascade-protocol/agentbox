@@ -10,6 +10,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      sonner: path.resolve(__dirname, "./src/lib/sonner-shim.tsx"),
+      "@fontsource-variable/dm-sans": path.resolve(__dirname, "./src/styles/dm-sans.css"),
     },
   },
   server: {

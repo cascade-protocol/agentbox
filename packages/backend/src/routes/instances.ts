@@ -11,7 +11,12 @@ import { instances } from "../db/schema";
 import * as cloudflare from "../lib/cloudflare";
 import { env } from "../lib/env";
 import * as hetzner from "../lib/hetzner";
-import { authInputSchema, callbackInputSchema, updateInstanceInputSchema } from "../lib/schemas";
+import {
+  authInputSchema,
+  callbackInputSchema,
+  provisioningUpdateInputSchema,
+  updateInstanceInputSchema,
+} from "../lib/schemas";
 
 // @noble/ed25519 v2 requires SHA-512 configuration
 if (!ed.etc.sha512Async) {
@@ -70,6 +75,7 @@ function toInstanceResponse(row: typeof instances.$inferSelect) {
     solanaWalletAddress: row.solanaWalletAddress,
     gatewayToken: row.gatewayToken,
     agentId: row.agentId,
+    provisioningStep: row.provisioningStep,
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
   };
@@ -218,6 +224,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
       ip: result.server.public_net.ipv4.ip,
       gatewayToken: "pending",
       agentId: null,
+      provisioningStep: "vm_created",
       rootPassword: result.root_password,
       expiresAt,
     })
@@ -250,6 +257,33 @@ instanceRoutes.get("/instances/expiring", auth, async (c) => {
 });
 
 // POST /api/instances/callback - VM cloud-init callback (secret-based, no bearer auth)
+instanceRoutes.post("/instances/callback/step", async (c) => {
+  const body = await c.req.json();
+  const input = provisioningUpdateInputSchema.safeParse(body);
+  if (!input.success) {
+    return c.json({ error: "Invalid input", details: input.error.issues }, 400);
+  }
+
+  if (input.data.secret !== env.CALLBACK_SECRET) {
+    return c.json({ error: "Invalid secret" }, 403);
+  }
+
+  const [row] = await db
+    .update(instances)
+    .set({
+      provisioningStep: input.data.step,
+    })
+    .where(eq(instances.id, input.data.serverId))
+    .returning();
+
+  if (!row) {
+    return c.json({ error: "Instance not found" }, 404);
+  }
+
+  return c.json({ ok: true });
+});
+
+// POST /api/instances/callback - VM cloud-init callback (secret-based, no bearer auth)
 instanceRoutes.post("/instances/callback", async (c) => {
   const body = await c.req.json();
   const input = callbackInputSchema.safeParse(body);
@@ -268,6 +302,7 @@ instanceRoutes.post("/instances/callback", async (c) => {
       gatewayToken: input.data.gatewayToken,
       agentId: input.data.agentId ?? null,
       status: "running",
+      provisioningStep: null,
     })
     .where(eq(instances.id, input.data.serverId))
     .returning();
