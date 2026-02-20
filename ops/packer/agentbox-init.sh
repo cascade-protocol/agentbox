@@ -71,7 +71,7 @@ su - openclaw -c "cd $IDENTITY_DIR && create-sati-agent init --force"
 # Fill template with runtime values so publish is non-interactive and deterministic.
 # Keep services empty for now - we'll define runtime endpoints/skills later.
 su - openclaw -c "cd $IDENTITY_DIR && jq --arg host \"${INSTANCE_HOSTNAME:-}\" '
-  .name = (\"AgentBox-\" + ($host | if . == \"\" then \"instance\" else . end)) |
+  .name = (\"AgentBox-\" + (\$host | if . == \"\" then \"instance\" else . end)) |
   .description = \"OpenClaw instance provisioned by AgentBox\" |
   .image = \"https://api.dicebear.com/9.x/bottts/svg?seed=agentbox\" |
   .services = [] |
