@@ -111,8 +111,10 @@ echo ""
 echo "==> Installing Solana CLI"
 SOLANA_VERSION="v2.3.8"
 sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_VERSION}/install)"
-ln -sf /root/.local/share/solana/install/active_release/bin/solana /usr/local/bin/solana
-ln -sf /root/.local/share/solana/install/active_release/bin/solana-keygen /usr/local/bin/solana-keygen
+cp /root/.local/share/solana/install/active_release/bin/solana /usr/local/bin/solana
+cp /root/.local/share/solana/install/active_release/bin/solana-keygen /usr/local/bin/solana-keygen
+chmod +x /usr/local/bin/solana /usr/local/bin/solana-keygen
+rm -rf /root/.local/share/solana
 echo "    Solana $(solana --version)"
 
 echo ""

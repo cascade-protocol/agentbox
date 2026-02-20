@@ -42,5 +42,3 @@
 - Use `hcloud server ssh <server-name> '<command>'` to SSH into instances - never raw `ssh root@<ip>` (avoids known_hosts conflicts when IPs get reused across VMs)
 - Use `hcloud server list` to find instance names
 
-## Context
-- `PLAN.md` contains the full product context, architecture, and implementation plan - read it first
