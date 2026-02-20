@@ -38,5 +38,9 @@
 - Reference implementation: `~/pj/sati/apps/dashboard/src/react-app/index.css` - keep token parity with it
 - `components.json` configures shadcn generation: style "new-york", baseColor "slate", cssVariables true
 
+## Hetzner Operations
+- Use `hcloud server ssh <server-name> '<command>'` to SSH into instances - never raw `ssh root@<ip>` (avoids known_hosts conflicts when IPs get reused across VMs)
+- Use `hcloud server list` to find instance names
+
 ## Context
 - `PLAN.md` contains the full product context, architecture, and implementation plan - read it first
