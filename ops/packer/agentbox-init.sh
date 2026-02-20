@@ -25,12 +25,11 @@ source "$CALLBACK_ENV"
 
 # --- Verify preloaded OpenClaw ---
 #
-# OpenClaw is installed via the official installer (git method) into
-# ~/openclaw, with a wrapper symlinked to /usr/local/bin/openclaw.
-# Boot-time updates run in the background via `openclaw update`.
+# OpenClaw is installed globally via npm in the golden image.
+# Boot-time updates run in the background via `npm i -g openclaw@latest`.
 
 if ! command -v openclaw >/dev/null 2>&1; then
-  echo "ERROR: openclaw binary not found (expected preloaded source install)"
+  echo "ERROR: openclaw binary not found (expected npm global install)"
   exit 1
 fi
 echo "Using preloaded OpenClaw $(openclaw --version)"
@@ -339,8 +338,8 @@ exec >>"$LOG" 2>&1
 
 echo "[$(date -Iseconds)] OpenClaw background refresh starting"
 
-if su - openclaw -c "openclaw update --no-restart"; then
-  echo "[$(date -Iseconds)] OpenClaw refresh succeeded; restarting gateway"
+if npm i -g openclaw@latest; then
+  echo "[$(date -Iseconds)] OpenClaw refresh succeeded ($(openclaw --version)); restarting gateway"
   systemctl restart openclaw-gateway || echo "[$(date -Iseconds)] gateway restart failed"
 else
   echo "[$(date -Iseconds)] OpenClaw refresh failed"

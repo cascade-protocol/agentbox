@@ -2,9 +2,9 @@
 # Build-time setup for the AgentBox golden image.
 # Run by Packer on a fresh Hetzner CX22 (Ubuntu 24.04), then snapshotted.
 #
-# OpenClaw is preloaded here from git so first boot can start the gateway fast.
-# Instance boot still runs onboarding, installs ClawRouter, and performs a
-# background OpenClaw update without blocking user access.
+# OpenClaw is installed globally via npm so the binary is ready at boot.
+# Instance boot runs onboarding, installs ClawRouter, and performs a
+# lightweight background `npm i -g openclaw@latest` without blocking access.
 #
 # Usage:
 #   cd ops/packer && packer init . && packer build .
@@ -90,27 +90,17 @@ else
   useradd -m -s /bin/bash openclaw
 fi
 
-# --- Install OpenClaw (official git method) ---
+# --- Install OpenClaw (npm global) ---
 #
-# Uses the official installer to set up OpenClaw as a source checkout at
-# ~/openclaw (default). This ensures `openclaw update` works correctly at
-# runtime (detects git metadata, runs pull + rebuild + doctor).
-#
-# The installer: clones the repo, installs pnpm, builds, creates a wrapper
-# at ~/.local/bin/openclaw, and runs doctor.
-# See: https://openclaw.ai/docs/install/installer
+# Pre-baked via npm so the binary is immediately available at boot.
+# Native modules (node-pty, sharp, sqlite-vec) compile here against the
+# build-essential toolchain installed above, so boot-time updates skip rebuilds.
+# See: https://openclaw.ai/docs/install
 
 echo ""
-echo "==> Installing OpenClaw via official installer (git method)"
-su - openclaw -c "curl -fsSL https://openclaw.ai/install.sh | bash -s -- \
-  --install-method git \
-  --no-onboard \
-  --no-prompt"
-
-# Symlink the installer's wrapper so openclaw is available system-wide
-# (needed by systemd units and root-level scripts in agentbox-init.sh)
-ln -sf /home/openclaw/.local/bin/openclaw /usr/local/bin/openclaw
-echo "    OpenClaw installed: $(openclaw --version || echo unknown)"
+echo "==> Installing OpenClaw via npm"
+npm install -g openclaw@latest
+echo "    OpenClaw $(openclaw --version) at $(which openclaw)"
 
 # --- Wallet generation helper (viem) ---
 #
