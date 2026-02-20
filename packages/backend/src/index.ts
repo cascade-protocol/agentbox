@@ -37,26 +37,32 @@ const resourceServer = new x402ResourceServer([facilitator]).register(
   new ExactSvmScheme(),
 );
 
-app.use(
-  "/api/instances",
-  paymentMiddleware(
-    {
-      "POST /api/instances": {
-        accepts: [
-          {
-            scheme: "exact",
-            network: SOLANA_MAINNET,
-            price: "$1",
-            payTo: env.PAY_TO_ADDRESS,
-          },
-        ],
-        description: "Provision AgentBox VM (30 days)",
-        mimeType: "application/json",
-      },
+const x402Payment = paymentMiddleware(
+  {
+    "POST /api/instances": {
+      accepts: [
+        {
+          scheme: "exact",
+          network: SOLANA_MAINNET,
+          price: "$1",
+          payTo: env.PAY_TO_ADDRESS,
+        },
+      ],
+      description: "Provision AgentBox VM (30 days)",
+      mimeType: "application/json",
     },
-    resourceServer,
-  ),
+  },
+  resourceServer,
 );
+
+// Skip x402 payment for operator token
+app.use("/api/instances", async (c, next) => {
+  const auth = c.req.header("Authorization");
+  if (auth === `Bearer ${env.OPERATOR_TOKEN}`) {
+    return next();
+  }
+  return x402Payment(c, next);
+});
 
 app.route("/", healthRoutes);
 app.route("/api", instanceRoutes);
