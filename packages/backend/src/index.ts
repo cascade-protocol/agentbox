@@ -24,8 +24,8 @@ app.use(
   "/*",
   cors({
     origin: env.CORS_ORIGIN === "*" ? "*" : env.CORS_ORIGIN.split(",").map((o) => o.trim()),
-    allowHeaders: ["Content-Type", "Authorization", "X-PAYMENT"],
-    exposeHeaders: ["X-PAYMENT-REQUIRED", "X-PAYMENT-RESPONSE"],
+    allowHeaders: ["Content-Type", "Authorization", "PAYMENT-SIGNATURE"],
+    exposeHeaders: ["PAYMENT-REQUIRED", "PAYMENT-RESPONSE"],
   }),
 );
 app.use("/*", secureHeaders());
