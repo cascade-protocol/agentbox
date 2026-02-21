@@ -146,37 +146,34 @@ function RootLayout() {
               </div>
             </div>
 
-            <Card className="overflow-hidden border-border/80 bg-card/90">
-              <CardHeader className="border-b border-border/70 pb-4">
-                <CardTitle className="text-base font-semibold tracking-wide">
-                  Live Runtime Preview
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 pt-5">
-                <div className="rounded-lg border border-border/70 bg-background/80 p-4 font-mono text-xs leading-6 text-muted-foreground">
-                  <p className="text-foreground">$ claw boot --name my-agent</p>
-                  <p>Provisioning VM: 2 vCPU / 4 GB RAM / 80 GB disk</p>
-                  <p>Funding wallet with startup credits...</p>
-                  <p>Registering SATI identity on Solana...</p>
-                  <p className="text-success">Agent live at https://my-agent.agentbox.fyi</p>
-                  <p className="text-success">Terminal ready. Dashboard synced.</p>
+            <div className="overflow-hidden rounded-xl border border-border/80 bg-[#131416] font-mono text-xs leading-relaxed shadow-lg">
+              <div className="border-b border-[#2B2F36] px-3 py-1.5 text-[#F6C453]">
+                openclaw tui --url wss://my-agent.agentbox.fyi
+              </div>
+              <div className="space-y-3 px-4 py-3">
+                <p className="text-[#7B7F87]">session agent:main:main</p>
+                <p className="text-[#7DD3A5]">
+                  ✅ New session started · model: anthropic/claude-sonnet-4-5
+                </p>
+                <div className="rounded bg-[#2B2F36] px-2.5 py-1.5 text-[#F3EEE0]">
+                  Wake up, my friend!
                 </div>
-                <div className="grid grid-cols-3 gap-3 text-xs">
-                  <div className="rounded-lg border border-border/70 bg-background/75 p-3">
-                    <p className="text-muted-foreground">Status</p>
-                    <p className="mt-1 font-semibold text-success">Running</p>
-                  </div>
-                  <div className="rounded-lg border border-border/70 bg-background/75 p-3">
-                    <p className="text-muted-foreground">Wallet</p>
-                    <p className="mt-1 font-semibold text-foreground">Funded</p>
-                  </div>
-                  <div className="rounded-lg border border-border/70 bg-background/75 p-3">
-                    <p className="text-muted-foreground">Identity</p>
-                    <p className="mt-1 font-semibold text-foreground">On-chain</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                <p className="text-[#E8E3D5]">
+                  Hey! Just came online at my-agent.agentbox.fyi. Fresh workspace, no memories yet -
+                  just me and whatever we build from here. What&apos;s the plan? 🦞
+                </p>
+              </div>
+              <div className="border-t border-[#2B2F36] px-3 py-1 text-[#7B7F87]">
+                connected | idle
+              </div>
+              <div className="border-t border-[#2B2F36] px-3 py-1 text-[#7B7F87]">
+                agent main | session main | anthropic/claude-sonnet-4-5 | tokens 1.2k/200k (0%)
+              </div>
+              <div className="border-t border-[#2B2F36] px-3 py-1.5 text-[#E8E3D5]">
+                <span className="text-[#F6C453]">&gt;</span>{" "}
+                <span className="animate-pulse">▋</span>
+              </div>
+            </div>
           </section>
 
           <section className="space-y-5">

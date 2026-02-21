@@ -20,6 +20,24 @@ const SOLANA_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
 const app = new Hono();
 
+function getProvisioningPreflightError(): string | null {
+  if (!env.HETZNER_API_TOKEN || !env.HETZNER_SNAPSHOT_ID) {
+    return "Hetzner is not configured";
+  }
+
+  try {
+    const url = new URL(env.API_BASE_URL);
+    const host = url.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1") {
+      return "API_BASE_URL must be publicly reachable for VM callbacks (use ngrok/cloudflared in local dev)";
+    }
+  } catch {
+    return "API_BASE_URL is invalid";
+  }
+
+  return null;
+}
+
 app.use(
   "/*",
   cors({
@@ -62,11 +80,24 @@ const x402Payment = paymentMiddleware(
 
 // Skip x402 payment for operator token
 app.use("/instances", async (c, next) => {
+  if (c.req.method === "POST" && c.req.path === "/instances") {
+    const preflightError = getProvisioningPreflightError();
+    if (preflightError) {
+      return c.json({ error: preflightError }, 503);
+    }
+  }
+
   const auth = c.req.header("Authorization");
   if (auth === `Bearer ${env.OPERATOR_TOKEN}`) {
     return next();
   }
   return x402Payment(c, next);
+});
+
+app.onError((err, c) => {
+  console.error("Unhandled API error:", err);
+  const isProd = process.env.NODE_ENV === "production";
+  return c.json({ error: isProd ? "Internal Server Error" : String(err) }, 500);
 });
 
 app.route("/", healthRoutes);
