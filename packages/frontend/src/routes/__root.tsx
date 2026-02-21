@@ -2,7 +2,6 @@ import type { WalletSession } from "@solana/client";
 import { useWalletConnection } from "@solana/react-hooks";
 import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
 import {
-  ArrowRight,
   BadgeCheck,
   Bot,
   Coins,
@@ -145,8 +144,11 @@ function RootLayout() {
                 </svg>
                 <span className="sr-only">X</span>
               </a>
-              <Button asChild size="sm">
+              {/* <Button asChild size="sm">
                 <a href="#connect-wallet">Deploy for 5 USDC</a>
+              </Button> */}
+              <Button size="sm" disabled>
+                Coming soon
               </Button>
             </div>
           </div>
@@ -168,11 +170,14 @@ function RootLayout() {
                 </p>
               </div>
               <div className="space-y-3">
-                <Button asChild size="lg">
+                {/* <Button asChild size="lg">
                   <a href="#connect-wallet">
                     Deploy for 5 USDC
                     <ArrowRight className="size-4" />
                   </a>
+                </Button> */}
+                <Button size="lg" disabled>
+                  Coming soon
                 </Button>
                 <p className="text-sm text-muted-foreground">14 days, no subscription</p>
                 <p className="max-w-2xl text-sm text-muted-foreground">
@@ -409,9 +414,13 @@ function RootLayout() {
                     No compatible wallet detected in this browser.
                   </p>
                 )}
-                <p className="text-xs text-muted-foreground">
+                {/* <p className="text-xs text-muted-foreground">
                   You&apos;ll sign a message to prove ownership, then complete a single 5 USDC
                   transaction.
+                </p> */}
+                <p className="text-xs text-muted-foreground">
+                  Wallet connection is live. Instance creation is temporarily disabled while we
+                  finish the product.
                 </p>
               </CardContent>
             </Card>

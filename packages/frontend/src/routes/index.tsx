@@ -282,6 +282,7 @@ function CreateInstanceDialog({
 
 function Home() {
   const session = useWalletSession();
+  const instanceCreationEnabled = import.meta.env.VITE_ENABLE_INSTANCE_CREATION === "true";
   const admin = getIsAdmin();
   const [showAll, setShowAll] = useState(false);
   const [instances, setInstances] = useState<Instance[]>([]);
@@ -415,7 +416,7 @@ function Home() {
                 <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
                 Refresh
               </Button>
-              {session ? (
+              {/* {session ? (
                 <CreateInstanceDialog
                   session={session}
                   open={createOpen}
@@ -426,6 +427,19 @@ function Home() {
                 <Button size="sm" disabled>
                   <Plus className="size-4" />
                   Create Instance
+                </Button>
+              )} */}
+              {instanceCreationEnabled && session ? (
+                <CreateInstanceDialog
+                  session={session}
+                  open={createOpen}
+                  onOpenChange={setCreateOpen}
+                  onCreated={() => fetchInstances()}
+                />
+              ) : (
+                <Button size="sm" disabled>
+                  <Plus className="size-4" />
+                  Coming soon
                 </Button>
               )}
             </div>
@@ -478,11 +492,15 @@ function Home() {
                 <Server className="mx-auto size-10 text-muted-foreground" />
                 <h3 className="mt-3 text-lg font-semibold tracking-tight">No instances yet</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Create your first AgentBox VM - it takes about 2 minutes
+                  Instance creation is temporarily disabled while we finish the product.
                 </p>
-                <Button className="mt-4" onClick={() => setCreateOpen(true)} disabled={!session}>
+                {/* <Button className="mt-4" onClick={() => setCreateOpen(true)} disabled={!session}>
                   <Plus className="size-4" />
                   Create Instance
+                </Button> */}
+                <Button className="mt-4" disabled>
+                  <Plus className="size-4" />
+                  Coming soon
                 </Button>
               </div>
             ) : (
