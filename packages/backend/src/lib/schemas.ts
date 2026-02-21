@@ -48,6 +48,11 @@ export const provisioningUpdateInputSchema = z.object({
   step: provisioningStepSchema,
 });
 
+export const instanceConfigQuerySchema = z.object({
+  serverId: z.coerce.number(),
+  secret: z.string().min(1).max(256),
+});
+
 export const updateInstanceInputSchema = z.object({
   name: z.string().min(1).max(100),
 });

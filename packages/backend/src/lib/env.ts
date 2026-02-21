@@ -3,7 +3,7 @@ import { z } from "zod";
 const envSchema = z.object({
   DATABASE_URL: z.string().default("postgresql://agentbox:agentbox@localhost:5432/agentbox"),
   HETZNER_API_TOKEN: z.string().optional(),
-  HETZNER_SNAPSHOT_ID: z.string().default("360084253"),
+  HETZNER_SNAPSHOT_ID: z.string().default("360350672"),
   HETZNER_LOCATIONS: z.string().default("nbg1,fsn1"),
   HETZNER_SERVER_TYPE: z.string().default("cx33"),
   API_BASE_URL: z.string().default("http://localhost:8080"),

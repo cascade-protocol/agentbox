@@ -7,7 +7,9 @@
 # (setup.sh). This script only handles per-instance runtime config.
 #
 # The backend's Hetzner provisioning code passes cloud-init user_data that
-# writes /etc/agentbox/callback.env and then runs this script.
+# writes /etc/agentbox/callback.env with bootstrap credentials, then runs
+# this script. Dynamic config (hostname, TLS certs, registration template)
+# is fetched from the backend's config endpoint at boot time.
 set -euo pipefail
 
 LOG="/var/log/agentbox-init.log"
@@ -15,7 +17,7 @@ exec > >(tee -a "$LOG") 2>&1
 
 echo "[$(date -Iseconds)] AgentBox init starting"
 
-# --- Load callback config (written by cloud-init user_data) ---
+# --- Load bootstrap config (written by cloud-init user_data) ---
 
 CALLBACK_ENV="/etc/agentbox/callback.env"
 if [[ ! -f "$CALLBACK_ENV" ]]; then
@@ -24,9 +26,13 @@ if [[ ! -f "$CALLBACK_ENV" ]]; then
 fi
 # shellcheck source=/dev/null
 source "$CALLBACK_ENV"
-# Expected vars: CALLBACK_URL, CALLBACK_SECRET, TERMINAL_TOKEN, SERVER_ID, INSTANCE_HOSTNAME
+# Expected vars: API_BASE_URL, CALLBACK_SECRET, TERMINAL_TOKEN, SERVER_ID
 
-CALLBACK_STEP_URL="${CALLBACK_URL%/}/step"
+# --- Derive API endpoints from base URL ---
+
+CALLBACK_URL="${API_BASE_URL%/}/instances/callback"
+CALLBACK_STEP_URL="${CALLBACK_URL}/step"
+CONFIG_URL="${API_BASE_URL%/}/instances/config?serverId=${SERVER_ID}&secret=${CALLBACK_SECRET}"
 
 report_step() {
   local step="$1"
@@ -44,6 +50,40 @@ report_step() {
 }
 
 report_step "configuring"
+
+# --- Fetch dynamic config from backend ---
+
+echo "Fetching config from backend..."
+CONFIG_JSON=""
+for i in $(seq 1 5); do
+  CONFIG_JSON=$(curl -sf "$CONFIG_URL") && break
+  echo "Config fetch attempt $i failed, retrying in 10s..."
+  sleep 10
+done
+if [[ -z "$CONFIG_JSON" ]]; then
+  echo "ERROR: Failed to fetch config after 5 attempts"
+  exit 1
+fi
+
+INSTANCE_HOSTNAME=$(echo "$CONFIG_JSON" | jq -r '.hostname')
+echo "Hostname: $INSTANCE_HOSTNAME"
+
+# --- Write TLS certs if provided by backend ---
+
+TLS_CERT=$(echo "$CONFIG_JSON" | jq -r '.tls.cert // empty')
+TLS_KEY=$(echo "$CONFIG_JSON" | jq -r '.tls.key // empty')
+if [[ -n "$TLS_CERT" && -n "$TLS_KEY" ]]; then
+  mkdir -p /etc/caddy/tls
+  echo "$TLS_CERT" > /etc/caddy/tls/cert.pem
+  echo "$TLS_KEY" > /etc/caddy/tls/key.pem
+  chgrp caddy /etc/caddy/tls/key.pem
+  chmod 640 /etc/caddy/tls/key.pem
+  echo "Wildcard TLS cert written"
+fi
+
+# --- Save registration template for later use ---
+
+echo "$CONFIG_JSON" | jq '.registrationTemplate' > /tmp/registration-template.json
 
 # --- Verify preloaded OpenClaw ---
 
@@ -82,7 +122,8 @@ systemctl start ttyd || true
 # --- Create Solana wallet + SATI identity (devnet) ---
 #
 # Runs while gateway is cold-starting. Creates the Solana keypair and publishes
-# agent identity on first boot.
+# agent identity on first boot. Registration metadata comes from the backend-
+# provided template; only the wallet address is filled in at runtime.
 
 echo "Creating Solana wallet and SATI agent identity..."
 IDENTITY_DIR="/home/openclaw/agent-identity"
@@ -94,33 +135,11 @@ su - openclaw -c "cd $IDENTITY_DIR && create-sati-agent init --force"
 # Capture wallet address (keypair created by init above)
 SOLANA_WALLET_ADDRESS=$(su - openclaw -c "solana address")
 
-# Fill template following ERC-8004 Four Golden Rules: descriptive name/description/image,
-# at least one service endpoint, OASF skills/domains taxonomy, registrations back-reference
-# (auto-populated by create-sati-agent publish). Each instance gets a unique DiceBear
-# avatar seeded by hostname.
-SHORT_NAME=$(echo "${INSTANCE_HOSTNAME:-instance}" | cut -d. -f1 | head -c 32)
-AGENT_NAME="AgentBox: ${SHORT_NAME}"
-AGENT_IMAGE="https://api.dicebear.com/9.x/bottts/svg?seed=${SHORT_NAME}"
-AGENT_ENDPOINT="https://${INSTANCE_HOSTNAME}"
-
+# Merge runtime wallet address into the backend-provided registration template
 su - openclaw -c "cd $IDENTITY_DIR && jq \
---arg name \"$AGENT_NAME\" \
---arg image \"$AGENT_IMAGE\" \
---arg endpoint \"$AGENT_ENDPOINT\" '
-  .name = \$name |
-  .description = \"Dedicated AI agent gateway powered by OpenClaw, provisioned by AgentBox. Features an HTTPS-secured agent runtime with web terminal access, Solana wallet, and SATI on-chain identity. Interact via the gateway endpoint or web terminal at the agent URL.\" |
-  .image = \$image |
-  .properties = {\"files\": [{\"uri\": \$image, \"type\": \"image/svg+xml\"}], \"category\": \"image\"} |
-  .services = [
-    {\"name\": \"OASF\", \"endpoint\": \"https://github.com/agntcy/oasf/\", \"version\": \"v0.8.0\",
-     \"skills\": [\"natural_language_processing/natural_language_generation/dialogue_generation\", \"tool_interaction/tool_use_planning\", \"agent_orchestration/task_decomposition\"],
-     \"domains\": [\"technology/software_engineering/apis_integration\", \"technology/blockchain/blockchain\"]},
-    {\"name\": \"web\", \"endpoint\": \$endpoint}
-  ] |
-  .supportedTrust = [\"reputation\"] |
-  .active = true |
-  .x402Support = false
-' agent-registration.json > agent-registration.json.tmp && mv agent-registration.json.tmp agent-registration.json"
+  --arg wallet \"$SOLANA_WALLET_ADDRESS\" '
+  walk(if type == \"string\" then gsub(\"__WALLET_ADDRESS__\"; \$wallet) else . end)
+' /tmp/registration-template.json > agent-registration.json"
 
 PUBLISH_JSON=$(su - openclaw -c "cd $IDENTITY_DIR && create-sati-agent publish --network devnet --json")
 AGENT_ID=$(echo "$PUBLISH_JSON" | jq -r '.agentId // empty')
@@ -135,8 +154,7 @@ report_step "sati_published"
 # Caddy routes: / -> OpenClaw gateway (:18789), /terminal/<token>/* -> ttyd (:7681)
 # The terminal token in the URL path acts as authentication - only users who know
 # the per-instance token can access the web terminal.
-# TLS: uses wildcard cert from /etc/caddy/tls/ if present (written by cloud-init
-# user_data), otherwise falls back to per-VM Let's Encrypt (HTTP-01 challenge).
+# TLS: uses wildcard cert if written above, otherwise per-VM Let's Encrypt (HTTP-01).
 
 if [[ -n "${INSTANCE_HOSTNAME:-}" ]]; then
   echo "Configuring Caddy for ${INSTANCE_HOSTNAME}..."

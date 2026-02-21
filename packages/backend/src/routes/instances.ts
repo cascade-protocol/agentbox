@@ -14,6 +14,7 @@ import * as hetzner from "../lib/hetzner";
 import {
   authInputSchema,
   callbackInputSchema,
+  instanceConfigQuerySchema,
   provisioningUpdateInputSchema,
   updateInstanceInputSchema,
 } from "../lib/schemas";
@@ -95,12 +96,9 @@ function toInstanceResponse(row: typeof instances.$inferSelect) {
 }
 
 function buildUserData(opts: {
-  callbackUrl: string;
+  apiBaseUrl: string;
   callbackToken: string;
   terminalToken: string;
-  hostname: string;
-  wildcardCert?: string;
-  wildcardKey?: string;
 }): string {
   const lines = [
     "#!/bin/bash",
@@ -110,35 +108,59 @@ function buildUserData(opts: {
     "SERVER_ID=$(curl -s http://169.254.169.254/hetzner/v1/metadata/instance-id)",
     "",
     "cat > /etc/agentbox/callback.env << 'ENVEOF'",
-    `CALLBACK_URL="${opts.callbackUrl}"`,
+    `API_BASE_URL="${opts.apiBaseUrl}"`,
     `CALLBACK_SECRET="${opts.callbackToken}"`,
     `TERMINAL_TOKEN="${opts.terminalToken}"`,
-    `INSTANCE_HOSTNAME="${opts.hostname}"`,
     "ENVEOF",
     "",
     "# SERVER_ID must be unquoted (numeric) so append outside heredoc",
     'echo "SERVER_ID=$SERVER_ID" >> /etc/agentbox/callback.env',
     "chmod 600 /etc/agentbox/callback.env",
+    "",
+    "/usr/local/bin/agentbox-init.sh",
   ];
-
-  if (opts.wildcardCert && opts.wildcardKey) {
-    lines.push(
-      "",
-      "# Wildcard TLS cert (managed by backend, avoids per-VM Let's Encrypt)",
-      "mkdir -p /etc/caddy/tls",
-      "cat > /etc/caddy/tls/cert.pem << 'CERTEOF'",
-      opts.wildcardCert.trim(),
-      "CERTEOF",
-      "cat > /etc/caddy/tls/key.pem << 'KEYEOF'",
-      opts.wildcardKey.trim(),
-      "KEYEOF",
-      "chgrp caddy /etc/caddy/tls/key.pem",
-      "chmod 640 /etc/caddy/tls/key.pem",
-    );
-  }
-
-  lines.push("", "/usr/local/bin/agentbox-init.sh");
   return lines.join("\n");
+}
+
+function buildRegistrationTemplate(hostname: string): Record<string, unknown> {
+  const shortName = hostname.split(".")[0].slice(0, 22);
+  const agentName = `AgentBox: ${shortName}`;
+  const agentImage = `https://api.dicebear.com/9.x/bottts/svg?seed=${shortName}`;
+  const agentEndpoint = `https://${hostname}`;
+
+  return {
+    type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+    name: agentName,
+    description:
+      "Dedicated AI agent gateway powered by OpenClaw, provisioned by AgentBox. Features an HTTPS-secured agent runtime with web terminal access, Solana wallet, and SATI on-chain identity. Interact via the gateway endpoint or web terminal at the agent URL.",
+    image: agentImage,
+    properties: {
+      files: [{ uri: agentImage, type: "image/svg+xml" }],
+      category: "image",
+    },
+    services: [
+      { name: "MCP", endpoint: agentEndpoint, version: "2025-06-18" },
+      {
+        name: "OASF",
+        endpoint: "https://github.com/agntcy/oasf/",
+        version: "v0.8.0",
+        skills: [
+          "natural_language_processing/natural_language_generation/dialogue_generation",
+          "tool_interaction/tool_use_planning",
+          "agent_orchestration/task_decomposition",
+        ],
+        domains: [
+          "technology/software_engineering/apis_integration",
+          "technology/blockchain/blockchain",
+        ],
+      },
+      { name: "agentWallet", endpoint: "solana:devnet:__WALLET_ADDRESS__" },
+      { name: "web", endpoint: agentEndpoint },
+    ],
+    supportedTrust: ["reputation"],
+    active: true,
+    x402Support: false,
+  };
 }
 
 // POST /instances/auth - Wallet sign-in (no bearer auth)
@@ -189,32 +211,14 @@ instanceRoutes.post("/instances", auth, async (c) => {
     .slice(0, 12);
   const name = `agentbox-${sanitizedWallet}-${shortId}`;
 
-  const callbackUrl = `${env.API_BASE_URL}/instances/callback`;
   const hostname = `${name}.${env.INSTANCE_BASE_DOMAIN}`;
-
-  let wildcardCert: string | undefined;
-  let wildcardKey: string | undefined;
-  if (env.WILDCARD_CERT_PATH && env.WILDCARD_KEY_PATH) {
-    try {
-      wildcardCert = readFileSync(env.WILDCARD_CERT_PATH, "utf-8");
-      wildcardKey = readFileSync(env.WILDCARD_KEY_PATH, "utf-8");
-    } catch (err) {
-      logger.error(
-        `Failed to read wildcard cert, falling back to per-VM Let's Encrypt: ${String(err)}`,
-      );
-    }
-  }
-
   const callbackToken = randomUUID();
   const terminalToken = randomUUID();
 
   const userData = buildUserData({
-    callbackUrl,
+    apiBaseUrl: env.API_BASE_URL,
     callbackToken,
     terminalToken,
-    hostname,
-    wildcardCert,
-    wildcardKey,
   });
 
   let result: Awaited<ReturnType<typeof hetzner.createServer>>;
@@ -341,6 +345,52 @@ instanceRoutes.post("/instances/callback", async (c) => {
   }
 
   return c.json({ ok: true });
+});
+
+// GET /instances/config - VM fetches dynamic config at boot (callback-token auth)
+instanceRoutes.get("/instances/config", async (c) => {
+  const query = instanceConfigQuerySchema.safeParse({
+    serverId: c.req.query("serverId"),
+    secret: c.req.query("secret"),
+  });
+  if (!query.success) {
+    return c.json({ error: "Invalid input", details: query.error.issues }, 400);
+  }
+
+  const [row] = await db
+    .select()
+    .from(instances)
+    .where(
+      and(
+        eq(instances.id, query.data.serverId),
+        eq(instances.status, "provisioning"),
+        eq(instances.callbackToken, query.data.secret),
+      ),
+    );
+
+  if (!row) {
+    return c.json({ error: "Instance not found" }, 404);
+  }
+
+  const hostname = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
+
+  let tls: { cert: string; key: string } | null = null;
+  if (env.WILDCARD_CERT_PATH && env.WILDCARD_KEY_PATH) {
+    try {
+      const cert = readFileSync(env.WILDCARD_CERT_PATH, "utf-8");
+      const key = readFileSync(env.WILDCARD_KEY_PATH, "utf-8");
+      tls = { cert, key };
+    } catch (err) {
+      logger.error(`Failed to read wildcard cert for config endpoint: ${String(err)}`);
+    }
+  }
+
+  return c.json({
+    hostname,
+    terminalToken: row.terminalToken,
+    tls,
+    registrationTemplate: buildRegistrationTemplate(hostname),
+  });
 });
 
 // PATCH /instances/:id - Update instance name
