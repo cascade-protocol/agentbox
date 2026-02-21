@@ -71,7 +71,7 @@ const x402Payment = paymentMiddleware(
           payTo: env.PAY_TO_ADDRESS,
         },
       ],
-      description: "Provision AgentBox VM (30 days)",
+      description: "Provision AgentBox VM (14 days)",
       mimeType: "application/json",
     },
   },

@@ -286,7 +286,7 @@ function InstanceDetail() {
     try {
       const updated = await api.instances.extend(numId);
       setInstance((prev) => (prev ? { ...prev, ...updated } : prev));
-      toast.success("Extended by 30 days");
+      toast.success("Extended by 14 days");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Extend failed");
     } finally {
@@ -522,7 +522,7 @@ function InstanceDetail() {
               disabled={actionLoading !== null}
             >
               {actionLoading === "extend" ? <Loader2 className="size-4 animate-spin" /> : null}
-              {actionLoading === "extend" ? "Extending..." : "Extend 30 days"}
+              {actionLoading === "extend" ? "Extending..." : "Extend 14 days"}
             </Button>
             <Button
               variant="destructive"

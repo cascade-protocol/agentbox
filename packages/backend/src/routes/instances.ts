@@ -231,7 +231,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
   }
 
   const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 30);
+  expiresAt.setDate(expiresAt.getDate() + 14);
 
   const [row] = await db
     .insert(instances)
@@ -427,7 +427,7 @@ instanceRoutes.post("/instances/:id/extend", auth, async (c) => {
   maxExpiry.setDate(maxExpiry.getDate() + 90);
 
   const newExpiry = new Date(row.expiresAt);
-  newExpiry.setDate(newExpiry.getDate() + 30);
+  newExpiry.setDate(newExpiry.getDate() + 14);
 
   if (newExpiry > maxExpiry) {
     return c.json({ error: "Maximum lifetime of 90 days reached" }, 400);
