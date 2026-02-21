@@ -7,3 +7,6 @@ dist/
 !.env.example
 PLAN.md
 .claude/settings.local.json
+.pnpm-store
+playwright-report/
+test-results/

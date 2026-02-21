@@ -1,11 +1,6 @@
-import {
-  type Address,
-  address,
-  getTransactionCodec,
-  type SignatureDictionary,
-  type TransactionSigner,
-} from "@solana/kit";
-import { useSignTransaction } from "@solana/react";
+import { createWalletTransactionSigner, type WalletSession } from "@solana/client";
+import type { TransactionSigner } from "@solana/kit";
+import { useWalletSession } from "@solana/react-hooks";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Activity,
@@ -49,7 +44,6 @@ import {
 import { api, getIsAdmin, type Instance, instanceUrls } from "../lib/api";
 import { formatDate, relativeTime, shortDate, truncateAddress } from "../lib/format";
 import { getProvisioningStepLabel, getStatusVariant } from "../lib/status";
-import { type UiWalletAccount, useWallet } from "../lib/wallet";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -224,40 +218,20 @@ function HomeSkeleton() {
 }
 
 function CreateInstanceDialog({
-  account,
+  session,
   open,
   onOpenChange,
   onCreated,
 }: {
-  account: UiWalletAccount;
+  session: WalletSession;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: () => Promise<void>;
 }) {
-  const signTransaction = useSignTransaction(account, "solana:mainnet");
-  const signer: TransactionSigner = useMemo(() => {
-    const signerAddress = address(account.address) as Address;
-    const codec = getTransactionCodec();
-    return {
-      address: signerAddress,
-      async signTransactions(
-        transactions: readonly Parameters<typeof codec.encode>[0][],
-      ): Promise<readonly SignatureDictionary[]> {
-        const signatures: SignatureDictionary[] = [];
-        for (const tx of transactions) {
-          const wireBytes = codec.encode(tx);
-          const { signedTransaction } = await signTransaction({
-            transaction: wireBytes as Uint8Array,
-          });
-          const decoded = codec.decode(signedTransaction);
-          const sig = decoded.signatures[signerAddress];
-          if (!sig) throw new Error("Wallet did not return a signature");
-          signatures.push(Object.freeze({ [signerAddress]: sig }) as SignatureDictionary);
-        }
-        return Object.freeze(signatures);
-      },
-    };
-  }, [account.address, signTransaction]);
+  const signer: TransactionSigner = useMemo(
+    () => createWalletTransactionSigner(session).signer,
+    [session],
+  );
   const [creating, setCreating] = useState(false);
 
   async function handleCreate() {
@@ -307,7 +281,7 @@ function CreateInstanceDialog({
 }
 
 function Home() {
-  const { account } = useWallet();
+  const session = useWalletSession();
   const admin = getIsAdmin();
   const [showAll, setShowAll] = useState(false);
   const [instances, setInstances] = useState<Instance[]>([]);
@@ -332,7 +306,7 @@ function Home() {
       } catch (err) {
         if (showErrorToast) {
           const message = err instanceof Error ? err.message : "Failed to load instances";
-          toast.error(message);
+          toast.error(message, { id: "instances-load-error" });
         }
       } finally {
         setLoading(false);
@@ -344,7 +318,7 @@ function Home() {
 
   useEffect(() => {
     setLoading(true);
-    void fetchInstances({ showErrorToast: true });
+    void fetchInstances();
   }, [fetchInstances]);
 
   const hasProvisioning = instances.some((instance) => instance.status === "provisioning");
@@ -407,98 +381,106 @@ function Home() {
   return (
     <main className="container mx-auto flex-1 max-w-6xl px-4 py-6 md:py-8">
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Instances</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Manage your AgentBox instances</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {admin && (
-              <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={showAll}
-                  onChange={(e) => setShowAll(e.target.checked)}
-                  className="accent-primary"
-                />
-                All
-              </label>
-            )}
-            {lastChecked && (
-              <span className="hidden text-xs text-muted-foreground sm:inline">
-                {relativeTime(lastChecked.toISOString())}
-              </span>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setRefreshing(true);
-                void fetchInstances({ showErrorToast: true });
-              }}
-            >
-              <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
-            {account ? (
-              <CreateInstanceDialog
-                account={account}
-                open={createOpen}
-                onOpenChange={setCreateOpen}
-                onCreated={() => fetchInstances()}
-              />
-            ) : (
-              <Button size="sm" disabled>
-                <Plus className="size-4" />
-                Create Instance
+        <div className="rounded-xl border border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur md:p-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Instances</h1>
+              <p className="mt-1 text-sm text-muted-foreground">Manage your AgentBox instances</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {admin && (
+                <label className="flex h-8 cursor-pointer select-none items-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={showAll}
+                    onChange={(e) => setShowAll(e.target.checked)}
+                    className="accent-primary"
+                  />
+                  All
+                </label>
+              )}
+              {lastChecked && (
+                <span className="hidden rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground sm:inline">
+                  {relativeTime(lastChecked.toISOString())}
+                </span>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setRefreshing(true);
+                  void fetchInstances({ showErrorToast: true });
+                }}
+              >
+                <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
+                Refresh
               </Button>
-            )}
+              {session ? (
+                <CreateInstanceDialog
+                  session={session}
+                  open={createOpen}
+                  onOpenChange={setCreateOpen}
+                  onCreated={() => fetchInstances()}
+                />
+              ) : (
+                <Button size="sm" disabled>
+                  <Plus className="size-4" />
+                  Create Instance
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
-          <Card>
+          <Card className="shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total</CardTitle>
+              <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Total
+              </CardTitle>
               <Server className="size-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{instances.length}</div>
+              <div className="text-3xl font-bold tracking-tight">{instances.length}</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Running</CardTitle>
+              <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Running
+              </CardTitle>
               <Activity className="size-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{running}</div>
+              <div className="text-3xl font-bold tracking-tight">{running}</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
+              <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Expiring Soon
+              </CardTitle>
               <AlertTriangle className="size-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{expiring}</div>
+              <div className="text-3xl font-bold tracking-tight">{expiring}</div>
             </CardContent>
           </Card>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>All Instances</CardTitle>
+        <Card className="shadow-sm">
+          <CardHeader className="border-b border-border/60">
+            <CardTitle className="text-base">All Instances</CardTitle>
           </CardHeader>
           <CardContent>
             {instances.length === 0 ? (
-              <div className="py-6 text-center">
+              <div className="rounded-lg border border-dashed border-border/60 bg-background/60 py-10 text-center">
                 <Server className="mx-auto size-10 text-muted-foreground" />
-                <h3 className="mt-3 text-lg font-semibold">No instances yet</h3>
+                <h3 className="mt-3 text-lg font-semibold tracking-tight">No instances yet</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Create your first AgentBox VM - it takes about 2 minutes
                 </p>
-                <Button className="mt-4" onClick={() => setCreateOpen(true)} disabled={!account}>
+                <Button className="mt-4" onClick={() => setCreateOpen(true)} disabled={!session}>
                   <Plus className="size-4" />
                   Create Instance
                 </Button>
@@ -507,7 +489,7 @@ function Home() {
               <>
                 <div className="hidden md:block">
                   <Table>
-                    <TableHeader className="bg-muted/50">
+                    <TableHeader className="bg-muted/35">
                       <TableRow className="hover:bg-muted/50">
                         <TableHead className="pl-3">Name</TableHead>
                         <TableHead>User</TableHead>

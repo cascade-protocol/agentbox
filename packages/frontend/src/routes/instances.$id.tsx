@@ -315,10 +315,10 @@ function InstanceDetail() {
   return (
     <main className="container mx-auto flex-1 max-w-4xl px-4 py-6 md:py-8">
       <div className="space-y-6">
-        <div>
+        <div className="rounded-xl border border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur md:p-5">
           <Link
             to="/"
-            className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+            className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="size-4" /> Back
           </Link>
@@ -374,14 +374,16 @@ function InstanceDetail() {
             )}
             <StatusDisplay instance={instance} />
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">{instance.userId}</p>
+          <p className="mt-1 rounded-md bg-muted/60 px-2 py-1 font-mono text-xs text-muted-foreground">
+            {instance.userId}
+          </p>
         </div>
 
         {instance.status === "provisioning" && (
           <ProvisioningStepper step={instance.provisioningStep} />
         )}
 
-        <Card>
+        <Card className="shadow-sm">
           <CardHeader>
             <CardTitle>Details</CardTitle>
           </CardHeader>
@@ -417,7 +419,7 @@ function InstanceDetail() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="shadow-sm">
           <CardHeader>
             <CardTitle>Access</CardTitle>
           </CardHeader>
@@ -449,7 +451,7 @@ function InstanceDetail() {
         </Card>
 
         {health && (
-          <Card>
+          <Card className="shadow-sm">
             <CardHeader>
               <CardTitle>Health</CardTitle>
             </CardHeader>
@@ -470,7 +472,7 @@ function InstanceDetail() {
           </Card>
         )}
 
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-3 rounded-xl border border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
           <div className="flex flex-wrap gap-3">
             {instance.status === "running" ? (
               <Button asChild variant="outline">

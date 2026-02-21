@@ -1,15 +1,26 @@
-import type { SolanaSignMessageFeature } from "@solana/wallet-standard-features";
+import type { WalletSession } from "@solana/client";
+import { useWalletConnection } from "@solana/react-hooks";
 import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
-import { getWalletAccountFeature } from "@wallet-standard/react";
-import { BadgeCheck, Coins, Loader2, LogOut, ShieldCheck, Wallet } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import {
+  ArrowRight,
+  BadgeCheck,
+  Bot,
+  Coins,
+  Loader2,
+  LogOut,
+  Server,
+  ShieldCheck,
+  TerminalSquare,
+  Wallet,
+  WalletCards,
+} from "lucide-react";
+import { useCallback, useState } from "react";
 import { ErrorBoundary } from "../components/error-boundary";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Toaster } from "../components/ui/sonner";
 import { API_URL, clearToken, getToken, setIsAdmin, setToken } from "../lib/api";
 import { truncateAddress } from "../lib/format";
-import { type UiWalletAccount, useWallet } from "../lib/wallet";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -18,30 +29,38 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   const [token, setTokenState] = useState(() => getToken());
-  const { wallets, wallet, account, connected, connect, disconnect } = useWallet();
+  const {
+    connectors,
+    connect,
+    disconnect,
+    connected,
+    connecting,
+    wallet,
+    error: walletError,
+    isReady,
+  } = useWalletConnection();
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const signIn = useCallback(async (acct: UiWalletAccount) => {
+  const signIn = useCallback(async (session: WalletSession) => {
+    if (!session.signMessage) {
+      throw new Error("Connected wallet does not support message signing");
+    }
+
     setSigningIn(true);
     setError(null);
     try {
       const timestamp = Date.now();
       const message = `Sign in to AgentBox\nTimestamp: ${timestamp}`;
       const encoded = new TextEncoder().encode(message);
-
-      const feature = getWalletAccountFeature(
-        acct,
-        "solana:signMessage",
-      ) as SolanaSignMessageFeature["solana:signMessage"];
-      const [{ signature }] = await feature.signMessage({ account: acct, message: encoded });
+      const signature = await session.signMessage(encoded);
       const sig = btoa(String.fromCharCode(...new Uint8Array(signature)));
 
       const res = await fetch(`${API_URL}/instances/auth`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          solanaWalletAddress: acct.address,
+          solanaWalletAddress: String(session.account.address),
           signature: sig,
           timestamp,
         }),
@@ -57,60 +76,319 @@ function RootLayout() {
       setIsAdmin(data.isAdmin ?? false);
       setTokenState(data.token);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in failed");
+      const message = err instanceof Error ? err.message : "Sign-in failed";
+      setError(message);
+      throw err instanceof Error ? err : new Error(message);
     } finally {
       setSigningIn(false);
     }
   }, []);
 
-  useEffect(() => {
-    if (connected && account && !getToken()) {
-      signIn(account);
-    }
-  }, [connected, account, signIn]);
+  const handleConnect = useCallback(
+    async (connectorId: string) => {
+      setError(null);
+      try {
+        const session = await connect(connectorId, {
+          autoConnect: true,
+          allowInteractiveFallback: true,
+        });
+        await signIn(session);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Wallet connection failed");
+      }
+    },
+    [connect, signIn],
+  );
+
+  const walletErrorMessage =
+    walletError instanceof Error ? walletError.message : walletError ? String(walletError) : null;
+  const activeError = error ?? walletErrorMessage;
 
   if (!token) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="space-y-2">
-            <CardTitle className="text-xl">AgentBox</CardTitle>
-            <p className="text-sm font-medium">Dedicated AI agent VMs in 60 seconds</p>
-            <ul className="space-y-1 text-sm text-muted-foreground">
-              <li className="flex items-center gap-2">
-                <BadgeCheck className="size-4" />
-                OpenClaw gateway + web terminal
-              </li>
-              <li className="flex items-center gap-2">
-                <ShieldCheck className="size-4" />
-                HTTPS + Solana wallet + SATI identity
-              </li>
-              <li className="flex items-center gap-2">
-                <Coins className="size-4" />
-                $1 USDC for 30 days
-              </li>
-            </ul>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            {signingIn ? (
-              <Button disabled>
-                <Loader2 className="size-4 animate-spin" />
-                Signing in...
-              </Button>
-            ) : (
-              wallets.map((w) => (
-                <Button key={w.name} onClick={() => connect(w)} variant="outline">
-                  <Wallet className="size-4" />
-                  {w.name}
+      <div className="relative min-h-screen">
+        <header className="sticky top-0 z-10 border-b border-border/70 bg-background/75 backdrop-blur">
+          <div className="container mx-auto flex h-14 max-w-6xl items-center justify-between px-4 md:px-6">
+            <span className="text-sm font-semibold tracking-wide">AgentBox</span>
+            <Button asChild size="sm">
+              <a href="#connect-wallet">Deploy for $5</a>
+            </Button>
+          </div>
+        </header>
+
+        <main className="container mx-auto max-w-6xl space-y-12 px-4 py-10 md:space-y-16 md:px-6 md:py-12">
+          <section className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+            <div className="space-y-6">
+              <p className="inline-flex rounded-full border border-primary/35 bg-primary/12 px-3 py-1 text-xs font-semibold tracking-wide text-primary">
+                Pay with USDC. No API keys.
+              </p>
+              <div className="space-y-4">
+                <h1 className="text-4xl font-semibold leading-tight tracking-tight text-foreground md:text-5xl">
+                  Agent in a Box
+                </h1>
+                <p className="max-w-2xl text-base text-muted-foreground md:text-lg">
+                  A ready-to-use OpenClaw agent on its own VM. Pre-funded wallet for model access,
+                  web terminal, on-chain identity. No setup. Running in 60 seconds.
+                </p>
+              </div>
+              <div className="space-y-3">
+                <Button asChild size="lg">
+                  <a href="#connect-wallet">
+                    Deploy for $5
+                    <ArrowRight className="size-4" />
+                  </a>
                 </Button>
-              ))
-            )}
-            <p className="text-xs text-muted-foreground">
-              You&apos;ll sign a message to prove ownership. No funds are transferred.
-            </p>
-          </CardContent>
-        </Card>
+                <p className="text-sm text-muted-foreground">14 days, no subscription</p>
+                <p className="max-w-2xl text-sm text-muted-foreground">
+                  Setting up OpenClaw takes a VPS, DNS, TLS, API keys, and an afternoon. Or pay $5
+                  and skip all of it.
+                </p>
+              </div>
+            </div>
+
+            <Card className="overflow-hidden border-border/80 bg-card/90">
+              <CardHeader className="border-b border-border/70 pb-4">
+                <CardTitle className="text-base font-semibold tracking-wide">
+                  Live Runtime Preview
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-5">
+                <div className="rounded-lg border border-border/70 bg-background/80 p-4 font-mono text-xs leading-6 text-muted-foreground">
+                  <p className="text-foreground">$ claw boot --name my-agent</p>
+                  <p>Provisioning VM: 2 vCPU / 4 GB RAM / 80 GB disk</p>
+                  <p>Funding wallet with startup credits...</p>
+                  <p>Registering SATI identity on Solana...</p>
+                  <p className="text-success">Agent live at https://my-agent.agentbox.fyi</p>
+                  <p className="text-success">Terminal ready. Dashboard synced.</p>
+                </div>
+                <div className="grid grid-cols-3 gap-3 text-xs">
+                  <div className="rounded-lg border border-border/70 bg-background/75 p-3">
+                    <p className="text-muted-foreground">Status</p>
+                    <p className="mt-1 font-semibold text-success">Running</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-background/75 p-3">
+                    <p className="text-muted-foreground">Wallet</p>
+                    <p className="mt-1 font-semibold text-foreground">Funded</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-background/75 p-3">
+                    <p className="text-muted-foreground">Identity</p>
+                    <p className="mt-1 font-semibold text-foreground">On-chain</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </section>
+
+          <section className="space-y-5">
+            <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
+              What&apos;s in the Box
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card>
+                <CardContent className="space-y-2 pt-5">
+                  <p className="flex items-center gap-2 text-sm font-semibold">
+                    <WalletCards className="size-4 text-primary" />
+                    No API Keys
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Your agent&apos;s wallet pays for Claude, GPT-4o, and more via USDC. Free model
+                    included out of the box, top up for premium.
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="space-y-2 pt-5">
+                  <p className="flex items-center gap-2 text-sm font-semibold">
+                    <ShieldCheck className="size-4 text-primary" />
+                    Full VM Isolation
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    A dedicated machine, not a shared container. Your agent&apos;s keys, context,
+                    and data can&apos;t leak because there&apos;s nothing shared.
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="space-y-2 pt-5">
+                  <p className="flex items-center gap-2 text-sm font-semibold">
+                    <BadgeCheck className="size-4 text-primary" />
+                    On-Chain Identity
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Registered on-chain the moment it boots. Builds verifiable reputation from your
+                    first interaction. Powered by SATI, ERC-8004 on Solana.
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="space-y-2 pt-5">
+                  <p className="flex items-center gap-2 text-sm font-semibold">
+                    <Bot className="size-4 text-primary" />
+                    OpenClaw Runtime
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Full agent framework with 4,500+ community skills, tool access, and MCP servers.
+                    Dashboard and terminal in your browser.
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="space-y-2 pt-5">
+                  <p className="flex items-center gap-2 text-sm font-semibold">
+                    <TerminalSquare className="size-4 text-primary" />
+                    Live at {"{name}"}.agentbox.fyi
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    HTTPS with automatic TLS. Your agent gets its own domain.
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="space-y-2 pt-5">
+                  <p className="flex items-center gap-2 text-sm font-semibold">
+                    <Coins className="size-4 text-primary" />
+                    $5. 14 days. No strings.
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Spin up, experiment, let it expire. Need another? Deploy again in 60 seconds.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+
+          <section className="space-y-5">
+            <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Three Steps</h2>
+            <div className="grid gap-4 md:grid-cols-3">
+              <Card>
+                <CardContent className="space-y-2 pt-5">
+                  <p className="text-xs font-semibold tracking-wider text-primary">STEP 1</p>
+                  <p className="text-sm font-semibold">Connect your Solana wallet</p>
+                  <p className="text-sm text-muted-foreground">
+                    Phantom, Solflare, or any Solana wallet.
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="space-y-2 pt-5">
+                  <p className="text-xs font-semibold tracking-wider text-primary">STEP 2</p>
+                  <p className="text-sm font-semibold">Pay $5 USDC</p>
+                  <p className="text-sm text-muted-foreground">
+                    One transaction. No account, no subscription, no Stripe.
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="space-y-2 pt-5">
+                  <p className="text-xs font-semibold tracking-wider text-primary">STEP 3</p>
+                  <p className="text-sm font-semibold">Your agent is live</p>
+                  <p className="text-sm text-muted-foreground">
+                    Dashboard, terminal, wallet, identity. All running at your-name.agentbox.fyi.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+
+          <section className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-2xl font-semibold tracking-tight md:text-3xl">
+                  $5 USDC / 14 days
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <p className="flex items-start gap-2">
+                  <Server className="mt-0.5 size-4 shrink-0 text-primary" />
+                  Dedicated VM (2 vCPU, 4 GB RAM, 80 GB disk)
+                </p>
+                <p className="flex items-start gap-2">
+                  <WalletCards className="mt-0.5 size-4 shrink-0 text-primary" />
+                  Pre-funded wallet (free model included, top up anytime)
+                </p>
+                <p className="flex items-start gap-2">
+                  <TerminalSquare className="mt-0.5 size-4 shrink-0 text-primary" />
+                  Full root access via web terminal
+                </p>
+                <p className="flex items-start gap-2">
+                  <BadgeCheck className="mt-0.5 size-4 shrink-0 text-primary" />
+                  HTTPS at {"{name}"}.agentbox.fyi
+                </p>
+                <p className="flex items-start gap-2">
+                  <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
+                  On-chain agent identity
+                </p>
+                <p className="flex items-start gap-2">
+                  <Coins className="mt-0.5 size-4 shrink-0 text-primary" />
+                  No auto-renewal. Expires cleanly. Extend anytime.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card id="connect-wallet">
+              <CardHeader>
+                <CardTitle className="text-xl font-semibold tracking-tight">
+                  Deploy your agent
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {activeError && <p className="text-sm text-destructive">{activeError}</p>}
+                {signingIn ? (
+                  <Button disabled className="w-full">
+                    <Loader2 className="size-4 animate-spin" />
+                    Signing in...
+                  </Button>
+                ) : connected && wallet ? (
+                  <>
+                    <Button onClick={() => void signIn(wallet)} className="w-full">
+                      <Wallet className="size-4" />
+                      Sign Message & Continue
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        void disconnect();
+                      }}
+                      className="w-full"
+                    >
+                      <LogOut className="size-4" />
+                      Disconnect Wallet
+                    </Button>
+                  </>
+                ) : !isReady ? (
+                  <p className="rounded-md border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
+                    Loading wallet connectors...
+                  </p>
+                ) : connectors.length ? (
+                  connectors.map((connector) => (
+                    <Button
+                      key={connector.id}
+                      onClick={() => void handleConnect(connector.id)}
+                      variant="outline"
+                      className="w-full"
+                      disabled={connecting}
+                    >
+                      <Wallet className="size-4" />
+                      Connect {connector.name}
+                    </Button>
+                  ))
+                ) : (
+                  <p className="rounded-md border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
+                    No compatible wallet detected in this browser.
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  You&apos;ll sign a message to prove ownership, then complete a single $5 USDC
+                  transaction.
+                </p>
+              </CardContent>
+            </Card>
+          </section>
+        </main>
+
+        <footer className="border-t border-border/70 px-4 py-6 text-center text-sm text-muted-foreground md:px-6">
+          AgentBox by Cascade | Every agent gets an identity.
+        </footer>
       </div>
     );
   }
@@ -118,15 +396,15 @@ function RootLayout() {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       <Toaster />
-      <header className="shrink-0 border-b px-4 md:px-6">
-        <div className="container mx-auto flex h-14 max-w-4xl items-center justify-between">
-          <Link to="/" className="text-lg font-semibold tracking-tight">
-            AgentBox
+      <header className="shrink-0 border-b border-border/80 bg-background/80 px-4 backdrop-blur md:px-6">
+        <div className="container mx-auto flex h-14 max-w-6xl items-center justify-between">
+          <Link to="/" className="text-lg font-bold tracking-tight">
+            AgentBox Control
           </Link>
           <div className="flex items-center gap-3">
-            {wallet && account && (
-              <span className="font-mono text-sm text-muted-foreground">
-                {truncateAddress(account.address)}
+            {wallet && (
+              <span className="rounded-md bg-muted/70 px-2 py-1 font-mono text-xs text-muted-foreground">
+                {truncateAddress(String(wallet.account.address))}
               </span>
             )}
             <button
@@ -134,7 +412,7 @@ function RootLayout() {
               onClick={() => {
                 clearToken();
                 setTokenState(null);
-                disconnect();
+                void disconnect();
               }}
               className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >

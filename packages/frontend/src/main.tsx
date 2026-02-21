@@ -1,8 +1,7 @@
+import { SolanaProvider } from "@solana/react-hooks";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
-import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { WalletProvider } from "./lib/wallet";
 import { routeTree } from "./routeTree.gen";
 import "./app.css";
 
@@ -25,10 +24,8 @@ declare module "@tanstack/react-router" {
 const rootElement = document.getElementById("app");
 if (rootElement && !rootElement.innerHTML) {
   createRoot(rootElement).render(
-    <StrictMode>
-      <WalletProvider>
-        <RouterProvider router={router} />
-      </WalletProvider>
-    </StrictMode>,
+    <SolanaProvider config={{ cluster: "mainnet-beta" }} walletPersistence={{ autoConnect: true }}>
+      <RouterProvider router={router} />
+    </SolanaProvider>,
   );
 }

@@ -29,6 +29,7 @@ function Toaster({ ...props }: ToasterProps) {
         } as React.CSSProperties
       }
       toastOptions={{
+        closeButton: true,
         classNames: {
           toast:
             "group toast group-[.toaster]:bg-card group-[.toaster]:text-card-foreground group-[.toaster]:border-border",
