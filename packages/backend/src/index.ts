@@ -13,6 +13,7 @@ import { instances } from "./db/schema";
 import * as cloudflare from "./lib/cloudflare";
 import { env } from "./lib/env";
 import * as hetzner from "./lib/hetzner";
+import { logger } from "./logger";
 import { healthRoutes } from "./routes/health";
 import { instanceRoutes } from "./routes/instances";
 
@@ -38,6 +39,21 @@ function getProvisioningPreflightError(): string | null {
   return null;
 }
 
+// Request logging - before all other middleware
+app.use("/*", async (c, next) => {
+  const { method } = c.req;
+  const path = c.req.path;
+  if (path === "/health") return next();
+
+  const start = Date.now();
+  logger.info(`--> ${method} ${path}`);
+  await next();
+  const ms = Date.now() - start;
+  const status = c.res.status;
+  const level = status >= 500 ? "error" : status >= 400 ? "warn" : "info";
+  logger[level](`<-- ${method} ${path} ${status} ${ms}ms`);
+});
+
 app.use(
   "/*",
   cors({
@@ -55,10 +71,13 @@ app.use("/*", secureHeaders());
 
 // x402 payment gate on instance creation
 const facilitator = new HTTPFacilitatorClient({ url: env.FACILITATOR_URL });
-const resourceServer = new x402ResourceServer([facilitator]).register(
-  SOLANA_MAINNET,
-  new ExactSvmScheme(),
-);
+const resourceServer = new x402ResourceServer([facilitator])
+  .register(SOLANA_MAINNET, new ExactSvmScheme())
+  .onAfterSettle(async (ctx) => {
+    logger.info(`Payment settled via ${env.FACILITATOR_URL}`, {
+      transaction: ctx.result.transaction,
+    });
+  });
 
 const x402Payment = paymentMiddleware(
   {
@@ -95,7 +114,7 @@ app.use("/instances", async (c, next) => {
 });
 
 app.onError((err, c) => {
-  console.error("Unhandled API error:", err);
+  logger.error(`Unhandled API error: ${String(err)}`);
   const isProd = process.env.NODE_ENV === "production";
   return c.json({ error: isProd ? "Internal Server Error" : String(err) }, 500);
 });
@@ -104,26 +123,26 @@ app.route("/", healthRoutes);
 app.route("/", instanceRoutes);
 
 // Expiry cleanup - delete expired instances every hour
-setInterval(
+const cleanupInterval = setInterval(
   async () => {
     try {
       const expired = await db.select().from(instances).where(lte(instances.expiresAt, new Date()));
 
       for (const row of expired) {
-        console.log(`Cleaning up expired instance ${row.id} (${row.name})`);
+        logger.info(`Cleaning up expired instance ${row.id} (${row.name})`);
         await db.update(instances).set({ status: "deleting" }).where(eq(instances.id, row.id));
 
         try {
           await hetzner.deleteServer(row.id);
         } catch (err) {
-          console.error(`Failed to delete Hetzner server ${row.id}:`, err);
+          logger.error(`Failed to delete Hetzner server ${row.id}: ${String(err)}`);
         }
 
         if (env.CF_API_TOKEN) {
           try {
             await cloudflare.deleteDnsRecord(`${row.name}.${env.INSTANCE_BASE_DOMAIN}`);
           } catch (err) {
-            console.error(`Failed to delete DNS for ${row.name}:`, err);
+            logger.error(`Failed to delete DNS for ${row.name}: ${String(err)}`);
           }
         }
 
@@ -131,17 +150,28 @@ setInterval(
       }
 
       if (expired.length > 0) {
-        console.log(`Cleaned up ${expired.length} expired instance(s)`);
+        logger.info(`Cleaned up ${expired.length} expired instance(s)`);
       }
     } catch (err) {
-      console.error("Expiry cleanup failed:", err);
+      logger.error(`Expiry cleanup failed: ${String(err)}`);
     }
   },
   60 * 60 * 1000,
 );
 
-serve({ fetch: app.fetch, port: env.PORT }, (info) => {
-  console.log(`AgentBox API running at http://localhost:${info.port}`);
+const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
+  logger.info(`AgentBox API running at http://localhost:${info.port}`);
 });
+
+// Graceful shutdown - close server so tsx watch can restart without EADDRINUSE
+function shutdown(signal: string) {
+  logger.info(`Received ${signal}, shutting down...`);
+  clearInterval(cleanupInterval);
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 5000);
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
 
 export default app;

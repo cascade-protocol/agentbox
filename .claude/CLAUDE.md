@@ -21,6 +21,21 @@
 - Validate all inputs at route boundaries, trust validated data internally
 - Use Drizzle query builder, not raw SQL
 
+## Environment Variables
+- Backend: all env vars go in `packages/backend/src/lib/env.ts` (Zod-validated, parsed once at startup). Import `env` from there, never read `process.env` directly in app code.
+- Frontend: all env vars go in `packages/frontend/src/env.ts`. Import `env` from there, never read `import.meta.env` directly in components or lib code.
+- When adding a new env var, add it to the appropriate env file first, then use the typed `env.VAR_NAME` everywhere.
+
+## Logging (Backend)
+- Use the Winston logger from `packages/backend/src/logger.ts` for all backend logging. Never use `console.log`/`console.error` directly.
+- Log levels: `logger.error()` for failures, `logger.warn()` for recoverable issues (retries, fallbacks), `logger.info()` for operational events (startup, requests, cleanup), `logger.debug()` for verbose dev diagnostics.
+- `LOG_LEVEL` env var controls output (default: `info`). Set to `debug` for verbose output during development.
+
+## Graceful Shutdown (Backend)
+- The HTTP server handle must be stored and closed on SIGTERM/SIGINT. This is required for `tsx watch` to restart without EADDRINUSE errors.
+- Any `setInterval` or long-lived resource must be cleared in the shutdown handler.
+- Always follow the pattern in `index.ts`: signal handler -> clear intervals -> `server.close()` -> `process.exit(0)` with a timeout fallback to `process.exit(1)`.
+
 ## Git
 - Always use conventional commits: `type(scope): description`
 - Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `style`, `test`, `ci`, `build`

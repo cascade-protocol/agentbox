@@ -22,6 +22,7 @@ const envSchema = z.object({
   WILDCARD_CERT_PATH: z.string().optional(),
   WILDCARD_KEY_PATH: z.string().optional(),
   PORT: z.string().default("8080").transform(Number),
+  LOG_LEVEL: z.string().default("info"),
 });
 
 export type Env = z.infer<typeof envSchema>;

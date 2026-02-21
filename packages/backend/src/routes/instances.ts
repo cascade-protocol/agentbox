@@ -17,6 +17,7 @@ import {
   provisioningUpdateInputSchema,
   updateInstanceInputSchema,
 } from "../lib/schemas";
+import { logger } from "../logger";
 
 type AppEnv = { Variables: { walletAddress: string } };
 
@@ -198,7 +199,9 @@ instanceRoutes.post("/instances", auth, async (c) => {
       wildcardCert = readFileSync(env.WILDCARD_CERT_PATH, "utf-8");
       wildcardKey = readFileSync(env.WILDCARD_KEY_PATH, "utf-8");
     } catch (err) {
-      console.error("Failed to read wildcard cert, falling back to per-VM Let's Encrypt:", err);
+      logger.error(
+        `Failed to read wildcard cert, falling back to per-VM Let's Encrypt: ${String(err)}`,
+      );
     }
   }
 
@@ -218,7 +221,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
   try {
     result = await hetzner.createServer(name, userData);
   } catch (err) {
-    console.error("Hetzner create failed:", err);
+    logger.error(`Hetzner create failed: ${String(err)}`);
     return c.json({ error: "Failed to provision server" }, 502);
   }
 
@@ -226,7 +229,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
     try {
       await cloudflare.createDnsRecord(hostname, result.server.public_net.ipv4.ip);
     } catch (err) {
-      console.error("Cloudflare DNS create failed:", err);
+      logger.error(`Cloudflare DNS create failed: ${String(err)}`);
     }
   }
 
@@ -383,7 +386,7 @@ instanceRoutes.delete("/instances/:id", auth, async (c) => {
   try {
     await hetzner.deleteServer(id);
   } catch (err) {
-    console.error(`Failed to delete Hetzner server ${id}:`, err);
+    logger.error(`Failed to delete Hetzner server ${id}: ${String(err)}`);
   }
 
   if (env.CF_API_TOKEN && env.CF_ZONE_ID) {
@@ -391,7 +394,7 @@ instanceRoutes.delete("/instances/:id", auth, async (c) => {
       const hostname = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
       await cloudflare.deleteDnsRecord(hostname);
     } catch (err) {
-      console.error(`Failed to delete DNS record for ${row.name}:`, err);
+      logger.error(`Failed to delete DNS record for ${row.name}: ${String(err)}`);
     }
   }
 
@@ -409,7 +412,7 @@ instanceRoutes.post("/instances/:id/restart", auth, async (c) => {
   try {
     await hetzner.restartServer(id);
   } catch (err) {
-    console.error(`Failed to restart Hetzner server ${id}:`, err);
+    logger.error(`Failed to restart Hetzner server ${id}: ${String(err)}`);
     return c.json({ error: "Failed to restart server" }, 502);
   }
 

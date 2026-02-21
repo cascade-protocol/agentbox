@@ -1,3 +1,4 @@
+import { logger } from "../logger";
 import { env } from "./env";
 
 const API_BASE = "https://api.hetzner.cloud/v1";
@@ -59,7 +60,7 @@ export async function createServer(name: string, userData: string): Promise<Crea
 
     if (res.ok) {
       if (location !== locations[0]) {
-        console.log(`Hetzner: created in fallback location ${location}`);
+        logger.info(`Hetzner: created in fallback location ${location}`);
       }
       return (await res.json()) as CreateServerResponse;
     }
@@ -67,10 +68,10 @@ export async function createServer(name: string, userData: string): Promise<Crea
     const body = await res.text();
     const isUnavailable = res.status === 412 && body.includes("resource_unavailable");
     if (!isUnavailable) {
-      console.error(`Hetzner create server failed (${res.status}):`, body);
+      logger.error(`Hetzner create server failed (${res.status}): ${body}`);
       throw new Error(`Hetzner create server failed (${res.status})`);
     }
-    console.log(`Hetzner: ${location} unavailable, trying next location...`);
+    logger.warn(`Hetzner: ${location} unavailable, trying next location...`);
   }
 
   throw new Error(
@@ -85,7 +86,7 @@ export async function getServer(id: number): Promise<GetServerResponse> {
 
   if (!res.ok) {
     const body = await res.text();
-    console.error(`Hetzner get server failed (${res.status}):`, body);
+    logger.error(`Hetzner get server failed (${res.status}): ${body}`);
     throw new Error(`Hetzner get server failed (${res.status})`);
   }
 
@@ -100,7 +101,7 @@ export async function deleteServer(id: number): Promise<ActionResponse> {
 
   if (!res.ok) {
     const body = await res.text();
-    console.error(`Hetzner delete server failed (${res.status}):`, body);
+    logger.error(`Hetzner delete server failed (${res.status}): ${body}`);
     throw new Error(`Hetzner delete server failed (${res.status})`);
   }
 
@@ -115,7 +116,7 @@ export async function restartServer(id: number): Promise<ActionResponse> {
 
   if (!res.ok) {
     const body = await res.text();
-    console.error(`Hetzner restart server failed (${res.status}):`, body);
+    logger.error(`Hetzner restart server failed (${res.status}): ${body}`);
     throw new Error(`Hetzner restart server failed (${res.status})`);
   }
 

@@ -41,6 +41,7 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table";
+import { env } from "../env";
 import { api, getIsAdmin, type Instance, instanceUrls } from "../lib/api";
 import { formatDate, relativeTime, shortDate, truncateAddress } from "../lib/format";
 import { getProvisioningStepLabel, getStatusVariant } from "../lib/status";
@@ -282,7 +283,7 @@ function CreateInstanceDialog({
 
 function Home() {
   const session = useWalletSession();
-  const instanceCreationEnabled = import.meta.env.VITE_ENABLE_INSTANCE_CREATION === "true";
+  const instanceCreationEnabled = env.enableInstanceCreation;
   const admin = getIsAdmin();
   const [showAll, setShowAll] = useState(false);
   const [instances, setInstances] = useState<Instance[]>([]);

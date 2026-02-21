@@ -32,9 +32,11 @@ export type InstanceHealth = {
   callbackReceived: boolean;
 };
 
-export const API_URL = import.meta.env.VITE_API_URL ?? "";
-const INSTANCE_BASE_DOMAIN = import.meta.env.VITE_INSTANCE_BASE_DOMAIN ?? "agentbox.fyi";
-const HELIUS_KEY = import.meta.env.VITE_HELIUS_API_KEY ?? "";
+import { env } from "../env";
+
+export const API_URL = env.apiUrl;
+const INSTANCE_BASE_DOMAIN = env.instanceBaseDomain;
+const HELIUS_KEY = env.heliusApiKey;
 const RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_KEY}`;
 
 export function instanceUrls(name: string, gatewayToken?: string, terminalToken?: string | null) {
