@@ -69,7 +69,6 @@ services:
           version: 1
         EOF
         /run.sh
-    env_file: ../../.env
     environment:
       - GF_FEATURE_TOGGLES_ENABLE=alertingSimplifiedRouting,alertingQueryAndExpressionsStepMode
       - GF_SERVER_ROOT_URL=https://grafana.agentbox.fyi

@@ -12,7 +12,7 @@ tunnel:
   cloudflared tunnel --config ~/.cloudflared/agentbox-dev.yml run agentbox-dev
 
 start-monitoring:
-  ssh agentbox 'cd /opt/agentbox/ops/lgtm && docker compose up -d'
+  ssh agentbox 'cd /opt/agentbox/ops/lgtm && docker compose --env-file ../../.env up -d'
 
 deploy:
   ssh agentbox 'cd /opt/agentbox && git pull && pnpm install --frozen-lockfile && just start-server'
