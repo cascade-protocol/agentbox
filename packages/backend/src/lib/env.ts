@@ -18,7 +18,7 @@ const envSchema = z.object({
   INSTANCE_BASE_DOMAIN: z.string().default("agentbox.fyi"),
   CF_API_TOKEN: z.string().optional(),
   HETZNER_SSH_KEY_IDS: z.string().default("107690222"),
-  CF_ZONE_ID: z.string().default("fc4f79a479eed4e1231ecd2f99c5f02a"),
+  CF_ZONE_ID: z.string().default("fda671fa572b4c2d26de8aedcbf94f6e"),
   WILDCARD_CERT_PATH: z.string().optional(),
   WILDCARD_KEY_PATH: z.string().optional(),
   PORT: z.string().default("8080").transform(Number),

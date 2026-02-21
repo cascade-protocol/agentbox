@@ -1,0 +1,100 @@
+name: lgtm
+
+services:
+  loki:
+    image: grafana/loki:3.5.1
+    restart: unless-stopped
+    ports: ["3100:3100"]
+    command: -config.file=/etc/loki/loki-custom.yaml
+    volumes:
+      - loki-data:/loki
+      - ./loki-custom.yaml:/etc/loki/loki-custom.yaml
+
+  promtail:
+    image: grafana/promtail:3.4.4
+    restart: unless-stopped
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./promtail.yaml:/etc/promtail/config.yml
+    command:
+      - -config.file=/etc/promtail/config.yml
+      - -config.expand-env=true
+
+  prometheus:
+    image: prom/prometheus:v3.4.2
+    restart: unless-stopped
+    ports: ["9090:9090"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --enable-feature=native-histograms
+    volumes:
+      - prometheus-data:/prometheus
+    configs:
+      - source: prometheus
+        target: /etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:12.0.2
+    restart: unless-stopped
+    ports: ["3001:3000"]
+    networks:
+      - default
+      - agentbox
+    entrypoint:
+      - sh
+      - -euc
+      - |
+        mkdir -p /etc/grafana/provisioning/datasources
+        cat <<EOF > /etc/grafana/provisioning/datasources/ds.yaml
+        apiVersion: 1
+        datasources:
+        - name: Loki
+          type: loki
+          access: proxy
+          orgId: 1
+          url: http://loki:3100
+          basicAuth: false
+          isDefault: true
+          version: 1
+          editable: false
+        - access: proxy
+          basicAuth: false
+          editable: true
+          isDefault: false
+          name: prometheus
+          type: prometheus
+          uid: prometheus
+          url: http://prometheus:9090
+          version: 1
+        EOF
+        /run.sh
+    env_file: ../../.env
+    environment:
+      - GF_FEATURE_TOGGLES_ENABLE=alertingSimplifiedRouting,alertingQueryAndExpressionsStepMode
+      - GF_SERVER_ROOT_URL=https://grafana.agentbox.fyi
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+    volumes: [grafana-data:/var/lib/grafana]
+
+networks:
+  agentbox:
+    name: agentbox_default
+    external: true
+
+volumes:
+  loki-data:
+  prometheus-data:
+  grafana-data:
+
+configs:
+  prometheus:
+    content: |
+      global:
+        scrape_interval: 15s
+      scrape_configs:
+        - job_name: 'prometheus'
+          static_configs:
+            - targets: ['prometheus:9090']
+        - job_name: 'loki'
+          static_configs:
+            - targets: ['loki:3100']

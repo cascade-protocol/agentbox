@@ -25,3 +25,14 @@
 		reverse_proxy backend:8080
 	}
 }
+
+{$GRAFANA_DOMAIN:grafana.agentbox.fyi} {
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+		resolvers 1.1.1.1
+	}
+
+	handle {
+		reverse_proxy grafana:3000
+	}
+}
