@@ -1,4 +1,5 @@
 import "dotenv/config";
+import type http from "node:http";
 import { serve } from "@hono/node-server";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
@@ -161,14 +162,18 @@ const cleanupInterval = setInterval(
 
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   logger.info(`AgentBox API running at http://localhost:${info.port}`);
-});
+}) as http.Server;
 
 // Graceful shutdown - close server so tsx watch can restart without EADDRINUSE
 function shutdown(signal: string) {
   logger.info(`Received ${signal}, shutting down...`);
   clearInterval(cleanupInterval);
   server.close(() => process.exit(0));
-  setTimeout(() => process.exit(1), 5000);
+  server.closeIdleConnections();
+  setTimeout(() => {
+    server.closeAllConnections();
+    process.exit(1);
+  }, 5000).unref();
 }
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
