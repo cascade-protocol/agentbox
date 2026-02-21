@@ -54,7 +54,7 @@
 
 ## Product
 - AgentBox provisions dedicated Hetzner VMs running OpenClaw AI agent gateways
-- Users pay $1 USDC (Solana x402 protocol) for a 30-day VM with HTTPS and web terminal
+- Users pay $5 USDC (Solana x402 protocol) for 14-day VM with HTTPS and web terminal
 - Each VM gets: OpenClaw gateway, Caddy (TLS), ttyd (terminal), Solana wallet + SATI identity
 
 ## VM Golden Image (Packer)
