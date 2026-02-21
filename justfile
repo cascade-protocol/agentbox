@@ -11,6 +11,9 @@ restart-server:
 tunnel:
   cloudflared tunnel --config ~/.cloudflared/agentbox-dev.yml run agentbox-dev
 
+tunnel-db:
+  ssh -N -L 5433:localhost:5432 agentbox
+
 start-monitoring:
   ssh agentbox 'cd /opt/agentbox/ops/lgtm && docker compose --env-file ../../.env up -d'
 
