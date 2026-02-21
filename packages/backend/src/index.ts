@@ -67,7 +67,7 @@ const x402Payment = paymentMiddleware(
         {
           scheme: "exact",
           network: SOLANA_MAINNET,
-          price: "$1",
+          price: "$5",
           payTo: env.PAY_TO_ADDRESS,
         },
       ],

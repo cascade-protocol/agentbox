@@ -260,7 +260,7 @@ function CreateInstanceDialog({
         <DialogHeader>
           <DialogTitle>Create Instance</DialogTitle>
           <DialogDescription>
-            Provision a new AgentBox VM for $1 USDC (30 days). Your wallet will be prompted to
+            Provision a new AgentBox VM for 5 USDC (14 days). Your wallet will be prompted to
             approve the payment.
           </DialogDescription>
         </DialogHeader>
@@ -272,7 +272,7 @@ function CreateInstanceDialog({
           </DialogClose>
           <Button onClick={() => void handleCreate()} disabled={creating}>
             {creating && <Loader2 className="size-4 animate-spin" />}
-            {creating ? "Creating..." : "Pay $1 & Create"}
+            {creating ? "Creating..." : "Pay 5 USDC & Create"}
           </Button>
         </DialogFooter>
       </DialogContent>

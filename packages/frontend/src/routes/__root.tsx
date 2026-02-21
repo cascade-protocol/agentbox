@@ -111,7 +111,7 @@ function RootLayout() {
           <div className="container mx-auto flex h-14 max-w-6xl items-center justify-between px-4 md:px-6">
             <span className="text-sm font-semibold tracking-wide">AgentBox</span>
             <Button asChild size="sm">
-              <a href="#connect-wallet">Deploy for $5</a>
+              <a href="#connect-wallet">Deploy for 5 USDC</a>
             </Button>
           </div>
         </header>
@@ -128,20 +128,20 @@ function RootLayout() {
                 </h1>
                 <p className="max-w-2xl text-base text-muted-foreground md:text-lg">
                   A ready-to-use OpenClaw agent on its own VM. Pre-funded wallet for model access,
-                  web terminal, on-chain identity. No setup. Running in 60 seconds.
+                  web terminal, on-chain identity. No setup. Running in 3 minutes.
                 </p>
               </div>
               <div className="space-y-3">
                 <Button asChild size="lg">
                   <a href="#connect-wallet">
-                    Deploy for $5
+                    Deploy for 5 USDC
                     <ArrowRight className="size-4" />
                   </a>
                 </Button>
                 <p className="text-sm text-muted-foreground">14 days, no subscription</p>
                 <p className="max-w-2xl text-sm text-muted-foreground">
-                  Setting up OpenClaw takes a VPS, DNS, TLS, API keys, and an afternoon. Or pay $5
-                  and skip all of it.
+                  Setting up OpenClaw takes a VPS, DNS, TLS, API keys, and an afternoon. Or pay 5
+                  USDC and skip all of it.
                 </p>
               </div>
             </div>
@@ -243,11 +243,10 @@ function RootLayout() {
               <Card>
                 <CardContent className="space-y-2 pt-5">
                   <p className="flex items-center gap-2 text-sm font-semibold">
-                    <Coins className="size-4 text-primary" />
-                    $5. 14 days. No strings.
+                    <Coins className="size-4 text-primary" />5 USDC. 14 days. No strings.
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    Spin up, experiment, let it expire. Need another? Deploy again in 60 seconds.
+                    Spin up, experiment, let it expire. Need another? Deploy again in 3 minutes.
                   </p>
                 </CardContent>
               </Card>
@@ -269,7 +268,7 @@ function RootLayout() {
               <Card>
                 <CardContent className="space-y-2 pt-5">
                   <p className="text-xs font-semibold tracking-wider text-primary">STEP 2</p>
-                  <p className="text-sm font-semibold">Pay $5 USDC</p>
+                  <p className="text-sm font-semibold">Pay 5 USDC</p>
                   <p className="text-sm text-muted-foreground">
                     One transaction. No account, no subscription, no Stripe.
                   </p>
@@ -291,7 +290,7 @@ function RootLayout() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-2xl font-semibold tracking-tight md:text-3xl">
-                  $5 USDC / 14 days
+                  5 USDC / 14 days
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-sm text-muted-foreground">
@@ -375,7 +374,7 @@ function RootLayout() {
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  You&apos;ll sign a message to prove ownership, then complete a single $5 USDC
+                  You&apos;ll sign a message to prove ownership, then complete a single 5 USDC
                   transaction.
                 </p>
               </CardContent>

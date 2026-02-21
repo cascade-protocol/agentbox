@@ -91,21 +91,39 @@ chown -R openclaw:openclaw "$IDENTITY_DIR"
 
 su - openclaw -c "cd $IDENTITY_DIR && create-sati-agent init --force"
 
-# Fill template with runtime values so publish is non-interactive and deterministic.
+# Capture wallet address (keypair created by init above)
+SOLANA_WALLET_ADDRESS=$(su - openclaw -c "solana address")
+
+# Fill template following ERC-8004 Four Golden Rules: descriptive name/description/image,
+# at least one service endpoint, OASF skills/domains taxonomy, registrations back-reference
+# (auto-populated by create-sati-agent publish). Each instance gets a unique DiceBear
+# avatar seeded by hostname.
 SHORT_NAME=$(echo "${INSTANCE_HOSTNAME:-instance}" | cut -d. -f1 | head -c 32)
-su - openclaw -c "cd $IDENTITY_DIR && jq --arg name \"$SHORT_NAME\" '
+AGENT_NAME="AgentBox: ${SHORT_NAME}"
+AGENT_IMAGE="https://api.dicebear.com/9.x/bottts/svg?seed=${SHORT_NAME}"
+AGENT_ENDPOINT="https://${INSTANCE_HOSTNAME}"
+
+su - openclaw -c "cd $IDENTITY_DIR && jq \
+--arg name \"$AGENT_NAME\" \
+--arg image \"$AGENT_IMAGE\" \
+--arg endpoint \"$AGENT_ENDPOINT\" '
   .name = \$name |
-  .description = \"OpenClaw instance provisioned by AgentBox\" |
-  .image = \"https://api.dicebear.com/9.x/bottts/svg?seed=agentbox\" |
-  .services = [] |
+  .description = \"Dedicated AI agent gateway powered by OpenClaw, provisioned by AgentBox. Features an HTTPS-secured agent runtime with web terminal access, Solana wallet, and SATI on-chain identity. Interact via the gateway endpoint or web terminal at the agent URL.\" |
+  .image = \$image |
+  .properties = {\"files\": [{\"uri\": \$image, \"type\": \"image/svg+xml\"}], \"category\": \"image\"} |
+  .services = [
+    {\"name\": \"OASF\", \"endpoint\": \"https://github.com/agntcy/oasf/\", \"version\": \"v0.8.0\",
+     \"skills\": [\"natural_language_processing/natural_language_generation/dialogue_generation\", \"tool_interaction/tool_use_planning\", \"agent_orchestration/task_decomposition\"],
+     \"domains\": [\"technology/software_engineering/apis_integration\", \"technology/blockchain/blockchain\"]},
+    {\"name\": \"web\", \"endpoint\": \$endpoint}
+  ] |
   .supportedTrust = [\"reputation\"] |
-  .active = false |
+  .active = true |
   .x402Support = false
 ' agent-registration.json > agent-registration.json.tmp && mv agent-registration.json.tmp agent-registration.json"
 
 PUBLISH_JSON=$(su - openclaw -c "cd $IDENTITY_DIR && create-sati-agent publish --network devnet --json")
 AGENT_ID=$(echo "$PUBLISH_JSON" | jq -r '.agentId // empty')
-SOLANA_WALLET_ADDRESS=$(su - openclaw -c "solana address")
 report_step "wallet_created"
 
 echo "Solana wallet: $SOLANA_WALLET_ADDRESS"
