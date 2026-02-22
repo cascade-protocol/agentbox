@@ -14,8 +14,8 @@ const envSchema = z.object({
   ENCRYPTION_KEY: z
     .string()
     .regex(/^[0-9a-f]{64}$/i, "Must be 64 hex chars (openssl rand -hex 32)"),
-  PAY_TO_ADDRESS: z.string().default("EjWifpmNpdTJJLq9VgnrUdKELxZyDaQz2HjNbzPE9tFe"),
-  FACILITATOR_URL: z.string().default("https://x402.dexter.cash"),
+  PAY_TO_ADDRESS: z.string().default("7NetKx8TuRMBpqYFKZCVetkNuvWCPTrgekmGrsJwTmfN"),
+  FACILITATOR_URL: z.string().default("https://facilitator.payai.network"),
   INSTANCE_BASE_DOMAIN: z.string().default("agentbox.fyi"),
   CF_API_TOKEN: z.string().optional(),
   HETZNER_SSH_KEY_IDS: z.string().default("107690222"),

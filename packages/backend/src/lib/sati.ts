@@ -15,6 +15,7 @@ import {
   getBase64EncodedWireTransaction,
   type KeyPairSigner,
   pipe,
+  type Signature,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
