@@ -2,6 +2,13 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.2.1] - 2026-02-22
+
+### Changed
+
+- Fix repository URL in package metadata (org rename)
+- Add README, CHANGELOG, and package-level LICENSE for npm
+
 ## [0.2.0] - 2026-02-22
 
 ### Changed
