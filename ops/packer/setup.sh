@@ -4,7 +4,7 @@
 #
 # OpenClaw is installed via npm under the openclaw user so it can be
 # Gateway config, systemd units, and workspace are pre-baked here so boot
-# only needs to: generate a token, create wallet/SATI, and start services.
+# only needs to: generate a token, create a Solana keypair, and start services.
 #
 # Usage:
 #   cd ops/packer && packer init . && packer build .
@@ -132,19 +132,90 @@ cat > /home/openclaw/.openclaw/openclaw.json << 'OCEOF'
       "dangerouslyDisableDeviceAuth": true
     }
   },
+  "plugins": {
+    "entries": {
+      "openclaw-x402": {
+        "enabled": true,
+        "config": {
+          "providerUrl": "https://beta.aimo.network",
+          "keypairPath": "/home/openclaw/.config/solana/id.json"
+        }
+      }
+    }
+  },
+  "models": {
+    "providers": {
+      "aimo": {
+        "baseUrl": "https://beta.aimo.network/api/v1",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "deepseek/deepseek-v3.2",
+            "name": "DeepSeek V3.2",
+            "reasoning": false,
+            "input": ["text"],
+            "contextWindow": 131072,
+            "maxTokens": 8192
+          }
+        ]
+      }
+    }
+  },
   "agents": {
     "defaults": {
-      "workspace": "/home/openclaw/openclaw"
+      "workspace": "/home/openclaw/openclaw",
+      "model": {
+        "primary": "aimo/deepseek/deepseek-v3.2"
+      },
+      "models": {
+        "aimo/deepseek/deepseek-v3.2": {
+          "params": { "streaming": false }
+        }
+      }
     }
   }
 }
 OCEOF
+
+# --- Auth profile for aimo provider ---
+# OpenClaw requires an API key entry even though x402 plugin handles auth.
+# The dummy key is never sent - the plugin strips the Authorization header.
+mkdir -p /home/openclaw/.openclaw/agents/main/agent
+cat > /home/openclaw/.openclaw/agents/main/agent/auth-profiles.json << 'AUTHEOF'
+{
+  "version": 1,
+  "profiles": {
+    "aimo:default": {
+      "type": "api_key",
+      "provider": "aimo",
+      "key": "x402-handled-by-plugin"
+    }
+  }
+}
+AUTHEOF
+
+# --- x402 payment plugin ---
+# Patches globalThis.fetch to handle x402 USDC payments on Solana for LLM inference.
+# Published as `openclaw-x402` on npm. Installed directly into the extensions directory
+# where OpenClaw auto-discovers plugins (no load.paths config needed).
+echo ""
+echo "==> Installing x402 payment plugin"
 chown -R openclaw:openclaw /home/openclaw/.openclaw /home/openclaw/openclaw
+PLUGIN_DIR=/home/openclaw/.openclaw/extensions/openclaw-x402
+su - openclaw -c "
+  mkdir -p $PLUGIN_DIR
+  cd /tmp && npm pack openclaw-x402@latest 2>/dev/null
+  tar xzf /tmp/openclaw-x402-*.tgz -C $PLUGIN_DIR --strip-components=1
+  rm -f /tmp/openclaw-x402-*.tgz
+  cd $PLUGIN_DIR && npm install --omit=dev
+"
+echo "    x402 plugin installed"
 
 # --- Solana CLI + SATI identity CLI ---
 #
-# AgentBox instances create a Solana wallet + SATI agent identity on first boot.
-# We preinstall both CLIs in the golden image to keep boot fast and deterministic.
+# Solana CLI: used by agentbox-init.sh to create a per-instance keypair on boot.
+# create-sati-agent: kept in the image for operator use (manual agent management,
+# debugging) even though automated SATI registration is handled server-side.
 
 echo ""
 echo "==> Installing Solana CLI"

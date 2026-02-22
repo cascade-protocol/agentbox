@@ -54,13 +54,16 @@
 
 ## Product
 - AgentBox provisions dedicated Hetzner VMs running OpenClaw AI agent gateways
-- Users pay $5 USDC (Solana x402 protocol) for 14-day VM with HTTPS and web terminal
+- Users pay $5 USDC (Solana x402 protocol) for 7-day VM with HTTPS and web terminal
 - Each VM gets: OpenClaw gateway, Caddy (TLS), ttyd (terminal), Solana wallet + SATI identity
 
 ## VM Golden Image (Packer)
 - Config: `ops/packer/` - `agentbox.pkr.hcl`, `setup.sh` (build-time), `agentbox-init.sh` (boot-time)
+- Build: `just build-image` - auto-bumps version in `agentbox.pkr.hcl`, runs packer build, outputs new snapshot ID
+- After build: update `HETZNER_SNAPSHOT_ID` default in `packages/backend/src/lib/env.ts` with the new snapshot ID
 - Base: `ubuntu-24.04`, built on cpx42 (fast compile), snapshotted for cx33 (80GB disk)
-- Pre-installed: Node.js 24, OpenClaw (npm global + native modules), Caddy, ttyd, Solana CLI, create-sati-agent, build-essential/cmake/python3 (for node-gyp)
+- Pre-installed: Node.js 24, OpenClaw (npm global + native modules), Caddy, ttyd, Solana CLI, create-sati-agent, openclaw-x402 plugin, build-essential/cmake/python3 (for node-gyp)
+- Plugin install: `openclaw-x402` is extracted via `npm pack` + `tar` into `~/.openclaw/extensions/openclaw-x402/` (auto-discovered, no `plugins.load.paths` needed)
 - Boot flow: cloud-init writes `/etc/agentbox/callback.env` -> runs `agentbox-init.sh` -> onboards OpenClaw, creates wallet/SATI identity, starts services, callbacks to API
 - Services on VM: `openclaw-gateway` (:18789), `ttyd` (:7681), `caddy` (HTTPS :443)
 

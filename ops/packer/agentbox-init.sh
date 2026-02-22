@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Runs on first boot of each AgentBox instance (triggered by cloud-init).
-# Generates a gateway token, creates Solana/SATI identity on devnet, starts
-# pre-configured services, and calls back to the AgentBox API.
+# Generates a gateway token, creates a Solana keypair, starts pre-configured
+# services, and calls back to the AgentBox API.
 #
 # Gateway config, systemd units, and workspace are pre-baked in the golden image
 # (setup.sh). This script only handles per-instance runtime config.
 #
 # The backend's Hetzner provisioning code passes cloud-init user_data that
 # writes /etc/agentbox/callback.env with bootstrap credentials, then runs
-# this script. Dynamic config (hostname, TLS certs, registration template)
-# is fetched from the backend's config endpoint at boot time.
+# this script. Dynamic config (hostname, TLS certs) is fetched from the
+# backend's config endpoint at boot time.
 set -euo pipefail
 
 LOG="/var/log/agentbox-init.log"
@@ -81,10 +81,6 @@ if [[ -n "$TLS_CERT" && -n "$TLS_KEY" ]]; then
   echo "Wildcard TLS cert written"
 fi
 
-# --- Save registration template for later use ---
-
-echo "$CONFIG_JSON" | jq '.registrationTemplate' > /tmp/registration-template.json
-
 # --- Verify preloaded OpenClaw ---
 
 if ! command -v openclaw >/dev/null 2>&1; then
@@ -93,10 +89,19 @@ if ! command -v openclaw >/dev/null 2>&1; then
 fi
 echo "Using preloaded OpenClaw $(openclaw --version)"
 
-# --- Generate gateway token and start gateway early ---
+# --- Create Solana keypair (before gateway - x402 plugin reads it on start) ---
+
+echo "Creating Solana keypair..."
+su - openclaw -c "solana-keygen new --no-bip39-passphrase --force -o /home/openclaw/.config/solana/id.json" 2>&1
+SOLANA_WALLET_ADDRESS=$(su - openclaw -c "solana address")
+report_step "wallet_created"
+
+echo "Solana wallet: $SOLANA_WALLET_ADDRESS"
+
+# --- Generate gateway token and start gateway ---
 #
 # Gateway cold start takes ~72s on cx23 (Node.js loading large app on shared CPU).
-# Start it first so wallet/SATI/Caddy work overlaps with the cold start.
+# Start it first so Caddy work overlaps with the cold start.
 # Token is injected via systemd drop-in; the pre-baked config reads it from
 # OPENCLAW_GATEWAY_TOKEN env var at startup.
 
@@ -118,36 +123,6 @@ report_step "openclaw_ready"
 # --- Start ttyd (pre-installed and enabled in golden image) ---
 
 systemctl start ttyd || true
-
-# --- Create Solana wallet + SATI identity (devnet) ---
-#
-# Runs while gateway is cold-starting. Creates the Solana keypair and publishes
-# agent identity on first boot. Registration metadata comes from the backend-
-# provided template; only the wallet address is filled in at runtime.
-
-echo "Creating Solana wallet and SATI agent identity..."
-IDENTITY_DIR="/home/openclaw/agent-identity"
-mkdir -p "$IDENTITY_DIR"
-chown -R openclaw:openclaw "$IDENTITY_DIR"
-
-su - openclaw -c "cd $IDENTITY_DIR && create-sati-agent init --force"
-
-# Capture wallet address (keypair created by init above)
-SOLANA_WALLET_ADDRESS=$(su - openclaw -c "solana address")
-
-# Merge runtime wallet address into the backend-provided registration template
-su - openclaw -c "cd $IDENTITY_DIR && jq \
-  --arg wallet \"$SOLANA_WALLET_ADDRESS\" '
-  walk(if type == \"string\" then gsub(\"__WALLET_ADDRESS__\"; \$wallet) else . end)
-' /tmp/registration-template.json > agent-registration.json"
-
-PUBLISH_JSON=$(su - openclaw -c "cd $IDENTITY_DIR && create-sati-agent publish --network devnet --json")
-AGENT_ID=$(echo "$PUBLISH_JSON" | jq -r '.agentId // empty')
-report_step "wallet_created"
-
-echo "Solana wallet: $SOLANA_WALLET_ADDRESS"
-echo "SATI agent id: ${AGENT_ID:-unknown}"
-report_step "sati_published"
 
 # --- Caddy reverse proxy ---
 #
@@ -196,7 +171,7 @@ report_step "services_starting"
 
 # --- Wait for gateway to become healthy ---
 #
-# Gateway cold start takes ~72s on cx23. By now wallet/SATI/Caddy work has
+# Gateway cold start takes ~72s on cx23. By now wallet/Caddy work has
 # overlapped with most of that time. 120s timeout (60 * 2s) gives margin.
 
 echo "Waiting for OpenClaw gateway..."
@@ -220,9 +195,8 @@ PAYLOAD=$(jq -n \
   --argjson serverId "$SERVER_ID" \
   --arg solanaWalletAddress "$SOLANA_WALLET_ADDRESS" \
   --arg gatewayToken "$GATEWAY_TOKEN" \
-  --arg agentId "$AGENT_ID" \
   --arg secret "$CALLBACK_SECRET" \
-  '{serverId: $serverId, solanaWalletAddress: $solanaWalletAddress, gatewayToken: $gatewayToken, agentId: $agentId, secret: $secret}')
+  '{serverId: $serverId, solanaWalletAddress: $solanaWalletAddress, gatewayToken: $gatewayToken, secret: $secret}')
 
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$CALLBACK_URL" \
   -H "Content-Type: application/json" \

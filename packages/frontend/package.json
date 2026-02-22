@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.2.7",
+    "@solana-program/token-2022": "^0.4.2",
     "@solana/client": "^1.7.0",
     "@solana/kit": "^5.5.1",
     "@solana/react-hooks": "^1.4.1",

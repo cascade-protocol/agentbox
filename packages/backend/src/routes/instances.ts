@@ -11,11 +11,20 @@ import { instances } from "../db/schema";
 import * as cloudflare from "../lib/cloudflare";
 import { env } from "../lib/env";
 import * as hetzner from "../lib/hetzner";
+import { generateAgentName } from "../lib/names";
+import {
+  fundVmWallet,
+  fundVmWalletUsdc,
+  mintAgentNft,
+  syncWalletInstances,
+  updateAgentMetadataForInstance,
+} from "../lib/sati";
 import {
   authInputSchema,
   callbackInputSchema,
   instanceConfigQuerySchema,
   provisioningUpdateInputSchema,
+  updateAgentMetadataInputSchema,
   updateInstanceInputSchema,
 } from "../lib/schemas";
 import { logger } from "../logger";
@@ -33,7 +42,7 @@ const auth = createMiddleware<AppEnv>(async (c, next) => {
 
   // Operator token (dev/admin bypass)
   if (token === env.OPERATOR_TOKEN) {
-    c.set("walletAddress", "operator");
+    c.set("walletAddress", env.OPERATOR_WALLET);
     return next();
   }
 
@@ -52,11 +61,11 @@ const auth = createMiddleware<AppEnv>(async (c, next) => {
 });
 
 function isAdmin(wallet: string): boolean {
-  return wallet === "operator" || wallet === env.PAY_TO_ADDRESS;
+  return wallet === env.OPERATOR_WALLET || wallet === env.PAY_TO_ADDRESS;
 }
 
 function isOwner(row: typeof instances.$inferSelect, wallet: string): boolean {
-  return isAdmin(wallet) || row.userId === wallet;
+  return isAdmin(wallet) || row.ownerWallet === wallet;
 }
 
 const encryptionKey = Buffer.from(env.ENCRYPTION_KEY, "hex");
@@ -82,13 +91,13 @@ function toInstanceResponse(row: typeof instances.$inferSelect) {
   return {
     id: row.id,
     name: row.name,
-    userId: row.userId,
+    ownerWallet: row.ownerWallet,
     status: row.status,
     ip: row.ip,
-    solanaWalletAddress: row.solanaWalletAddress,
+    nftMint: row.nftMint,
+    vmWallet: row.vmWallet,
     gatewayToken: row.gatewayToken,
     terminalToken: row.terminalToken,
-    agentId: row.agentId,
     provisioningStep: row.provisioningStep,
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
@@ -122,45 +131,41 @@ function buildUserData(opts: {
   return lines.join("\n");
 }
 
-function buildRegistrationTemplate(hostname: string): Record<string, unknown> {
-  const shortName = hostname.split(".")[0].slice(0, 22);
-  const agentName = `AgentBox: ${shortName}`;
-  const agentImage = `https://api.dicebear.com/9.x/bottts/svg?seed=${shortName}`;
-  const agentEndpoint = `https://${hostname}`;
+async function mintAndFinalize(row: typeof instances.$inferSelect): Promise<void> {
+  if (!row.vmWallet) {
+    logger.error(`Instance ${row.id} missing vmWallet for SATI minting`);
+    await db.update(instances).set({ status: "running" }).where(eq(instances.id, row.id));
+    return;
+  }
 
-  return {
-    type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
-    name: agentName,
-    description:
-      "Dedicated AI agent gateway powered by OpenClaw, provisioned by AgentBox. Features an HTTPS-secured agent runtime with web terminal access, Solana wallet, and SATI on-chain identity. Interact via the gateway endpoint or web terminal at the agent URL.",
-    image: agentImage,
-    properties: {
-      files: [{ uri: agentImage, type: "image/svg+xml" }],
-      category: "image",
-    },
-    services: [
-      { name: "MCP", endpoint: agentEndpoint, version: "2025-06-18" },
-      {
-        name: "OASF",
-        endpoint: "https://github.com/agntcy/oasf/",
-        version: "v0.8.0",
-        skills: [
-          "natural_language_processing/natural_language_generation/dialogue_generation",
-          "tool_interaction/tool_use_planning",
-          "agent_orchestration/task_decomposition",
-        ],
-        domains: [
-          "technology/software_engineering/apis_integration",
-          "technology/blockchain/blockchain",
-        ],
-      },
-      { name: "agentWallet", endpoint: "solana:devnet:__WALLET_ADDRESS__" },
-      { name: "web", endpoint: agentEndpoint },
-    ],
-    supportedTrust: ["reputation"],
-    active: true,
-    x402Support: false,
-  };
+  const hostname = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
+
+  try {
+    const { mint } = await mintAgentNft({
+      ownerWallet: row.ownerWallet,
+      vmWalletAddress: row.vmWallet,
+      instanceName: row.name,
+      hostname,
+      serverId: row.id,
+    });
+
+    await db
+      .update(instances)
+      .set({
+        nftMint: mint,
+        status: "running",
+      })
+      .where(eq(instances.id, row.id));
+
+    logger.info(`Minted SATI NFT for instance ${row.id}: ${mint}`);
+  } catch (err) {
+    logger.error(`SATI mint failed for instance ${row.id}`, {
+      error: err instanceof Error ? err.message : String(err),
+      context:
+        err instanceof Error ? JSON.stringify(err, Object.getOwnPropertyNames(err)) : undefined,
+    });
+    await db.update(instances).set({ status: "running" }).where(eq(instances.id, row.id));
+  }
 }
 
 // POST /instances/auth - Wallet sign-in (no bearer auth)
@@ -196,7 +201,7 @@ instanceRoutes.post("/instances/auth", async (c) => {
   return c.json({ token, isAdmin: input.data.solanaWalletAddress === env.PAY_TO_ADDRESS });
 });
 
-// POST /instances - Create instance (wallet from JWT used as userId)
+// POST /instances - Create instance (wallet from JWT used as ownerWallet)
 instanceRoutes.post("/instances", auth, async (c) => {
   const wallet = c.get("walletAddress");
 
@@ -204,12 +209,23 @@ instanceRoutes.post("/instances", auth, async (c) => {
     return c.json({ error: "Hetzner is not configured" }, 503);
   }
 
-  const shortId = randomUUID().slice(0, 8);
-  const sanitizedWallet = wallet
-    .replace(/[^a-z0-9-]/gi, "-")
-    .toLowerCase()
-    .slice(0, 12);
-  const name = `agentbox-${sanitizedWallet}-${shortId}`;
+  let name = "";
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = generateAgentName();
+    const [existing] = await db
+      .select({ id: instances.id })
+      .from(instances)
+      .where(eq(instances.name, candidate))
+      .limit(1);
+    if (!existing) {
+      name = candidate;
+      break;
+    }
+    logger.warn(`Name collision on "${candidate}", retrying (${attempt + 1}/5)`);
+  }
+  if (!name) {
+    return c.json({ error: "Failed to generate unique name" }, 500);
+  }
 
   const hostname = `${name}.${env.INSTANCE_BASE_DOMAIN}`;
   const callbackToken = randomUUID();
@@ -238,20 +254,21 @@ instanceRoutes.post("/instances", auth, async (c) => {
   }
 
   const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 14);
+  expiresAt.setDate(expiresAt.getDate() + 7);
 
   const [row] = await db
     .insert(instances)
     .values({
       id: result.server.id,
       name,
-      userId: wallet,
+      ownerWallet: wallet,
       status: "provisioning",
       ip: result.server.public_net.ipv4.ip,
       gatewayToken: "pending",
       callbackToken,
       terminalToken,
-      agentId: null,
+      nftMint: null,
+      vmWallet: null,
       provisioningStep: "vm_created",
       rootPassword: result.root_password ? encrypt(result.root_password) : null,
       expiresAt,
@@ -267,7 +284,7 @@ instanceRoutes.get("/instances", auth, async (c) => {
   const showAll = c.req.query("all") === "true" && isAdmin(wallet);
   const rows = showAll
     ? await db.select().from(instances)
-    : await db.select().from(instances).where(eq(instances.userId, wallet));
+    : await db.select().from(instances).where(eq(instances.ownerWallet, wallet));
   return c.json({ instances: rows.map(toInstanceResponse) });
 });
 
@@ -280,7 +297,7 @@ instanceRoutes.get("/instances/expiring", auth, async (c) => {
 
   const showAll = c.req.query("all") === "true" && isAdmin(wallet);
   const rows = await db.select().from(instances).where(lte(instances.expiresAt, cutoff));
-  const filtered = showAll ? rows : rows.filter((r) => r.userId === wallet);
+  const filtered = showAll ? rows : rows.filter((r) => r.ownerWallet === wallet);
   return c.json({ instances: filtered.map(toInstanceResponse) });
 });
 
@@ -324,10 +341,9 @@ instanceRoutes.post("/instances/callback", async (c) => {
   const [row] = await db
     .update(instances)
     .set({
-      solanaWalletAddress: input.data.solanaWalletAddress,
+      vmWallet: input.data.solanaWalletAddress,
       gatewayToken: input.data.gatewayToken,
-      agentId: input.data.agentId ?? null,
-      status: "running",
+      status: "minting",
       provisioningStep: null,
       callbackToken: null,
     })
@@ -344,7 +360,37 @@ instanceRoutes.post("/instances/callback", async (c) => {
     return c.json({ error: "Instance not found" }, 404);
   }
 
+  void mintAndFinalize(row).catch((err) => {
+    logger.error(`Unexpected minting failure for instance ${row.id}: ${String(err)}`);
+  });
+
+  void fundVmWallet(input.data.solanaWalletAddress).catch((err) => {
+    logger.error(`Failed to fund VM wallet SOL ${input.data.solanaWalletAddress}: ${String(err)}`);
+  });
+
+  void fundVmWalletUsdc(input.data.solanaWalletAddress).catch((err) => {
+    logger.error(`Failed to fund VM wallet USDC ${input.data.solanaWalletAddress}: ${String(err)}`);
+  });
+
   return c.json({ ok: true });
+});
+
+// POST /instances/sync - Sync wallet ownership from chain
+instanceRoutes.post("/instances/sync", auth, async (c) => {
+  const wallet = c.get("walletAddress");
+  try {
+    const { claimed, recovered } = await syncWalletInstances(wallet);
+    const rows = await db.select().from(instances).where(eq(instances.ownerWallet, wallet));
+
+    return c.json({
+      claimed,
+      recovered,
+      instances: rows.map(toInstanceResponse),
+    });
+  } catch (err) {
+    logger.error(`Failed to sync wallet ${wallet}: ${String(err)}`);
+    return c.json({ error: "Failed to sync from chain" }, 500);
+  }
 });
 
 // GET /instances/config - VM fetches dynamic config at boot (callback-token auth)
@@ -389,7 +435,6 @@ instanceRoutes.get("/instances/config", async (c) => {
     hostname,
     terminalToken: row.terminalToken,
     tls,
-    registrationTemplate: buildRegistrationTemplate(hostname),
   });
 });
 
@@ -413,6 +458,38 @@ instanceRoutes.patch("/instances/:id", auth, async (c) => {
     .returning();
 
   return c.json(toInstanceResponse(row));
+});
+
+// PATCH /instances/:id/agent - Update agent metadata
+instanceRoutes.patch("/instances/:id/agent", auth, async (c) => {
+  const id = Number(c.req.param("id"));
+  const body = await c.req.json();
+  const input = updateAgentMetadataInputSchema.safeParse(body);
+  if (!input.success) {
+    return c.json({ error: "Invalid input", details: input.error.issues }, 400);
+  }
+
+  const [row] = await db.select().from(instances).where(eq(instances.id, id));
+  if (!row) return c.json({ error: "Instance not found" }, 404);
+  if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
+  if (!row.nftMint) return c.json({ error: "Agent NFT not yet minted" }, 400);
+  if (!row.vmWallet) return c.json({ error: "VM wallet not available" }, 400);
+
+  const hostname = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
+
+  try {
+    await updateAgentMetadataForInstance({
+      mint: row.nftMint,
+      name: input.data.name,
+      description: input.data.description,
+      hostname,
+      vmWalletAddress: row.vmWallet,
+    });
+    return c.json({ ok: true });
+  } catch (err) {
+    logger.error(`Failed to update agent metadata for instance ${id}: ${String(err)}`);
+    return c.json({ error: "Failed to update agent metadata" }, 500);
+  }
 });
 
 // GET /instances/:id - Get instance details
@@ -452,6 +529,32 @@ instanceRoutes.delete("/instances/:id", auth, async (c) => {
   return c.json({ ok: true });
 });
 
+// POST /instances/:id/mint - Retry NFT minting
+instanceRoutes.post("/instances/:id/mint", auth, async (c) => {
+  const id = Number(c.req.param("id"));
+  const [row] = await db.select().from(instances).where(eq(instances.id, id));
+  if (!row) return c.json({ error: "Instance not found" }, 404);
+  if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
+
+  if (row.nftMint) {
+    return c.json({ error: "NFT already minted" }, 400);
+  }
+  if (!row.vmWallet) {
+    return c.json({ error: "Instance not yet provisioned" }, 400);
+  }
+  if (row.status === "minting") {
+    return c.json({ error: "Minting already in progress" }, 409);
+  }
+
+  await db.update(instances).set({ status: "minting" }).where(eq(instances.id, row.id));
+
+  void mintAndFinalize(row).catch((err) => {
+    logger.error(`Manual mint retry failed for instance ${row.id}: ${String(err)}`);
+  });
+
+  return c.json({ ok: true });
+});
+
 // POST /instances/:id/restart - Restart VM
 instanceRoutes.post("/instances/:id/restart", auth, async (c) => {
   const id = Number(c.req.param("id"));
@@ -480,7 +583,7 @@ instanceRoutes.post("/instances/:id/extend", auth, async (c) => {
   maxExpiry.setDate(maxExpiry.getDate() + 90);
 
   const newExpiry = new Date(row.expiresAt);
-  newExpiry.setDate(newExpiry.getDate() + 14);
+  newExpiry.setDate(newExpiry.getDate() + 7);
 
   if (newExpiry > maxExpiry) {
     return c.json({ error: "Maximum lifetime of 90 days reached" }, 400);
@@ -534,6 +637,6 @@ instanceRoutes.get("/instances/:id/health", auth, async (c) => {
     healthy,
     hetznerStatus,
     instanceStatus: row.status,
-    callbackReceived: row.solanaWalletAddress !== null,
+    callbackReceived: row.vmWallet !== null,
   });
 });

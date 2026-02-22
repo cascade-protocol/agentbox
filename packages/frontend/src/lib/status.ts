@@ -2,6 +2,7 @@ import type { BadgeVariant } from "@/components/ui/badge";
 
 export const statusVariant: Record<string, BadgeVariant> = {
   provisioning: "info",
+  minting: "info",
   running: "success",
   stopped: "secondary",
   error: "destructive",
@@ -13,18 +14,16 @@ const fallbackStep = "vm_created";
 export const provisioningStepOrder = [
   "vm_created",
   "configuring",
-  "openclaw_ready",
   "wallet_created",
-  "sati_published",
+  "openclaw_ready",
   "services_starting",
 ] as const;
 
 const provisioningStepLabels: Record<(typeof provisioningStepOrder)[number], string> = {
   vm_created: "Starting VM...",
   configuring: "Configuring services...",
-  openclaw_ready: "OpenClaw ready",
   wallet_created: "Wallet created",
-  sati_published: "SATI identity set",
+  openclaw_ready: "OpenClaw ready",
   services_starting: "Almost ready...",
 };
 

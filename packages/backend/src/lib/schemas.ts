@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const instanceStatusSchema = z.enum([
   "provisioning",
+  "minting",
   "running",
   "stopped",
   "error",
@@ -13,13 +14,13 @@ export const provisioningStepSchema = z.string().min(1).max(64);
 export const instanceSchema = z.object({
   id: z.number(),
   name: z.string(),
-  userId: z.string(),
+  ownerWallet: z.string(),
   status: instanceStatusSchema,
   ip: z.string(),
-  solanaWalletAddress: z.string().nullable(),
+  nftMint: z.string().nullable().optional(),
+  vmWallet: z.string().nullable().optional(),
   gatewayToken: z.string(),
   terminalToken: z.string().nullable().optional(),
-  agentId: z.string().nullable().optional(),
   provisioningStep: z.string().nullable().optional(),
   createdAt: z.string().datetime(),
   expiresAt: z.string().datetime(),
@@ -37,8 +38,6 @@ export const callbackInputSchema = z.object({
   serverId: z.number(),
   solanaWalletAddress: z.string().min(32).max(44),
   gatewayToken: z.string().min(1).max(256),
-  agentId: z.string().max(256).optional(),
-  provisioningStep: provisioningStepSchema.optional(),
   secret: z.string().min(1).max(256),
 });
 
@@ -55,6 +54,11 @@ export const instanceConfigQuerySchema = z.object({
 
 export const updateInstanceInputSchema = z.object({
   name: z.string().min(1).max(100),
+});
+
+export const updateAgentMetadataInputSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().min(1).max(500).optional(),
 });
 
 export const instanceAccessSchema = instanceSchema.extend({

@@ -67,6 +67,9 @@ function StatusDisplay({ instance }: { instance: Instance }) {
           {getProvisioningStepLabel(instance.provisioningStep)}
         </p>
       )}
+      {instance.status === "minting" && (
+        <p className="animate-pulse text-xs text-muted-foreground">Minting identity NFT...</p>
+      )}
     </div>
   );
 }
@@ -261,8 +264,8 @@ function CreateInstanceDialog({
         <DialogHeader>
           <DialogTitle>Create Instance</DialogTitle>
           <DialogDescription>
-            Provision a new AgentBox VM for 5 USDC (14 days). Your wallet will be prompted to
-            approve the payment.
+            Provision a new AgentBox VM for 5 USDC (7 days). Your wallet will be prompted to approve
+            the payment.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -289,6 +292,7 @@ function Home() {
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [syncingChain, setSyncingChain] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -323,17 +327,19 @@ function Home() {
     void fetchInstances();
   }, [fetchInstances]);
 
-  const hasProvisioning = instances.some((instance) => instance.status === "provisioning");
+  const hasFastPolling = instances.some(
+    (instance) => instance.status === "provisioning" || instance.status === "minting",
+  );
 
   useEffect(() => {
-    const intervalMs = hasProvisioning ? 10_000 : 30_000;
+    const intervalMs = hasFastPolling ? 10_000 : 30_000;
     const interval = setInterval(() => {
       if (!document.hidden) {
         void fetchInstances();
       }
     }, intervalMs);
     return () => clearInterval(interval);
-  }, [fetchInstances, hasProvisioning]);
+  }, [fetchInstances, hasFastPolling]);
 
   async function handleRename(id: number, name: string) {
     try {
@@ -370,6 +376,25 @@ function Home() {
       toast.error(err instanceof Error ? err.message : `${confirmAction.type} failed`);
     } finally {
       setActionLoading(false);
+    }
+  }
+
+  async function handleSyncFromChain() {
+    setSyncingChain(true);
+    try {
+      const result = await api.instances.sync();
+      setInstances(result.instances);
+      setLastChecked(new Date());
+      const total = result.claimed + result.recovered;
+      if (total > 0) {
+        toast.success(`Synced ${total} instances from chain`);
+      } else {
+        toast.success("Everything up to date");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to sync from chain");
+    } finally {
+      setSyncingChain(false);
     }
   }
 
@@ -484,8 +509,17 @@ function Home() {
         </div>
 
         <Card className="shadow-sm">
-          <CardHeader className="border-b border-border/60">
+          <CardHeader className="flex flex-row items-center justify-between border-b border-border/60">
             <CardTitle className="text-base">All Instances</CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleSyncFromChain()}
+              disabled={syncingChain}
+            >
+              <RefreshCw className={`size-4 ${syncingChain ? "animate-spin" : ""}`} />
+              Refresh from chain
+            </Button>
           </CardHeader>
           <CardContent>
             {instances.length === 0 ? (
@@ -511,7 +545,7 @@ function Home() {
                     <TableHeader className="bg-muted/35">
                       <TableRow className="hover:bg-muted/50">
                         <TableHead className="pl-3">Name</TableHead>
-                        <TableHead>User</TableHead>
+                        <TableHead>Owner</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Created</TableHead>
                         <TableHead>Expires</TableHead>
@@ -531,10 +565,10 @@ function Home() {
                               <EditableName instance={instance} onSave={handleRename} />
                             </TableCell>
                             <TableCell
-                              title={instance.userId}
+                              title={instance.ownerWallet}
                               className="text-sm text-muted-foreground"
                             >
-                              {truncateAddress(instance.userId)}
+                              {truncateAddress(instance.ownerWallet)}
                             </TableCell>
                             <TableCell>
                               <StatusDisplay instance={instance} />
@@ -658,8 +692,8 @@ function Home() {
                             <StatusDisplay instance={instance} />
                           </div>
                           <div className="space-y-1 text-xs">
-                            <p className="text-muted-foreground" title={instance.userId}>
-                              User {truncateAddress(instance.userId)}
+                            <p className="text-muted-foreground" title={instance.ownerWallet}>
+                              Owner {truncateAddress(instance.ownerWallet)}
                             </p>
                             <p
                               className="text-muted-foreground"

@@ -6,13 +6,13 @@ import { toast } from "sonner";
 export type Instance = {
   id: number;
   name: string;
-  userId: string;
+  ownerWallet: string;
   status: string;
   ip: string;
-  solanaWalletAddress: string | null;
+  nftMint?: string | null;
+  vmWallet?: string | null;
   gatewayToken?: string;
   terminalToken?: string | null;
-  agentId?: string | null;
   provisioningStep?: string | null;
   createdAt: string;
   expiresAt: string;
@@ -61,12 +61,18 @@ export function getToken(): string | null {
   return localStorage.getItem("agentbox-token");
 }
 
-export function setToken(token: string) {
+export function getTokenWallet(): string | null {
+  return localStorage.getItem("agentbox-wallet");
+}
+
+export function setToken(token: string, walletAddress: string) {
   localStorage.setItem("agentbox-token", token);
+  localStorage.setItem("agentbox-wallet", walletAddress);
 }
 
 export function clearToken() {
   localStorage.removeItem("agentbox-token");
+  localStorage.removeItem("agentbox-wallet");
   localStorage.removeItem("agentbox-admin");
 }
 
@@ -149,7 +155,13 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
+    updateAgent: (id: number, data: { name?: string; description?: string }) =>
+      request<{ ok: boolean }>(`/instances/${id}/agent`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
     delete: (id: number) => request<{ ok: boolean }>(`/instances/${id}`, { method: "DELETE" }),
+    mint: (id: number) => request<{ ok: boolean }>(`/instances/${id}/mint`, { method: "POST" }),
     restart: (id: number) =>
       request<{ ok: boolean }>(`/instances/${id}/restart`, { method: "POST" }),
     extend: (id: number) => request<Instance>(`/instances/${id}/extend`, { method: "POST" }),
@@ -157,5 +169,9 @@ export const api = {
     health: (id: number) => request<InstanceHealth>(`/instances/${id}/health`),
     expiring: (days?: number) =>
       request<{ instances: Instance[] }>(`/instances/expiring${days ? `?days=${days}` : ""}`),
+    sync: () =>
+      request<{ claimed: number; recovered: number; instances: Instance[] }>(`/instances/sync`, {
+        method: "POST",
+      }),
   },
 };

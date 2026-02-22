@@ -92,7 +92,7 @@ export function register(api: OpenClawPluginApi): void {
   let signerRef: KeyPairSigner | null = null;
 
   api.registerCommand({
-    name: "balance",
+    name: "balance-x402",
     description: "Show wallet USDC balance and address for topping up",
     acceptsArgs: false,
     handler: async () => {
@@ -117,8 +117,8 @@ export function register(api: OpenClawPluginApi): void {
   });
 
   api.registerCommand({
-    name: "send",
-    description: "Send USDC to a Solana address. Usage: /send <amount|all> <address>",
+    name: "send-x402",
+    description: "Send USDC to a Solana address. Usage: /send-x402 <amount|all> <address>",
     acceptsArgs: true,
     handler: async (ctx) => {
       if (!walletAddress || !signerRef) {
@@ -130,7 +130,7 @@ export function register(api: OpenClawPluginApi): void {
       const parts = args.split(/\s+/);
       if (parts.length !== 2) {
         return {
-          text: "Usage: /send <amount|all> <address>\nExamples:\n  /send 0.5 7xKXtg...\n  /send all 7xKXtg...",
+          text: "Usage: /send-x402 <amount|all> <address>\nExamples:\n  /send-x402 0.5 7xKXtg...\n  /send-x402 all 7xKXtg...",
         };
       }
 

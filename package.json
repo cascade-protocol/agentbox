@@ -15,11 +15,16 @@
     "typescript": "^5.7.0"
   },
   "pnpm": {
-    "overrides": {
-      "@solana/kit": "^5.5.1"
-    },
     "onlyBuiltDependencies": [
-      "esbuild"
+      "@discordjs/opus",
+      "@whiskeysockets/baileys",
+      "bufferutil",
+      "esbuild",
+      "koffi",
+      "node-llama-cpp",
+      "protobufjs",
+      "sharp",
+      "utf-8-validate"
     ]
   }
 }
