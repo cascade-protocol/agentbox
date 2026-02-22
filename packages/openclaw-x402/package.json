@@ -33,6 +33,7 @@
     "dist/**",
     "openclaw.plugin.json",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "openclaw": {
@@ -55,7 +56,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tenequm/agentbox.git",
+    "url": "git+https://github.com/cascade-protocol/agentbox.git",
     "directory": "packages/openclaw-x402"
+  },
+  "homepage": "https://github.com/cascade-protocol/agentbox/tree/main/packages/openclaw-x402#readme",
+  "bugs": {
+    "url": "https://github.com/cascade-protocol/agentbox/issues"
   }
 }
