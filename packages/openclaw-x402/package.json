@@ -1,0 +1,61 @@
+{
+  "name": "openclaw-x402",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin for x402 USDC payments on Solana",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsdown --publint && cp openclaw.plugin.json dist/",
+    "dev": "tsdown --watch",
+    "type-check": "tsc --noEmit",
+    "check": "pnpm type-check",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "@solana-program/token-2022": "^0.4.0",
+    "@solana/kit": "^5.1.0",
+    "@x402/fetch": "^2.4.0",
+    "@x402/svm": "^2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "openclaw": ">=2026.2.21",
+    "publint": "^0.3.17",
+    "tsdown": "^0.20.3",
+    "typescript": "^5.9.0"
+  },
+  "files": [
+    "dist/**",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "keywords": [
+    "openclaw",
+    "x402",
+    "solana",
+    "usdc",
+    "payment",
+    "llm",
+    "inference"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tenequm/agentbox.git",
+    "directory": "packages/openclaw-x402"
+  }
+}
