@@ -276,7 +276,7 @@ function RootLayout() {
                   Coming soon
                 </Button>
               )}
-              <p className="text-sm text-muted-foreground">14 days, no subscription</p>
+              <p className="text-sm text-muted-foreground">7 days, no subscription</p>
               <p className="max-w-2xl text-sm text-muted-foreground">
                 Setting up OpenClaw takes a VPS, DNS, TLS, API keys, and an afternoon. Or pay 5 USDC
                 and skip all of it.
@@ -380,7 +380,7 @@ function RootLayout() {
             <Card>
               <CardContent className="space-y-2 pt-5">
                 <p className="flex items-center gap-2 text-sm font-semibold">
-                  <Coins className="size-4 text-primary" />5 USDC. 14 days. No strings.
+                  <Coins className="size-4 text-primary" />5 USDC. 7 days. No strings.
                 </p>
                 <p className="text-sm text-muted-foreground">
                   Spin up, experiment, let it expire. Need another? Deploy again in 3 minutes.
@@ -427,7 +427,7 @@ function RootLayout() {
           <Card>
             <CardHeader>
               <CardTitle className="text-2xl font-semibold tracking-tight md:text-3xl">
-                5 USDC / 14 days
+                5 USDC / 7 days
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
