@@ -32,6 +32,7 @@ import { db } from "../db/connection";
 import { instances } from "../db/schema";
 import { logger } from "../logger";
 import { env } from "./env";
+import { recordEvent } from "./events";
 
 type MintAgentNftInput = {
   ownerWallet: string;
@@ -116,6 +117,12 @@ export async function fundVmWallet(vmWalletAddress: string): Promise<void> {
   assertIsTransactionWithBlockhashLifetime(signed);
   await sati.getSendAndConfirm()(signed, { commitment: "confirmed" });
   logger.info(`SOL funding confirmed for ${vmWalletAddress} (0.001 SOL)`);
+  recordEvent(
+    "instance.funded",
+    { type: "system", id: "backend" },
+    { type: "vm_wallet", id: vmWalletAddress },
+    { asset: "SOL", amount: "0.001" },
+  );
 }
 
 export const USDC_MINT = address("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
@@ -173,6 +180,12 @@ export async function fundVmWalletUsdc(vmWalletAddress: string): Promise<void> {
   assertIsTransactionWithBlockhashLifetime(signed);
   await sati.getSendAndConfirm()(signed, { commitment: "confirmed" });
   logger.info(`USDC funding confirmed for ${vmWalletAddress} (1 USDC)`);
+  recordEvent(
+    "instance.funded",
+    { type: "system", id: "backend" },
+    { type: "vm_wallet", id: vmWalletAddress },
+    { asset: "USDC", amount: "1" },
+  );
 }
 
 function buildAgentDescription(): string {
@@ -247,6 +260,12 @@ export async function mintAgentNft(input: MintAgentNftInput): Promise<{ mint: st
     } catch (err) {
       logger.error(
         `NFT transfer failed for mint ${result.mint} (owner: ${input.ownerWallet}): ${String(err)}. NFT is in hot wallet - retry via POST /instances/:id/mint will attempt transfer.`,
+      );
+      recordEvent(
+        "instance.nft_transfer_failed",
+        { type: "system", id: "backend" },
+        { type: "instance", id: String(input.serverId) },
+        { mint: result.mint, error: String(err) },
       );
     }
   }
@@ -355,6 +374,12 @@ export async function syncWalletInstances(walletAddress: string): Promise<SyncRe
       continue;
     }
     await db.update(instances).set({ ownerWallet: walletAddress }).where(eq(instances.id, row.id));
+    recordEvent(
+      "instance.claimed",
+      { type: "wallet", id: walletAddress },
+      { type: "instance", id: String(row.id) },
+      { previousOwner: row.ownerWallet },
+    );
     claimed += 1;
   }
 
@@ -409,6 +434,12 @@ export async function syncWalletInstances(walletAddress: string): Promise<SyncRe
         ownerWallet: walletAddress,
       })
       .where(eq(instances.id, serverId));
+    recordEvent(
+      "instance.recovered",
+      { type: "wallet", id: walletAddress },
+      { type: "instance", id: String(serverId) },
+      { mint },
+    );
     recovered += 1;
   }
 

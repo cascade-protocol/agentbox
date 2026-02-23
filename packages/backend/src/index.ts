@@ -13,6 +13,7 @@ import { db } from "./db/connection";
 import { instances } from "./db/schema";
 import * as cloudflare from "./lib/cloudflare";
 import { env } from "./lib/env";
+import { recordEvent } from "./lib/events";
 import * as hetzner from "./lib/hetzner";
 import { httpRequestDuration, refreshChainGauges, refreshDbGauges, register } from "./lib/metrics";
 import { logger } from "./logger";
@@ -88,6 +89,9 @@ const resourceServer = new x402ResourceServer([facilitator])
     logger.info(`Payment settled via ${env.FACILITATOR_URL}`, {
       transaction: ctx.result.transaction,
     });
+    recordEvent("payment.settled", { type: "system", id: "x402" }, null, {
+      transaction: ctx.result.transaction ?? "",
+    });
   });
 
 const x402Payment = paymentMiddleware(
@@ -154,7 +158,10 @@ const cleanupInterval = setInterval(
         .where(and(lte(instances.expiresAt, new Date()), isNull(instances.deletedAt)));
 
       for (const row of expired) {
+        const entity = { type: "instance", id: String(row.id) };
+        const cron = { type: "cron", id: "expiry_cleanup" };
         logger.info(`Cleaning up expired instance ${row.id} (${row.name})`);
+        recordEvent("instance.expired", cron, entity, {});
         await db.update(instances).set({ status: "deleting" }).where(eq(instances.id, row.id));
 
         try {
@@ -175,6 +182,7 @@ const cleanupInterval = setInterval(
           .update(instances)
           .set({ status: "deleted", deletedAt: new Date() })
           .where(eq(instances.id, row.id));
+        recordEvent("instance.deleted", cron, entity, {});
       }
 
       if (expired.length > 0) {

@@ -148,8 +148,128 @@
     },
     {
       "type": "row",
-      "title": "On-chain Wallets",
+      "title": "Business",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "collapsed": false
+    },
+    {
+      "type": "stat",
+      "title": "Total Revenue",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "agentbox_instances_total * 5",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD", "color": { "fixedColor": "green", "mode": "fixed" } }
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 19 }
+    },
+    {
+      "type": "stat",
+      "title": "Unique Owners",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "agentbox_unique_owners",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "blue", "mode": "fixed" } } },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 19 }
+    },
+    {
+      "type": "stat",
+      "title": "Created (7d)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "agentbox_instances_created_7d",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "blue", "mode": "fixed" } } },
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 19 }
+    },
+    {
+      "type": "stat",
+      "title": "Expiring (24h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "agentbox_instances_expiring_24h",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 19 }
+    },
+    {
+      "type": "stat",
+      "title": "Minting Success %",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "agentbox_instances_minted / agentbox_instances_total * 100",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 0,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "green", "value": 95 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 19 }
+    },
+    {
+      "type": "stat",
+      "title": "Provisioning Avg",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "agentbox_provisioning_avg_seconds",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 300 },
+              { "color": "red", "value": 600 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 19 }
+    },
+    {
+      "type": "row",
+      "title": "On-chain Wallets",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
       "collapsed": false
     },
     {
@@ -176,7 +296,7 @@
         }
       },
       "options": { "postfix": " SOL" },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 19 }
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 25 }
     },
     {
       "type": "stat",
@@ -202,7 +322,7 @@
         }
       },
       "options": { "postfix": " USDC" },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 19 }
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 25 }
     },
     {
       "type": "stat",
@@ -228,7 +348,7 @@
         }
       },
       "options": { "postfix": " SOL" },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 19 }
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 25 }
     },
     {
       "type": "stat",
@@ -254,12 +374,12 @@
         }
       },
       "options": { "postfix": " USDC" },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 19 }
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 25 }
     },
     {
       "type": "row",
       "title": "HTTP",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
       "collapsed": false
     },
     {
@@ -279,7 +399,7 @@
           "unit": "reqps"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 }
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 30 }
     },
     {
       "type": "timeseries",
@@ -308,7 +428,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 }
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 30 }
     },
     {
       "type": "timeseries",
@@ -328,12 +448,12 @@
           "color": { "fixedColor": "red", "mode": "fixed" }
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 }
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 30 }
     },
     {
       "type": "row",
       "title": "System (Node.js)",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 },
       "collapsed": false
     },
     {
@@ -358,7 +478,7 @@
           "unit": "bytes"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 33 }
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 39 }
     },
     {
       "type": "timeseries",
@@ -377,7 +497,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 33 }
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 39 }
     },
     {
       "type": "timeseries",
@@ -396,7 +516,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 33 }
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 39 }
     }
   ],
   "schemaVersion": 39,

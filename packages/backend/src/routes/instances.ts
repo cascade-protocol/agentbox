@@ -10,6 +10,7 @@ import { db } from "../db/connection";
 import { instances } from "../db/schema";
 import * as cloudflare from "../lib/cloudflare";
 import { env } from "../lib/env";
+import { recordEvent } from "../lib/events";
 import * as hetzner from "../lib/hetzner";
 import { generateAgentName } from "../lib/names";
 import {
@@ -132,9 +133,13 @@ function buildUserData(opts: {
 }
 
 async function mintAndFinalize(row: typeof instances.$inferSelect): Promise<void> {
+  const entity = { type: "instance", id: String(row.id) };
+  const system = { type: "system", id: "backend" };
+
   if (!row.vmWallet) {
     logger.error(`Instance ${row.id} missing vmWallet for SATI minting`);
     await db.update(instances).set({ status: "running" }).where(eq(instances.id, row.id));
+    recordEvent("instance.running", system, entity, {});
     return;
   }
 
@@ -148,9 +153,17 @@ async function mintAndFinalize(row: typeof instances.$inferSelect): Promise<void
   ]);
   if (solResult.status === "rejected") {
     logger.error(`Failed to fund VM wallet SOL ${row.vmWallet}: ${String(solResult.reason)}`);
+    recordEvent("instance.funding_failed", system, entity, {
+      asset: "SOL",
+      error: String(solResult.reason),
+    });
   }
   if (usdcResult.status === "rejected") {
     logger.error(`Failed to fund VM wallet USDC ${row.vmWallet}: ${String(usdcResult.reason)}`);
+    recordEvent("instance.funding_failed", system, entity, {
+      asset: "USDC",
+      error: String(usdcResult.reason),
+    });
   }
 
   try {
@@ -171,6 +184,8 @@ async function mintAndFinalize(row: typeof instances.$inferSelect): Promise<void
       .where(eq(instances.id, row.id));
 
     logger.info(`Minted SATI NFT for instance ${row.id}: ${mint}`);
+    recordEvent("instance.minted", system, entity, { mint, ownerWallet: row.ownerWallet });
+    recordEvent("instance.running", system, entity, {});
   } catch (err) {
     logger.error(`SATI mint failed for instance ${row.id}`, {
       error: err instanceof Error ? err.message : String(err),
@@ -178,6 +193,10 @@ async function mintAndFinalize(row: typeof instances.$inferSelect): Promise<void
         err instanceof Error ? JSON.stringify(err, Object.getOwnPropertyNames(err)) : undefined,
     });
     await db.update(instances).set({ status: "running" }).where(eq(instances.id, row.id));
+    recordEvent("instance.mint_failed", system, entity, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    recordEvent("instance.running", system, entity, {});
   }
 }
 
@@ -210,6 +229,8 @@ instanceRoutes.post("/instances/auth", async (c) => {
     .setExpirationTime("24h")
     .setIssuedAt()
     .sign(secret);
+
+  recordEvent("auth.signed_in", { type: "wallet", id: input.data.solanaWalletAddress }, null, {});
 
   return c.json({ token, isAdmin: input.data.solanaWalletAddress === env.PAY_TO_ADDRESS });
 });
@@ -255,6 +276,9 @@ instanceRoutes.post("/instances", auth, async (c) => {
     result = await hetzner.createServer(name, userData);
   } catch (err) {
     logger.error(`Hetzner create failed: ${String(err)}`);
+    recordEvent("instance.create_failed", { type: "wallet", id: wallet }, null, {
+      error: String(err),
+    });
     return c.json({ error: "Failed to provision server" }, 502);
   }
 
@@ -287,6 +311,18 @@ instanceRoutes.post("/instances", auth, async (c) => {
       expiresAt,
     })
     .returning();
+
+  recordEvent(
+    "instance.created",
+    { type: "wallet", id: wallet },
+    { type: "instance", id: String(row.id) },
+    {
+      name: row.name,
+      ownerWallet: wallet,
+      ip: row.ip,
+      expiresAt: row.expiresAt.toISOString(),
+    },
+  );
 
   return c.json(toInstanceResponse(row), 201);
 });
@@ -346,6 +382,13 @@ instanceRoutes.post("/instances/callback/step", async (c) => {
     return c.json({ error: "Instance not found" }, 404);
   }
 
+  recordEvent(
+    "instance.step_reported",
+    { type: "vm", id: String(input.data.serverId) },
+    { type: "instance", id: String(input.data.serverId) },
+    { step: input.data.step },
+  );
+
   return c.json({ ok: true });
 });
 
@@ -379,6 +422,13 @@ instanceRoutes.post("/instances/callback", async (c) => {
     return c.json({ error: "Instance not found" }, 404);
   }
 
+  recordEvent(
+    "instance.callback_received",
+    { type: "vm", id: String(row.id) },
+    { type: "instance", id: String(row.id) },
+    { vmWallet: input.data.solanaWalletAddress, gatewayToken: input.data.gatewayToken },
+  );
+
   void mintAndFinalize(row).catch((err) => {
     logger.error(`Unexpected minting failure for instance ${row.id}: ${String(err)}`);
   });
@@ -391,6 +441,7 @@ instanceRoutes.post("/instances/sync", auth, async (c) => {
   const wallet = c.get("walletAddress");
   try {
     const { claimed, recovered } = await syncWalletInstances(wallet);
+    recordEvent("sync.requested", { type: "wallet", id: wallet }, null, { claimed, recovered });
     const rows = await db
       .select()
       .from(instances)
@@ -474,6 +525,13 @@ instanceRoutes.patch("/instances/:id", auth, async (c) => {
     .where(eq(instances.id, id))
     .returning();
 
+  recordEvent(
+    "instance.renamed",
+    { type: "wallet", id: c.get("walletAddress") },
+    { type: "instance", id: String(id) },
+    { newName: input.data.name },
+  );
+
   return c.json(toInstanceResponse(row));
 });
 
@@ -505,6 +563,12 @@ instanceRoutes.patch("/instances/:id/agent", auth, async (c) => {
       hostname,
       vmWalletAddress: row.vmWallet,
     });
+    recordEvent(
+      "instance.agent_updated",
+      { type: "wallet", id: c.get("walletAddress") },
+      { type: "instance", id: String(id) },
+      { name: input.data.name, description: input.data.description },
+    );
     return c.json({ ok: true });
   } catch (err) {
     logger.error(`Failed to update agent metadata for instance ${id}: ${String(err)}`);
@@ -534,7 +598,10 @@ instanceRoutes.delete("/instances/:id", auth, async (c) => {
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
+  const wallet = c.get("walletAddress");
+  const delEntity = { type: "instance", id: String(id) };
   await db.update(instances).set({ status: "deleting" }).where(eq(instances.id, id));
+  recordEvent("instance.deletion_started", { type: "wallet", id: wallet }, delEntity, {});
 
   try {
     await hetzner.deleteServer(id);
@@ -555,6 +622,7 @@ instanceRoutes.delete("/instances/:id", auth, async (c) => {
     .update(instances)
     .set({ status: "deleted", deletedAt: new Date() })
     .where(eq(instances.id, id));
+  recordEvent("instance.deleted", { type: "wallet", id: wallet }, delEntity, {});
   return c.json({ ok: true });
 });
 
@@ -579,6 +647,12 @@ instanceRoutes.post("/instances/:id/mint", auth, async (c) => {
   }
 
   await db.update(instances).set({ status: "minting" }).where(eq(instances.id, row.id));
+  recordEvent(
+    "instance.mint_retried",
+    { type: "wallet", id: c.get("walletAddress") },
+    { type: "instance", id: String(row.id) },
+    {},
+  );
 
   void mintAndFinalize(row).catch((err) => {
     logger.error(`Manual mint retry failed for instance ${row.id}: ${String(err)}`);
@@ -603,6 +677,13 @@ instanceRoutes.post("/instances/:id/restart", auth, async (c) => {
     logger.error(`Failed to restart Hetzner server ${id}: ${String(err)}`);
     return c.json({ error: "Failed to restart server" }, 502);
   }
+
+  recordEvent(
+    "instance.restarted",
+    { type: "wallet", id: c.get("walletAddress") },
+    { type: "instance", id: String(id) },
+    {},
+  );
 
   return c.json({ ok: true });
 });
@@ -632,6 +713,13 @@ instanceRoutes.post("/instances/:id/extend", auth, async (c) => {
     .set({ expiresAt: newExpiry })
     .where(eq(instances.id, id))
     .returning();
+
+  recordEvent(
+    "instance.extended",
+    { type: "wallet", id: c.get("walletAddress") },
+    { type: "instance", id: String(id) },
+    { newExpiresAt: newExpiry.toISOString() },
+  );
 
   return c.json(toInstanceResponse(updated));
 });

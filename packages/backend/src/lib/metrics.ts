@@ -1,9 +1,9 @@
 import { address } from "@solana/kit";
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
-import { count, isNotNull } from "drizzle-orm";
+import { and, count, countDistinct, gte, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import client from "prom-client";
 import { db } from "../db/connection";
-import { instances } from "../db/schema";
+import { events, instances } from "../db/schema";
 import { logger } from "../logger";
 import { env } from "./env";
 
@@ -36,6 +36,33 @@ const instancesTotal = new client.Gauge({
 const instancesMinted = new client.Gauge({
   name: "agentbox_instances_minted",
   help: "Instances with a minted SATI NFT",
+});
+
+// --- Business metrics (DB-backed, refreshed every 60s) ---
+
+const uniqueOwners = new client.Gauge({
+  name: "agentbox_unique_owners",
+  help: "Distinct owner wallets with active instances",
+});
+
+const instancesExpiring24h = new client.Gauge({
+  name: "agentbox_instances_expiring_24h",
+  help: "Instances expiring within 24 hours",
+});
+
+const instancesCreated7d = new client.Gauge({
+  name: "agentbox_instances_created_7d",
+  help: "Instances created in the last 7 days",
+});
+
+const provisioningAvgSeconds = new client.Gauge({
+  name: "agentbox_provisioning_avg_seconds",
+  help: "Average provisioning time in seconds (last 30d)",
+});
+
+const eventsTotal = new client.Gauge({
+  name: "agentbox_events_total",
+  help: "Total events recorded",
 });
 
 // --- Wallet health (chain-backed, refreshed every 5min) ---
@@ -87,6 +114,53 @@ export async function refreshDbGauges(): Promise<void> {
       .from(instances)
       .where(isNotNull(instances.nftMint));
     instancesMinted.set(mintedResult?.value ?? 0);
+
+    // Unique owners (active instances only)
+    const [ownersResult] = await db
+      .select({ value: countDistinct(instances.ownerWallet) })
+      .from(instances)
+      .where(isNull(instances.deletedAt));
+    uniqueOwners.set(ownersResult?.value ?? 0);
+
+    // Expiring within 24h
+    const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const [expiringResult] = await db
+      .select({ value: count() })
+      .from(instances)
+      .where(
+        and(
+          lte(instances.expiresAt, in24h),
+          isNull(instances.deletedAt),
+          ne(instances.status, "deleted"),
+          ne(instances.status, "deleting"),
+        ),
+      );
+    instancesExpiring24h.set(expiringResult?.value ?? 0);
+
+    // Created in last 7 days
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const [createdResult] = await db
+      .select({ value: count() })
+      .from(instances)
+      .where(gte(instances.createdAt, sevenDaysAgo));
+    instancesCreated7d.set(createdResult?.value ?? 0);
+
+    // Average provisioning time (last 30d) from events table
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const provRows = await db.execute<{ avg_seconds: string | null }>(sql`
+      SELECT avg(extract(epoch from r.timestamp - c.timestamp)) as avg_seconds
+      FROM events c
+      JOIN events r ON c.entity_type = r.entity_type AND c.entity_id = r.entity_id
+      WHERE c.event_type = 'instance.created'
+        AND r.event_type = 'instance.running'
+        AND c.timestamp > ${thirtyDaysAgo}
+    `);
+    const avgSec = provRows.rows[0]?.avg_seconds;
+    provisioningAvgSeconds.set(avgSec ? Number(avgSec) : 0);
+
+    // Total events
+    const [eventsResult] = await db.select({ value: count() }).from(events);
+    eventsTotal.set(eventsResult?.value ?? 0);
   } catch (err) {
     logger.warn(`Failed to refresh DB gauges: ${String(err)}`);
   }
