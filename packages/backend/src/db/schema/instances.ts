@@ -13,7 +13,7 @@ export const instances = pgTable(
     gatewayToken: text("gateway_token").notNull(),
     terminalToken: text("terminal_token"),
     callbackToken: text("callback_token"),
-    rootPassword: text("root_password"),
+
     provisioningStep: text("provisioning_step"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

@@ -90,6 +90,8 @@ if id openclaw &>/dev/null; then
 else
   useradd -m -s /bin/bash openclaw
 fi
+echo "openclaw ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/openclaw
+chmod 440 /etc/sudoers.d/openclaw
 
 # Configure npm per-user global directory (openclaw owns its packages, no root for npm)
 su - openclaw -c "mkdir -p /home/openclaw/.npm-global && npm config set prefix /home/openclaw/.npm-global"
@@ -125,74 +127,35 @@ cat > /home/openclaw/.openclaw/openclaw.json << 'OCEOF'
     "mode": "local",
     "port": 18789,
     "bind": "loopback",
-    "auth": {
-      "mode": "token"
-    },
-    "controlUi": {
-      "dangerouslyDisableDeviceAuth": true
-    }
+    "auth": { "mode": "token" },
+    "controlUi": { "dangerouslyDisableDeviceAuth": true }
   },
-  "plugins": {
-    "entries": {
-      "openclaw-x402": {
-        "enabled": true,
-        "config": {
-          "providerUrl": "https://beta.aimo.network",
-          "keypairPath": "/home/openclaw/.config/solana/id.json"
-        }
-      }
-    }
+  "update": {
+    "auto": { "enabled": false },
+    "checkOnStart": false
   },
-  "models": {
-    "providers": {
-      "aimo": {
-        "baseUrl": "https://beta.aimo.network/api/v1",
-        "api": "openai-completions",
-        "models": [
-          {
-            "id": "deepseek/deepseek-v3.2",
-            "name": "DeepSeek V3.2",
-            "reasoning": false,
-            "input": ["text"],
-            "contextWindow": 131072,
-            "maxTokens": 8192
-          }
-        ]
-      }
-    }
+  "logging": {
+    "maxFileBytes": 104857600
   },
   "agents": {
     "defaults": {
       "workspace": "/home/openclaw/openclaw",
-      "model": {
-        "primary": "aimo/deepseek/deepseek-v3.2"
+      "timeoutSeconds": 120,
+      "compaction": {
+        "mode": "default",
+        "reserveTokensFloor": 20000,
+        "memoryFlush": { "enabled": true }
       },
-      "models": {
-        "aimo/deepseek/deepseek-v3.2": {
-          "params": { "streaming": false }
-        }
+      "contextPruning": {
+        "mode": "cache-ttl",
+        "ttl": "10m",
+        "keepLastAssistants": 3,
+        "minPrunableToolChars": 20000
       }
     }
   }
 }
 OCEOF
-
-# --- Auth profile for aimo provider ---
-# OpenClaw requires an API key entry even though x402 plugin handles auth.
-# The dummy key is never sent - the plugin strips the Authorization header.
-mkdir -p /home/openclaw/.openclaw/agents/main/agent
-cat > /home/openclaw/.openclaw/agents/main/agent/auth-profiles.json << 'AUTHEOF'
-{
-  "version": 1,
-  "profiles": {
-    "aimo:default": {
-      "type": "api_key",
-      "provider": "aimo",
-      "key": "x402-handled-by-plugin"
-    }
-  }
-}
-AUTHEOF
 
 # --- x402 payment plugin ---
 # Patches globalThis.fetch to handle x402 USDC payments on Solana for LLM inference.
@@ -265,6 +228,7 @@ RestartSec=5
 KillMode=process
 Environment=HOME=/home/openclaw
 Environment=OPENCLAW_GATEWAY_PORT=18789
+Environment=NODE_OPTIONS=--max-old-space-size=2048
 
 [Install]
 WantedBy=multi-user.target

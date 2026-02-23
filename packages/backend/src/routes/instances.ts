@@ -1,5 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import * as ed from "@noble/ed25519";
 import bs58 from "bs58";
 import { and, eq, isNull, lte } from "drizzle-orm";
@@ -67,25 +66,6 @@ function isAdmin(wallet: string): boolean {
 
 function isOwner(row: typeof instances.$inferSelect, wallet: string): boolean {
   return isAdmin(wallet) || row.ownerWallet === wallet;
-}
-
-const encryptionKey = Buffer.from(env.ENCRYPTION_KEY, "hex");
-
-function encrypt(plaintext: string): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", encryptionKey, iv);
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
-}
-
-function decrypt(ciphertext: string): string {
-  const parts = ciphertext.split(":");
-  if (parts.length !== 3) throw new Error("Malformed ciphertext");
-  const [ivHex, tagHex, dataHex] = parts;
-  const decipher = createDecipheriv("aes-256-gcm", encryptionKey, Buffer.from(ivHex, "hex"));
-  decipher.setAuthTag(Buffer.from(tagHex, "hex"));
-  return decipher.update(dataHex, "hex", "utf8") + decipher.final("utf8");
 }
 
 function toInstanceResponse(row: typeof instances.$inferSelect) {
@@ -307,7 +287,6 @@ instanceRoutes.post("/instances", auth, async (c) => {
       nftMint: null,
       vmWallet: null,
       provisioningStep: "vm_created",
-      rootPassword: result.root_password ? encrypt(result.root_password) : null,
       expiresAt,
     })
     .returning();
@@ -485,21 +464,15 @@ instanceRoutes.get("/instances/config", async (c) => {
 
   const hostname = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
 
-  let tls: { cert: string; key: string } | null = null;
-  if (env.WILDCARD_CERT_PATH && env.WILDCARD_KEY_PATH) {
-    try {
-      const cert = readFileSync(env.WILDCARD_CERT_PATH, "utf-8");
-      const key = readFileSync(env.WILDCARD_KEY_PATH, "utf-8");
-      tls = { cert, key };
-    } catch (err) {
-      logger.error(`Failed to read wildcard cert for config endpoint: ${String(err)}`);
-    }
-  }
-
   return c.json({
     hostname,
     terminalToken: row.terminalToken,
-    tls,
+    provider: {
+      name: env.LLM_PROVIDER_NAME,
+      url: env.LLM_PROVIDER_URL,
+      defaultModel: env.LLM_DEFAULT_MODEL,
+      rpcUrl: env.SOLANA_RPC_URL || null,
+    },
   });
 });
 
@@ -738,10 +711,8 @@ instanceRoutes.get("/instances/:id/access", auth, async (c) => {
   const terminalPath = row.terminalToken ? `/terminal/${row.terminalToken}/` : "/terminal/";
   return c.json({
     ...toInstanceResponse(row),
-    ssh: `ssh root@${row.ip}`,
     chatUrl: `https://${instanceHost}/overview#token=${row.gatewayToken}`,
     terminalUrl: `https://${instanceHost}${terminalPath}`,
-    rootPassword: row.rootPassword ? decrypt(row.rootPassword) : null,
   });
 });
 

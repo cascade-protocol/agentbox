@@ -1,0 +1,1 @@
+ALTER TABLE "instances" DROP COLUMN "root_password";

@@ -91,12 +91,24 @@
 - Run migrations via `docker compose exec backend pnpm db:migrate` on remote - never pipe raw SQL to psql
 - Drizzle tracks applied migrations in its own `__drizzle_migrations` table - do not manually insert into or modify it
 
+## Local Testing
+- `just tunnel` starts a Cloudflare tunnel exposing the local backend at the URL configured in `API_BASE_URL` (.env)
+- Full end-to-end VM testing works locally: `pnpm dev` + `just tunnel` + `just build-image` + provision a VM
+- The VM calls back to the local backend through the tunnel - no need to deploy to test provisioning flow
+
 ## Release & Deploy
+- **When ops/packer files are changed** (setup.sh, agentbox-init.sh, agentbox.pkr.hcl), the image MUST be built BEFORE committing:
+  1. `just build-image` - builds new snapshot with current ops scripts
+  2. Update `HETZNER_SNAPSHOT_ID` in `packages/backend/src/lib/env.ts` with the new snapshot ID
+  3. `pnpm check` - verify everything passes
+  4. Commit & push (now the committed snapshot ID matches the built image)
+  5. `just deploy`
+- **Why this order matters:** The backend provisions VMs from the snapshot ID in env.ts. If we commit/deploy first with a stale snapshot ID, new VMs get an old image missing the ops changes. The image must exist and be referenced correctly at deploy time.
+- **When only backend/frontend code changes** (no ops files): commit, push, `just deploy` is sufficient
 - Validate: `pnpm check` (biome + type-check)
 - Commit: conventional commit on `main`
 - Push: `git push`
 - Deploy: `just deploy` (see `justfile` for details)
-- Full sequence: `pnpm check && git add ... && git commit && git push && just deploy`
 
 ## Hetzner Operations
 - Use `hcloud server ssh <server-name> '<command>'` to SSH into instances - never raw `ssh root@<ip>` (avoids known_hosts conflicts when IPs get reused across VMs)

@@ -63,10 +63,8 @@ export const updateAgentMetadataInputSchema = z.object({
 });
 
 export const instanceAccessSchema = instanceSchema.extend({
-  ssh: z.string(),
   chatUrl: z.string(),
   terminalUrl: z.string(),
-  rootPassword: z.string().nullable(),
 });
 
 export type InstanceStatus = z.infer<typeof instanceStatusSchema>;

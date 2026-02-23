@@ -19,10 +19,8 @@ export type Instance = {
 };
 
 export type InstanceAccess = Instance & {
-  ssh: string;
   chatUrl: string;
   terminalUrl: string;
-  rootPassword: string | null;
 };
 
 export type InstanceHealth = {

@@ -25,8 +25,6 @@ import {
   Check,
   Copy,
   ExternalLink,
-  Eye,
-  EyeOff,
   Loader2,
   MessageSquare,
   Pencil,
@@ -327,7 +325,6 @@ function InstanceDetail() {
   const [health, setHealth] = useState<InstanceHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [fatalError, setFatalError] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState("");
@@ -650,29 +647,8 @@ function InstanceDetail() {
             <CardTitle>Access</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <AccessRow label="SSH" value={instance.ssh} />
             <AccessRow label="Chat" value={instance.chatUrl} />
             <AccessRow label="Terminal" value={instance.terminalUrl} />
-            {instance.rootPassword && (
-              <div className="flex items-center gap-3">
-                <span className="w-16 shrink-0 text-sm text-muted-foreground">Password</span>
-                <code className="flex-1 truncate rounded-md bg-muted px-3 py-2 font-mono text-sm">
-                  {showPassword ? instance.rootPassword : "\u2022".repeat(16)}
-                </code>
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent"
-                >
-                  {showPassword ? (
-                    <EyeOff className="size-3.5 text-muted-foreground" />
-                  ) : (
-                    <Eye className="size-3.5 text-muted-foreground" />
-                  )}
-                </button>
-                <CopyButton value={instance.rootPassword} />
-              </div>
-            )}
           </CardContent>
         </Card>
 
