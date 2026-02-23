@@ -4,7 +4,7 @@ import { serve } from "@hono/node-server";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
-import { eq, lte } from "drizzle-orm";
+import { count, eq, lte } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
@@ -14,6 +14,7 @@ import { instances } from "./db/schema";
 import * as cloudflare from "./lib/cloudflare";
 import { env } from "./lib/env";
 import * as hetzner from "./lib/hetzner";
+import { cleanupDeletedTotal, httpRequestDuration, instancesActive, register } from "./lib/metrics";
 import { logger } from "./logger";
 import { healthRoutes } from "./routes/health";
 import { instanceRoutes } from "./routes/instances";
@@ -40,17 +41,26 @@ function getProvisioningPreflightError(): string | null {
   return null;
 }
 
-// Request logging - before all other middleware
+// Metrics endpoint
+app.get("/metrics", async (c) => {
+  const metrics = await register.metrics();
+  return c.text(metrics, 200, { "Content-Type": register.contentType });
+});
+
+// Request logging + histogram timing - before all other middleware
 app.use("/*", async (c, next) => {
   const { method } = c.req;
   const path = c.req.path;
-  if (path === "/health") return next();
+  if (path === "/health" || path === "/metrics") return next();
 
   const start = Date.now();
+  const stopTimer = httpRequestDuration.startTimer({ method });
   logger.info(`--> ${method} ${path}`);
   await next();
-  const ms = Date.now() - start;
   const status = c.res.status;
+  const route = c.req.routePath || path;
+  stopTimer({ route, status: String(status) });
+  const ms = Date.now() - start;
   const level = status >= 500 ? "error" : status >= 400 ? "warn" : "info";
   logger[level](`<-- ${method} ${path} ${status} ${ms}ms`);
 });
@@ -123,6 +133,21 @@ app.onError((err, c) => {
 app.route("/", healthRoutes);
 app.route("/", instanceRoutes);
 
+// Active instances gauge - refresh every 60s
+async function refreshActiveGauge() {
+  try {
+    const [result] = await db
+      .select({ value: count() })
+      .from(instances)
+      .where(eq(instances.status, "running"));
+    instancesActive.set(result?.value ?? 0);
+  } catch {
+    // ignore - gauge will be stale until next tick
+  }
+}
+void refreshActiveGauge();
+const gaugeInterval = setInterval(refreshActiveGauge, 60_000);
+
 // Expiry cleanup - delete expired instances every hour
 const cleanupInterval = setInterval(
   async () => {
@@ -151,6 +176,7 @@ const cleanupInterval = setInterval(
       }
 
       if (expired.length > 0) {
+        cleanupDeletedTotal.inc(expired.length);
         logger.info(`Cleaned up ${expired.length} expired instance(s)`);
       }
     } catch (err) {
@@ -167,6 +193,7 @@ const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
 // Graceful shutdown - close server so tsx watch can restart without EADDRINUSE
 function shutdown(signal: string) {
   logger.info(`Received ${signal}, shutting down...`);
+  clearInterval(gaugeInterval);
   clearInterval(cleanupInterval);
   server.close(() => process.exit(0));
   server.closeIdleConnections();

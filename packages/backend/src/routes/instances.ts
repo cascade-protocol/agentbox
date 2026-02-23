@@ -11,6 +11,7 @@ import { instances } from "../db/schema";
 import * as cloudflare from "../lib/cloudflare";
 import { env } from "../lib/env";
 import * as hetzner from "../lib/hetzner";
+import { instancesProvisioned, satiMintTotal, walletFundingTotal } from "../lib/metrics";
 import { generateAgentName } from "../lib/names";
 import {
   fundVmWallet,
@@ -147,9 +148,11 @@ async function mintAndFinalize(row: typeof instances.$inferSelect): Promise<void
     fundVmWalletUsdc(row.vmWallet),
   ]);
   if (solResult.status === "rejected") {
+    walletFundingTotal.inc({ type: "sol", result: "error" });
     logger.error(`Failed to fund VM wallet SOL ${row.vmWallet}: ${String(solResult.reason)}`);
   }
   if (usdcResult.status === "rejected") {
+    walletFundingTotal.inc({ type: "usdc", result: "error" });
     logger.error(`Failed to fund VM wallet USDC ${row.vmWallet}: ${String(usdcResult.reason)}`);
   }
 
@@ -172,6 +175,7 @@ async function mintAndFinalize(row: typeof instances.$inferSelect): Promise<void
 
     logger.info(`Minted SATI NFT for instance ${row.id}: ${mint}`);
   } catch (err) {
+    satiMintTotal.inc({ result: "error" });
     logger.error(`SATI mint failed for instance ${row.id}`, {
       error: err instanceof Error ? err.message : String(err),
       context:
@@ -254,6 +258,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
   try {
     result = await hetzner.createServer(name, userData);
   } catch (err) {
+    instancesProvisioned.inc({ status: "error" });
     logger.error(`Hetzner create failed: ${String(err)}`);
     return c.json({ error: "Failed to provision server" }, 502);
   }
@@ -288,6 +293,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
     })
     .returning();
 
+  instancesProvisioned.inc({ status: "success" });
   return c.json(toInstanceResponse(row), 201);
 });
 

@@ -15,7 +15,7 @@ tunnel-db:
   ssh -N -L 5433:localhost:5432 agentbox
 
 start-monitoring:
-  ssh agentbox 'cd /opt/agentbox/ops/lgtm && docker compose --env-file ../../.env up -d'
+  ssh agentbox 'cd /opt/agentbox/ops/lgtm && docker compose --env-file ../../.env up -d --remove-orphans'
 
 deploy:
   ssh agentbox 'cd /opt/agentbox && git pull && pnpm install --frozen-lockfile && just start-server'

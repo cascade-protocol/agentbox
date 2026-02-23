@@ -32,6 +32,7 @@ import { db } from "../db/connection";
 import { instances } from "../db/schema";
 import { logger } from "../logger";
 import { env } from "./env";
+import { satiMintTotal, walletFundingTotal } from "./metrics";
 
 type MintAgentNftInput = {
   ownerWallet: string;
@@ -115,6 +116,7 @@ export async function fundVmWallet(vmWalletAddress: string): Promise<void> {
   assertIsSendableTransaction(signed);
   assertIsTransactionWithBlockhashLifetime(signed);
   await sati.getSendAndConfirm()(signed, { commitment: "confirmed" });
+  walletFundingTotal.inc({ type: "sol", result: "success" });
   logger.info(`SOL funding confirmed for ${vmWalletAddress} (0.001 SOL)`);
 }
 
@@ -172,6 +174,7 @@ export async function fundVmWalletUsdc(vmWalletAddress: string): Promise<void> {
   assertIsSendableTransaction(signed);
   assertIsTransactionWithBlockhashLifetime(signed);
   await sati.getSendAndConfirm()(signed, { commitment: "confirmed" });
+  walletFundingTotal.inc({ type: "usdc", result: "success" });
   logger.info(`USDC funding confirmed for ${vmWalletAddress} (1 USDC)`);
 }
 
@@ -251,6 +254,7 @@ export async function mintAgentNft(input: MintAgentNftInput): Promise<{ mint: st
     }
   }
 
+  satiMintTotal.inc({ result: "success" });
   return { mint: result.mint };
 }
 
