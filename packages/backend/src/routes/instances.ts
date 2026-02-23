@@ -140,6 +140,19 @@ async function mintAndFinalize(row: typeof instances.$inferSelect): Promise<void
 
   const hostname = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
 
+  // Fund VM wallet (SOL + USDC) in parallel - await both so the agent
+  // is fully operational before the instance transitions to "running".
+  const [solResult, usdcResult] = await Promise.allSettled([
+    fundVmWallet(row.vmWallet),
+    fundVmWalletUsdc(row.vmWallet),
+  ]);
+  if (solResult.status === "rejected") {
+    logger.error(`Failed to fund VM wallet SOL ${row.vmWallet}: ${String(solResult.reason)}`);
+  }
+  if (usdcResult.status === "rejected") {
+    logger.error(`Failed to fund VM wallet USDC ${row.vmWallet}: ${String(usdcResult.reason)}`);
+  }
+
   try {
     const { mint } = await mintAgentNft({
       ownerWallet: row.ownerWallet,
@@ -362,14 +375,6 @@ instanceRoutes.post("/instances/callback", async (c) => {
 
   void mintAndFinalize(row).catch((err) => {
     logger.error(`Unexpected minting failure for instance ${row.id}: ${String(err)}`);
-  });
-
-  void fundVmWallet(input.data.solanaWalletAddress).catch((err) => {
-    logger.error(`Failed to fund VM wallet SOL ${input.data.solanaWalletAddress}: ${String(err)}`);
-  });
-
-  void fundVmWalletUsdc(input.data.solanaWalletAddress).catch((err) => {
-    logger.error(`Failed to fund VM wallet USDC ${input.data.solanaWalletAddress}: ${String(err)}`);
   });
 
   return c.json({ ok: true });

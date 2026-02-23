@@ -9,13 +9,13 @@ import {
 import {
   address,
   appendTransactionMessageInstruction,
+  assertIsSendableTransaction,
+  assertIsTransactionWithBlockhashLifetime,
   createKeyPairSignerFromPrivateKeyBytes,
   createTransactionMessage,
   generateKeyPairSigner,
-  getBase64EncodedWireTransaction,
   type KeyPairSigner,
   pipe,
-  type Signature,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
@@ -112,10 +112,10 @@ export async function fundVmWallet(vmWalletAddress: string): Promise<void> {
   );
 
   const signed = await signTransactionMessageWithSigners(tx);
-  const encoded = getBase64EncodedWireTransaction(signed);
-
-  await rpc.sendTransaction(encoded, { encoding: "base64" }).send();
-  logger.info(`SOL funding transaction sent for ${vmWalletAddress} (0.001 SOL)`);
+  assertIsSendableTransaction(signed);
+  assertIsTransactionWithBlockhashLifetime(signed);
+  await sati.getSendAndConfirm()(signed, { commitment: "confirmed" });
+  logger.info(`SOL funding confirmed for ${vmWalletAddress} (0.001 SOL)`);
 }
 
 const USDC_MINT = address("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
@@ -169,10 +169,10 @@ export async function fundVmWalletUsdc(vmWalletAddress: string): Promise<void> {
   );
 
   const signed = await signTransactionMessageWithSigners(tx);
-  const encoded = getBase64EncodedWireTransaction(signed);
-
-  await rpc.sendTransaction(encoded, { encoding: "base64" }).send();
-  logger.info(`USDC funding transaction sent for ${vmWalletAddress} (1 USDC)`);
+  assertIsSendableTransaction(signed);
+  assertIsTransactionWithBlockhashLifetime(signed);
+  await sati.getSendAndConfirm()(signed, { commitment: "confirmed" });
+  logger.info(`USDC funding confirmed for ${vmWalletAddress} (1 USDC)`);
 }
 
 function buildAgentDescription(): string {
