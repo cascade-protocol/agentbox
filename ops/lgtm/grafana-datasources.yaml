@@ -21,3 +21,17 @@ datasources:
     jsonData:
       httpMethod: POST
       timeInterval: 15s
+
+  - name: PostgreSQL
+    type: postgres
+    access: proxy
+    uid: postgres
+    url: postgres:5432
+    isDefault: false
+    editable: false
+    jsonData:
+      database: agentbox
+      user: agentbox
+      sslmode: disable
+    secureJsonData:
+      password: ${POSTGRES_PASSWORD}

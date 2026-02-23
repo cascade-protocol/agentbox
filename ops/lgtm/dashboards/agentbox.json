@@ -267,9 +267,34 @@
       "gridPos": { "h": 5, "w": 4, "x": 20, "y": 19 }
     },
     {
+      "type": "table",
+      "title": "Recent Instance Creations",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT uuid_extract_timestamp(e.id) AS \"Created\", e.metadata->>'ownerWallet' AS \"Owner Wallet\", e.metadata->>'name' AS \"Instance\" FROM events e WHERE e.event_type = 'instance.created' ORDER BY e.id DESC LIMIT 20",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Created" },
+            "properties": [{ "id": "unit", "value": "dateTimeAsIso" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Owner Wallet" },
+            "properties": [{ "id": "custom.width", "value": 400 }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 }
+    },
+    {
       "type": "row",
       "title": "On-chain Wallets",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
       "collapsed": false
     },
     {
@@ -296,7 +321,7 @@
         }
       },
       "options": { "postfix": " SOL" },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 25 }
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 33 }
     },
     {
       "type": "stat",
@@ -322,7 +347,7 @@
         }
       },
       "options": { "postfix": " USDC" },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 25 }
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 33 }
     },
     {
       "type": "stat",
@@ -348,7 +373,7 @@
         }
       },
       "options": { "postfix": " SOL" },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 25 }
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 33 }
     },
     {
       "type": "stat",
@@ -374,12 +399,12 @@
         }
       },
       "options": { "postfix": " USDC" },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 25 }
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 33 }
     },
     {
       "type": "row",
       "title": "HTTP",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
       "collapsed": false
     },
     {
@@ -399,7 +424,7 @@
           "unit": "reqps"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 30 }
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 38 }
     },
     {
       "type": "timeseries",
@@ -428,7 +453,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 30 }
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 38 }
     },
     {
       "type": "timeseries",
@@ -448,12 +473,12 @@
           "color": { "fixedColor": "red", "mode": "fixed" }
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 30 }
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 38 }
     },
     {
       "type": "row",
       "title": "System (Node.js)",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 46 },
       "collapsed": false
     },
     {
@@ -478,7 +503,7 @@
           "unit": "bytes"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 39 }
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 47 }
     },
     {
       "type": "timeseries",
@@ -497,7 +522,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 39 }
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 47 }
     },
     {
       "type": "timeseries",
@@ -516,7 +541,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 39 }
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 47 }
     }
   ],
   "schemaVersion": 39,
