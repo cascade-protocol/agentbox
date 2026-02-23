@@ -75,10 +75,77 @@ async function checkAtaExists(rpcUrl: string, owner: string): Promise<boolean> {
   return data.result?.value !== null && data.result?.value !== undefined;
 }
 
+const CURATED_MODELS = [
+  {
+    id: "nvidia/gpt-oss-120b",
+    name: "NVIDIA GPT-OSS 120B (free)",
+    reasoning: false,
+    input: ["text", "image"] as Array<"text" | "image">,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 131072,
+    maxTokens: 16384,
+  },
+  {
+    id: "deepseek/deepseek-chat",
+    name: "DeepSeek V3",
+    reasoning: false,
+    input: ["text"] as Array<"text" | "image">,
+    cost: { input: 0.28, output: 0.42, cacheRead: 0.14, cacheWrite: 0.28 },
+    contextWindow: 65536,
+    maxTokens: 8192,
+  },
+  {
+    id: "minimax/minimax-m2.5",
+    name: "MiniMax M2.5",
+    reasoning: false,
+    input: ["text", "image"] as Array<"text" | "image">,
+    cost: { input: 0.3, output: 1.2, cacheRead: 0.15, cacheWrite: 0.3 },
+    contextWindow: 1048576,
+    maxTokens: 65536,
+  },
+  {
+    id: "anthropic/claude-sonnet-4.6",
+    name: "Claude Sonnet 4.6",
+    reasoning: true,
+    input: ["text", "image"] as Array<"text" | "image">,
+    cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+    contextWindow: 200000,
+    maxTokens: 16384,
+  },
+  {
+    id: "anthropic/claude-haiku-4.5",
+    name: "Claude Haiku 4.5",
+    reasoning: false,
+    input: ["text", "image"] as Array<"text" | "image">,
+    cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+    contextWindow: 200000,
+    maxTokens: 8192,
+  },
+  {
+    id: "google/gemini-2.5-flash",
+    name: "Gemini 2.5 Flash",
+    reasoning: true,
+    input: ["text", "image"] as Array<"text" | "image">,
+    cost: { input: 0.3, output: 2.5, cacheRead: 0.015, cacheWrite: 0.3 },
+    contextWindow: 1048576,
+    maxTokens: 65536,
+  },
+  {
+    id: "openai/gpt-4.1-mini",
+    name: "GPT-4.1 Mini",
+    reasoning: false,
+    input: ["text", "image"] as Array<"text" | "image">,
+    cost: { input: 0.4, output: 1.6, cacheRead: 0.1, cacheWrite: 0.4 },
+    contextWindow: 1047576,
+    maxTokens: 32768,
+  },
+];
+
 export function register(api: OpenClawPluginApi): void {
   const config = (api.pluginConfig ?? {}) as Record<string, string>;
   const keypairPath = config.keypairPath || "/home/openclaw/.config/solana/id.json";
   const providerUrl = config.providerUrl || "";
+  const providerName = config.providerName || "blockrun";
   const rpcUrl = config.rpcUrl || "https://api.mainnet-beta.solana.com";
 
   if (!providerUrl) {
@@ -86,7 +153,23 @@ export function register(api: OpenClawPluginApi): void {
     return;
   }
 
-  api.logger.info(`openclaw-x402: patching fetch for ${providerUrl}`);
+  const baseUrl = `${providerUrl.replace(/\/+$/, "")}/api/v1`;
+
+  api.registerProvider({
+    id: providerName,
+    label: `${providerName} (x402)`,
+    auth: [],
+    models: {
+      baseUrl,
+      api: "openai-completions",
+      authHeader: false,
+      models: CURATED_MODELS,
+    },
+  });
+
+  api.logger.info(
+    `openclaw-x402: registered provider "${providerName}" with ${CURATED_MODELS.length} models`,
+  );
 
   let walletAddress: string | null = null;
   let signerRef: KeyPairSigner | null = null;
@@ -225,6 +308,41 @@ export function register(api: OpenClawPluginApi): void {
           };
         }
         return { text: `Failed to send USDC: ${msg}` };
+      }
+    },
+  });
+
+  api.registerCommand({
+    name: "models-x402",
+    description: "Browse all available models from the x402 provider",
+    acceptsArgs: false,
+    handler: async () => {
+      try {
+        const res = await globalThis.fetch(`${baseUrl}/models`);
+        if (!res.ok) {
+          return { text: `Failed to fetch models: HTTP ${res.status}` };
+        }
+        const json = (await res.json()) as {
+          data?: Array<{ id: string; pricing?: { prompt?: string; completion?: string } }>;
+        };
+        const models = json.data ?? [];
+        if (models.length === 0) {
+          return { text: "No models returned from provider." };
+        }
+
+        const curatedIds = new Set(CURATED_MODELS.map((m) => m.id));
+        const lines = [`**${providerName} models** (${models.length} total)\n`];
+        for (const m of models) {
+          const tag = curatedIds.has(m.id) ? " [curated]" : "";
+          const pricing = m.pricing
+            ? ` - $${m.pricing.prompt ?? "?"}/M in, $${m.pricing.completion ?? "?"}/M out`
+            : "";
+          lines.push(`- \`${m.id}\`${pricing}${tag}`);
+        }
+        lines.push("", `Use \`${providerName}/<model-id>\` to select a model.`);
+        return { text: lines.join("\n") };
+      } catch (err) {
+        return { text: `Failed to fetch models: ${String(err)}` };
       }
     },
   });

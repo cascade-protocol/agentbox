@@ -2,7 +2,7 @@
   "id": "openclaw-x402",
   "name": "x402 Payment Plugin",
   "description": "Patches fetch to handle x402 USDC payments on Solana for LLM providers",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "configSchema": {
     "type": "object",
     "properties": {
@@ -13,6 +13,10 @@
       "keypairPath": {
         "type": "string",
         "description": "Path to Solana keypair JSON file"
+      },
+      "providerName": {
+        "type": "string",
+        "description": "Provider ID for OpenClaw registration (default: blockrun)"
       },
       "rpcUrl": {
         "type": "string",
