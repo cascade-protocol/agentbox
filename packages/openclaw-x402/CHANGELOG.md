@@ -2,6 +2,24 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.3.2] - 2026-02-23
+
+### Changed
+
+- Renamed `/models-x402` to `/pricing-x402` for consistency with other plugin commands
+- Scoped stream-to-SSE conversion to `/chat/completions` only (fixes `/pricing-x402` JSON parse error)
+- Fixed pricing display to use BlockRun's `pricing.input`/`pricing.output` fields
+- Added `billing_mode: "free"` handling in pricing output
+
+## [0.3.0] - 2026-02-23
+
+### Added
+
+- Provider registration via `api.registerProvider()` with 7 curated models
+- `/pricing-x402` command to browse full BlockRun model catalog with pricing
+- Stream compatibility fix: forces `stream: false` and wraps JSON response as SSE for pi-ai compatibility
+- Non-streaming response conversion (`choices[].message` to `choices[].delta`)
+
 ## [0.2.1] - 2026-02-22
 
 ### Changed

@@ -300,21 +300,23 @@ export function register(api: OpenClawPluginApi): void {
         };
       } catch (err) {
         const msg = String(err);
-        if (msg.includes("insufficient") || msg.includes("lamports")) {
+        const cause = (err as { cause?: { message?: string } }).cause?.message || "";
+        const detail = cause || msg;
+        if (detail.includes("insufficient") || detail.includes("lamports")) {
           return {
             text:
               "Insufficient SOL for transaction fees. Send a tiny amount of SOL to " +
               walletAddress,
           };
         }
-        return { text: `Failed to send USDC: ${msg}` };
+        return { text: `Failed to send USDC: ${detail}` };
       }
     },
   });
 
   api.registerCommand({
-    name: "models-x402",
-    description: "Browse all available models from the x402 provider",
+    name: "pricing-x402",
+    description: "Show model pricing from the x402 provider",
     acceptsArgs: false,
     handler: async () => {
       try {
@@ -323,7 +325,11 @@ export function register(api: OpenClawPluginApi): void {
           return { text: `Failed to fetch models: HTTP ${res.status}` };
         }
         const json = (await res.json()) as {
-          data?: Array<{ id: string; pricing?: { prompt?: string; completion?: string } }>;
+          data?: Array<{
+            id: string;
+            billing_mode?: string;
+            pricing?: { input?: number; output?: number };
+          }>;
         };
         const models = json.data ?? [];
         if (models.length === 0) {
@@ -334,9 +340,12 @@ export function register(api: OpenClawPluginApi): void {
         const lines = [`**${providerName} models** (${models.length} total)\n`];
         for (const m of models) {
           const tag = curatedIds.has(m.id) ? " [curated]" : "";
-          const pricing = m.pricing
-            ? ` - $${m.pricing.prompt ?? "?"}/M in, $${m.pricing.completion ?? "?"}/M out`
-            : "";
+          const isFree = m.billing_mode === "free";
+          const pricing = isFree
+            ? " - free"
+            : m.pricing
+              ? ` - $${m.pricing.input ?? "?"}/M in, $${m.pricing.output ?? "?"}/M out`
+              : "";
           lines.push(`- \`${m.id}\`${pricing}${tag}`);
         }
         lines.push("", `Use \`${providerName}/<model-id>\` to select a model.`);
@@ -389,6 +398,24 @@ export function register(api: OpenClawPluginApi): void {
             cleanInit.headers = h;
           }
 
+          // x402 payment settlement is synchronous - streaming is impossible.
+          // OpenClaw's pi-ai layer hardcodes stream:true (not configurable),
+          // so we force stream:false here and wrap the response as SSE below.
+          // Only applies to chat completions, not /models or other endpoints.
+          const isChatCompletion = url.includes("/chat/completions");
+          if (isChatCompletion && cleanInit.body && typeof cleanInit.body === "string") {
+            try {
+              const parsed = JSON.parse(cleanInit.body) as Record<string, unknown>;
+              if (parsed.stream === true) {
+                parsed.stream = false;
+                cleanInit.body = JSON.stringify(parsed);
+                ctx.logger.info("x402: forced stream: false in request body");
+              }
+            } catch {
+              // not JSON body, leave as-is
+            }
+          }
+
           try {
             const response = await x402Fetch(input, cleanInit);
 
@@ -428,6 +455,45 @@ export function register(api: OpenClawPluginApi): void {
             }
 
             ctx.logger.info(`x402: response ${response.status}`);
+
+            // Non-streaming JSON response needs to be wrapped as SSE because
+            // pi-ai's OpenAI SDK expects streaming format (choices[].delta).
+            const ct = response.headers.get("content-type") || "";
+            if (isChatCompletion && response.ok && ct.includes("application/json")) {
+              const text = await response.text();
+              try {
+                const body = JSON.parse(text) as {
+                  choices?: Array<{
+                    message?: unknown;
+                    delta?: unknown;
+                  }>;
+                };
+                if (body.choices) {
+                  for (const c of body.choices) {
+                    if (c.message && !c.delta) {
+                      c.delta = c.message;
+                      delete c.message;
+                    }
+                  }
+                }
+                ctx.logger.info("x402: wrapped JSON response as SSE");
+                const sse = `data: ${JSON.stringify(body)}\n\ndata: [DONE]\n\n`;
+                return new Response(sse, {
+                  status: 200,
+                  headers: {
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                  },
+                });
+              } catch {
+                // Parse failed, return original text as-is
+                return new Response(text, {
+                  status: response.status,
+                  headers: response.headers,
+                });
+              }
+            }
+
             return response;
           } catch (err) {
             const msg = String(err);
