@@ -7,6 +7,7 @@ export const instanceStatusSchema = z.enum([
   "stopped",
   "error",
   "deleting",
+  "deleted",
 ]);
 
 export const provisioningStepSchema = z.string().min(1).max(64);

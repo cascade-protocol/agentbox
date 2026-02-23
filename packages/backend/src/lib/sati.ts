@@ -27,12 +27,11 @@ import {
   getTransferCheckedInstruction,
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../db/connection";
 import { instances } from "../db/schema";
 import { logger } from "../logger";
 import { env } from "./env";
-import { satiMintTotal, walletFundingTotal } from "./metrics";
 
 type MintAgentNftInput = {
   ownerWallet: string;
@@ -116,11 +115,10 @@ export async function fundVmWallet(vmWalletAddress: string): Promise<void> {
   assertIsSendableTransaction(signed);
   assertIsTransactionWithBlockhashLifetime(signed);
   await sati.getSendAndConfirm()(signed, { commitment: "confirmed" });
-  walletFundingTotal.inc({ type: "sol", result: "success" });
   logger.info(`SOL funding confirmed for ${vmWalletAddress} (0.001 SOL)`);
 }
 
-const USDC_MINT = address("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+export const USDC_MINT = address("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
 const USDC_DECIMALS = 6;
 const VM_WALLET_USDC_FUNDING = 1_000_000n; // 1 USDC
 
@@ -174,7 +172,6 @@ export async function fundVmWalletUsdc(vmWalletAddress: string): Promise<void> {
   assertIsSendableTransaction(signed);
   assertIsTransactionWithBlockhashLifetime(signed);
   await sati.getSendAndConfirm()(signed, { commitment: "confirmed" });
-  walletFundingTotal.inc({ type: "usdc", result: "success" });
   logger.info(`USDC funding confirmed for ${vmWalletAddress} (1 USDC)`);
 }
 
@@ -254,7 +251,6 @@ export async function mintAgentNft(input: MintAgentNftInput): Promise<{ mint: st
     }
   }
 
-  satiMintTotal.inc({ result: "success" });
   return { mint: result.mint };
 }
 
@@ -351,7 +347,7 @@ export async function syncWalletInstances(walletAddress: string): Promise<SyncRe
       ownerWallet: instances.ownerWallet,
     })
     .from(instances)
-    .where(inArray(instances.nftMint, mints));
+    .where(and(inArray(instances.nftMint, mints), isNull(instances.deletedAt)));
 
   let claimed = 0;
   for (const row of matchingRows) {
@@ -397,7 +393,7 @@ export async function syncWalletInstances(walletAddress: string): Promise<SyncRe
         nftMint: instances.nftMint,
       })
       .from(instances)
-      .where(eq(instances.id, serverId));
+      .where(and(eq(instances.id, serverId), isNull(instances.deletedAt)));
 
     if (!instance) {
       continue;

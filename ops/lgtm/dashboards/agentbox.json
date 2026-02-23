@@ -46,7 +46,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "agentbox_instances_active",
+          "expr": "agentbox_instances{status=\"running\"}",
           "refId": "A"
         }
       ],
@@ -61,84 +61,205 @@
           }
         }
       },
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 12 }
+      "gridPos": { "h": 6, "w": 4, "x": 0, "y": 12 }
     },
     {
-      "type": "timeseries",
-      "title": "Provisioning Rate",
+      "type": "bargauge",
+      "title": "Instances by Status",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(rate(agentbox_instances_provisioned_total[5m])) by (status)",
+          "expr": "agentbox_instances",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
       ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "minVizWidth": 0,
+        "minVizHeight": 10
+      },
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 20,
-            "pointSize": 5,
-            "lineWidth": 2
-          },
-          "unit": "ops"
+          "thresholds": {
+            "steps": [{ "color": "green", "value": null }]
+          }
         },
         "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "running" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "provisioning" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "minting" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "stopped" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }]
+          },
           {
             "matcher": { "id": "byName", "options": "error" },
             "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
           },
           {
-            "matcher": { "id": "byName", "options": "success" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+            "matcher": { "id": "byName", "options": "deleting" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "deleted" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "text", "mode": "fixed" } }]
           }
         ]
       },
-      "gridPos": { "h": 6, "w": 9, "x": 6, "y": 12 }
+      "gridPos": { "h": 6, "w": 10, "x": 4, "y": 12 }
     },
     {
       "type": "stat",
-      "title": "Total Provisioned",
+      "title": "Total Created",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(agentbox_instances_provisioned_total{status=\"success\"})",
+          "expr": "agentbox_instances_total",
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "color": { "fixedColor": "green", "mode": "fixed" } } },
-      "gridPos": { "h": 3, "w": 4, "x": 15, "y": 12 }
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "blue", "mode": "fixed" } } },
+      "gridPos": { "h": 6, "w": 5, "x": 14, "y": 12 }
     },
     {
       "type": "stat",
-      "title": "Total Provision Errors",
+      "title": "Total Minted",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(agentbox_instances_provisioned_total{status=\"error\"})",
+          "expr": "agentbox_instances_minted",
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "color": { "fixedColor": "red", "mode": "fixed" } } },
-      "gridPos": { "h": 3, "w": 4, "x": 15, "y": 15 }
-    },
-    {
-      "type": "stat",
-      "title": "Cleaned Up",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [
-        {
-          "expr": "sum(agentbox_cleanup_deleted_total)",
-          "refId": "A"
-        }
-      ],
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "purple", "mode": "fixed" } } },
       "gridPos": { "h": 6, "w": 5, "x": 19, "y": 12 }
     },
     {
       "type": "row",
-      "title": "HTTP",
+      "title": "On-chain Wallets",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "collapsed": false
+    },
+    {
+      "type": "stat",
+      "title": "Hot Wallet SOL",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "agentbox_wallet_sol_lamports{wallet=\"hot\"} / 1e9",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 4,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.1 },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "options": { "postfix": " SOL" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 19 }
+    },
+    {
+      "type": "stat",
+      "title": "Hot Wallet USDC",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "agentbox_wallet_usdc_micro{wallet=\"hot\"} / 1e6",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "green", "value": 50 }
+            ]
+          }
+        }
+      },
+      "options": { "postfix": " USDC" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 19 }
+    },
+    {
+      "type": "stat",
+      "title": "Treasury SOL",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "agentbox_wallet_sol_lamports{wallet=\"treasury\"} / 1e9",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 4,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.1 },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "options": { "postfix": " SOL" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 19 }
+    },
+    {
+      "type": "stat",
+      "title": "Treasury USDC",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "agentbox_wallet_usdc_micro{wallet=\"treasury\"} / 1e6",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "green", "value": 100 }
+            ]
+          }
+        }
+      },
+      "options": { "postfix": " USDC" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 19 }
+    },
+    {
+      "type": "row",
+      "title": "HTTP",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
       "collapsed": false
     },
     {
@@ -158,7 +279,7 @@
           "unit": "reqps"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 19 }
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 }
     },
     {
       "type": "timeseries",
@@ -187,7 +308,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 19 }
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 }
     },
     {
       "type": "timeseries",
@@ -207,66 +328,12 @@
           "color": { "fixedColor": "red", "mode": "fixed" }
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 19 }
-    },
-    {
-      "type": "row",
-      "title": "On-chain (SATI)",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 },
-      "collapsed": false
-    },
-    {
-      "type": "timeseries",
-      "title": "SATI Mint Rate",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [
-        {
-          "expr": "sum(rate(agentbox_sati_mint_total[5m])) by (result)",
-          "legendFormat": "{{result}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2 },
-          "unit": "ops"
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "error" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "success" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
-          }
-        ]
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 }
-    },
-    {
-      "type": "timeseries",
-      "title": "Wallet Funding Rate",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [
-        {
-          "expr": "sum(rate(agentbox_wallet_funding_total[5m])) by (type, result)",
-          "legendFormat": "{{type}} {{result}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2 },
-          "unit": "ops"
-        }
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 }
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 }
     },
     {
       "type": "row",
       "title": "System (Node.js)",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
       "collapsed": false
     },
     {
@@ -291,7 +358,7 @@
           "unit": "bytes"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 37 }
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 33 }
     },
     {
       "type": "timeseries",
@@ -310,7 +377,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 37 }
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 33 }
     },
     {
       "type": "timeseries",
@@ -329,7 +396,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 37 }
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 33 }
     }
   ],
   "schemaVersion": 39,

@@ -4,7 +4,7 @@ import { serve } from "@hono/node-server";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
-import { count, eq, lte } from "drizzle-orm";
+import { and, eq, isNull, lte } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
@@ -14,7 +14,7 @@ import { instances } from "./db/schema";
 import * as cloudflare from "./lib/cloudflare";
 import { env } from "./lib/env";
 import * as hetzner from "./lib/hetzner";
-import { cleanupDeletedTotal, httpRequestDuration, instancesActive, register } from "./lib/metrics";
+import { httpRequestDuration, refreshChainGauges, refreshDbGauges, register } from "./lib/metrics";
 import { logger } from "./logger";
 import { healthRoutes } from "./routes/health";
 import { instanceRoutes } from "./routes/instances";
@@ -133,26 +133,25 @@ app.onError((err, c) => {
 app.route("/", healthRoutes);
 app.route("/", instanceRoutes);
 
-// Active instances gauge - refresh every 60s
-async function refreshActiveGauge() {
-  try {
-    const [result] = await db
-      .select({ value: count() })
-      .from(instances)
-      .where(eq(instances.status, "running"));
-    instancesActive.set(result?.value ?? 0);
-  } catch {
-    // ignore - gauge will be stale until next tick
-  }
+// DB-backed gauges - refresh every 60s
+void refreshDbGauges();
+const dbGaugeInterval = setInterval(() => void refreshDbGauges(), 60_000);
+
+// Chain-backed gauges - refresh every 5min (only if RPC configured)
+let chainGaugeInterval: ReturnType<typeof setInterval> | null = null;
+if (env.SOLANA_RPC_URL) {
+  void refreshChainGauges();
+  chainGaugeInterval = setInterval(() => void refreshChainGauges(), 5 * 60_000);
 }
-void refreshActiveGauge();
-const gaugeInterval = setInterval(refreshActiveGauge, 60_000);
 
 // Expiry cleanup - delete expired instances every hour
 const cleanupInterval = setInterval(
   async () => {
     try {
-      const expired = await db.select().from(instances).where(lte(instances.expiresAt, new Date()));
+      const expired = await db
+        .select()
+        .from(instances)
+        .where(and(lte(instances.expiresAt, new Date()), isNull(instances.deletedAt)));
 
       for (const row of expired) {
         logger.info(`Cleaning up expired instance ${row.id} (${row.name})`);
@@ -172,11 +171,13 @@ const cleanupInterval = setInterval(
           }
         }
 
-        await db.delete(instances).where(eq(instances.id, row.id));
+        await db
+          .update(instances)
+          .set({ status: "deleted", deletedAt: new Date() })
+          .where(eq(instances.id, row.id));
       }
 
       if (expired.length > 0) {
-        cleanupDeletedTotal.inc(expired.length);
         logger.info(`Cleaned up ${expired.length} expired instance(s)`);
       }
     } catch (err) {
@@ -193,7 +194,8 @@ const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
 // Graceful shutdown - close server so tsx watch can restart without EADDRINUSE
 function shutdown(signal: string) {
   logger.info(`Received ${signal}, shutting down...`);
-  clearInterval(gaugeInterval);
+  clearInterval(dbGaugeInterval);
+  if (chainGaugeInterval) clearInterval(chainGaugeInterval);
   clearInterval(cleanupInterval);
   server.close(() => process.exit(0));
   server.closeIdleConnections();

@@ -17,6 +17,7 @@ export const instances = pgTable(
     provisioningStep: text("provisioning_step"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("instances_name_idx").on(table.name),

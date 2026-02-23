@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:
 import { readFileSync } from "node:fs";
 import * as ed from "@noble/ed25519";
 import bs58 from "bs58";
-import { and, eq, lte } from "drizzle-orm";
+import { and, eq, isNull, lte } from "drizzle-orm";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { jwtVerify, SignJWT } from "jose";
@@ -11,7 +11,6 @@ import { instances } from "../db/schema";
 import * as cloudflare from "../lib/cloudflare";
 import { env } from "../lib/env";
 import * as hetzner from "../lib/hetzner";
-import { instancesProvisioned, satiMintTotal, walletFundingTotal } from "../lib/metrics";
 import { generateAgentName } from "../lib/names";
 import {
   fundVmWallet,
@@ -148,11 +147,9 @@ async function mintAndFinalize(row: typeof instances.$inferSelect): Promise<void
     fundVmWalletUsdc(row.vmWallet),
   ]);
   if (solResult.status === "rejected") {
-    walletFundingTotal.inc({ type: "sol", result: "error" });
     logger.error(`Failed to fund VM wallet SOL ${row.vmWallet}: ${String(solResult.reason)}`);
   }
   if (usdcResult.status === "rejected") {
-    walletFundingTotal.inc({ type: "usdc", result: "error" });
     logger.error(`Failed to fund VM wallet USDC ${row.vmWallet}: ${String(usdcResult.reason)}`);
   }
 
@@ -175,7 +172,6 @@ async function mintAndFinalize(row: typeof instances.$inferSelect): Promise<void
 
     logger.info(`Minted SATI NFT for instance ${row.id}: ${mint}`);
   } catch (err) {
-    satiMintTotal.inc({ result: "error" });
     logger.error(`SATI mint failed for instance ${row.id}`, {
       error: err instanceof Error ? err.message : String(err),
       context:
@@ -232,7 +228,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
     const [existing] = await db
       .select({ id: instances.id })
       .from(instances)
-      .where(eq(instances.name, candidate))
+      .where(and(eq(instances.name, candidate), isNull(instances.deletedAt)))
       .limit(1);
     if (!existing) {
       name = candidate;
@@ -258,7 +254,6 @@ instanceRoutes.post("/instances", auth, async (c) => {
   try {
     result = await hetzner.createServer(name, userData);
   } catch (err) {
-    instancesProvisioned.inc({ status: "error" });
     logger.error(`Hetzner create failed: ${String(err)}`);
     return c.json({ error: "Failed to provision server" }, 502);
   }
@@ -293,7 +288,6 @@ instanceRoutes.post("/instances", auth, async (c) => {
     })
     .returning();
 
-  instancesProvisioned.inc({ status: "success" });
   return c.json(toInstanceResponse(row), 201);
 });
 
@@ -302,8 +296,11 @@ instanceRoutes.get("/instances", auth, async (c) => {
   const wallet = c.get("walletAddress");
   const showAll = c.req.query("all") === "true" && isAdmin(wallet);
   const rows = showAll
-    ? await db.select().from(instances)
-    : await db.select().from(instances).where(eq(instances.ownerWallet, wallet));
+    ? await db.select().from(instances).where(isNull(instances.deletedAt))
+    : await db
+        .select()
+        .from(instances)
+        .where(and(eq(instances.ownerWallet, wallet), isNull(instances.deletedAt)));
   return c.json({ instances: rows.map(toInstanceResponse) });
 });
 
@@ -315,7 +312,10 @@ instanceRoutes.get("/instances/expiring", auth, async (c) => {
   cutoff.setDate(cutoff.getDate() + days);
 
   const showAll = c.req.query("all") === "true" && isAdmin(wallet);
-  const rows = await db.select().from(instances).where(lte(instances.expiresAt, cutoff));
+  const rows = await db
+    .select()
+    .from(instances)
+    .where(and(lte(instances.expiresAt, cutoff), isNull(instances.deletedAt)));
   const filtered = showAll ? rows : rows.filter((r) => r.ownerWallet === wallet);
   return c.json({ instances: filtered.map(toInstanceResponse) });
 });
@@ -391,7 +391,10 @@ instanceRoutes.post("/instances/sync", auth, async (c) => {
   const wallet = c.get("walletAddress");
   try {
     const { claimed, recovered } = await syncWalletInstances(wallet);
-    const rows = await db.select().from(instances).where(eq(instances.ownerWallet, wallet));
+    const rows = await db
+      .select()
+      .from(instances)
+      .where(and(eq(instances.ownerWallet, wallet), isNull(instances.deletedAt)));
 
     return c.json({
       claimed,
@@ -458,7 +461,10 @@ instanceRoutes.patch("/instances/:id", auth, async (c) => {
     return c.json({ error: "Invalid input", details: input.error.issues }, 400);
   }
 
-  const [existing] = await db.select().from(instances).where(eq(instances.id, id));
+  const [existing] = await db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
   if (!existing) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(existing, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
@@ -480,7 +486,10 @@ instanceRoutes.patch("/instances/:id/agent", auth, async (c) => {
     return c.json({ error: "Invalid input", details: input.error.issues }, 400);
   }
 
-  const [row] = await db.select().from(instances).where(eq(instances.id, id));
+  const [row] = await db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
   if (!row.nftMint) return c.json({ error: "Agent NFT not yet minted" }, 400);
@@ -506,7 +515,10 @@ instanceRoutes.patch("/instances/:id/agent", auth, async (c) => {
 // GET /instances/:id - Get instance details
 instanceRoutes.get("/instances/:id", auth, async (c) => {
   const id = Number(c.req.param("id"));
-  const [row] = await db.select().from(instances).where(eq(instances.id, id));
+  const [row] = await db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
   return c.json(toInstanceResponse(row));
@@ -515,7 +527,10 @@ instanceRoutes.get("/instances/:id", auth, async (c) => {
 // DELETE /instances/:id - Delete instance
 instanceRoutes.delete("/instances/:id", auth, async (c) => {
   const id = Number(c.req.param("id"));
-  const [row] = await db.select().from(instances).where(eq(instances.id, id));
+  const [row] = await db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
@@ -536,14 +551,20 @@ instanceRoutes.delete("/instances/:id", auth, async (c) => {
     }
   }
 
-  await db.delete(instances).where(eq(instances.id, id));
+  await db
+    .update(instances)
+    .set({ status: "deleted", deletedAt: new Date() })
+    .where(eq(instances.id, id));
   return c.json({ ok: true });
 });
 
 // POST /instances/:id/mint - Retry NFT minting
 instanceRoutes.post("/instances/:id/mint", auth, async (c) => {
   const id = Number(c.req.param("id"));
-  const [row] = await db.select().from(instances).where(eq(instances.id, id));
+  const [row] = await db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
@@ -569,7 +590,10 @@ instanceRoutes.post("/instances/:id/mint", auth, async (c) => {
 // POST /instances/:id/restart - Restart VM
 instanceRoutes.post("/instances/:id/restart", auth, async (c) => {
   const id = Number(c.req.param("id"));
-  const [row] = await db.select().from(instances).where(eq(instances.id, id));
+  const [row] = await db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
@@ -586,7 +610,10 @@ instanceRoutes.post("/instances/:id/restart", auth, async (c) => {
 // POST /instances/:id/extend - Extend expiry
 instanceRoutes.post("/instances/:id/extend", auth, async (c) => {
   const id = Number(c.req.param("id"));
-  const [row] = await db.select().from(instances).where(eq(instances.id, id));
+  const [row] = await db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
@@ -612,7 +639,10 @@ instanceRoutes.post("/instances/:id/extend", auth, async (c) => {
 // GET /instances/:id/access - Access credentials
 instanceRoutes.get("/instances/:id/access", auth, async (c) => {
   const id = Number(c.req.param("id"));
-  const [row] = await db.select().from(instances).where(eq(instances.id, id));
+  const [row] = await db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
@@ -630,7 +660,10 @@ instanceRoutes.get("/instances/:id/access", auth, async (c) => {
 // GET /instances/:id/health - Probe instance health
 instanceRoutes.get("/instances/:id/health", auth, async (c) => {
   const id = Number(c.req.param("id"));
-  const [row] = await db.select().from(instances).where(eq(instances.id, id));
+  const [row] = await db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
