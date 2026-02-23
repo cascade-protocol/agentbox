@@ -27,11 +27,11 @@ datasources:
     access: proxy
     uid: postgres
     url: postgres:5432
+    user: agentbox
     isDefault: false
     editable: false
     jsonData:
       database: agentbox
-      user: agentbox
       sslmode: disable
     secureJsonData:
       password: ${POSTGRES_PASSWORD}
