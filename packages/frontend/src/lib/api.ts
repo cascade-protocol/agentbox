@@ -43,7 +43,7 @@ export function instanceUrls(name: string, gatewayToken?: string, terminalToken?
   const host = `${name}.${INSTANCE_BASE_DOMAIN}`;
   const terminalPath = terminalToken ? `/terminal/${terminalToken}/` : "/terminal/";
   return {
-    chat: gatewayToken ? `https://${host}/overview#token=${gatewayToken}` : `https://${host}`,
+    chat: gatewayToken ? `https://${host}/chat#token=${gatewayToken}` : `https://${host}`,
     terminal: `https://${host}${terminalPath}`,
   };
 }
