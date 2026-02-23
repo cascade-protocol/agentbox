@@ -148,12 +148,12 @@ export async function refreshDbGauges(): Promise<void> {
     // Average provisioning time (last 30d) from events table
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const provRows = await db.execute<{ avg_seconds: string | null }>(sql`
-      SELECT avg(extract(epoch from r.timestamp - c.timestamp)) as avg_seconds
+      SELECT avg(extract(epoch from uuid_extract_timestamp(r.id) - uuid_extract_timestamp(c.id))) as avg_seconds
       FROM events c
       JOIN events r ON c.entity_type = r.entity_type AND c.entity_id = r.entity_id
       WHERE c.event_type = 'instance.created'
         AND r.event_type = 'instance.running'
-        AND c.timestamp > ${thirtyDaysAgo}
+        AND uuid_extract_timestamp(c.id) > ${thirtyDaysAgo}
     `);
     const avgSec = provRows.rows[0]?.avg_seconds;
     provisioningAvgSeconds.set(avgSec ? Number(avgSec) : 0);

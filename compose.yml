@@ -56,11 +56,12 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:17
+    image: postgres:18.2
     environment:
       POSTGRES_USER: agentbox
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentbox}
       POSTGRES_DB: agentbox
+      PGDATA: /var/lib/postgresql/data
     ports:
       - '127.0.0.1:5432:5432'
     volumes:

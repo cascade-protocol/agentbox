@@ -3,7 +3,7 @@
 ## Stack
 - pnpm workspaces monorepo + Turborepo
 - Backend: TypeScript, Hono on Node.js (`@hono/node-server`), runs via `tsx` (no build step)
-- Database: PostgreSQL 17 + Drizzle ORM
+- Database: PostgreSQL 18 + Drizzle ORM (UUIDv7 for event IDs via native `uuidv7()`)
 - Frontend: Vite + React 19 + TanStack Router (SPA)
 - Styling: Tailwind v4 (CSS-first) + shadcn/ui
 - Zod v4 (`zod@^4`) for all request/response validation
@@ -84,6 +84,12 @@
 - NEVER commit IPs, hostnames, SSH configs, server credentials, or any private infrastructure details into the codebase
 - NEVER write developer machine paths, internal network info, or deployment targets into checked-in files (including CLAUDE.md)
 - This is a public repo - treat all committed content as publicly visible
+
+## Database Migrations
+- NEVER run manual SQL (CREATE TABLE, ALTER TABLE, INSERT, UPDATE, DELETE, DROP) directly against the database
+- ALL schema changes go through Drizzle: define in `src/db/schema/`, generate with `pnpm db:generate`, apply with `pnpm db:migrate`
+- Run migrations via `docker compose exec backend pnpm db:migrate` on remote - never pipe raw SQL to psql
+- Drizzle tracks applied migrations in its own `__drizzle_migrations` table - do not manually insert into or modify it
 
 ## Release & Deploy
 - Validate: `pnpm check` (biome + type-check)
