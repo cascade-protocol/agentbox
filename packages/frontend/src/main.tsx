@@ -1,3 +1,4 @@
+import { backpack, createDefaultClient, phantom, solflare } from "@solana/client";
 import { SolanaProvider } from "@solana/react-hooks";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
@@ -21,10 +22,15 @@ declare module "@tanstack/react-router" {
   }
 }
 
+const client = createDefaultClient({
+  cluster: "mainnet-beta",
+  walletConnectors: [...phantom(), ...solflare(), ...backpack()],
+});
+
 const rootElement = document.getElementById("app");
 if (rootElement && !rootElement.innerHTML) {
   createRoot(rootElement).render(
-    <SolanaProvider config={{ cluster: "mainnet-beta" }} walletPersistence={{ autoConnect: true }}>
+    <SolanaProvider client={client} walletPersistence={{ autoConnect: true }}>
       <RouterProvider router={router} />
     </SolanaProvider>,
   );

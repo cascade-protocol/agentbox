@@ -14,8 +14,10 @@ import {
   createKeyPairSignerFromPrivateKeyBytes,
   createTransactionMessage,
   generateKeyPairSigner,
+  isSolanaError,
   type KeyPairSigner,
   pipe,
+  SOLANA_ERROR__BLOCK_HEIGHT_EXCEEDED,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
@@ -92,30 +94,54 @@ export async function getHotWallet(): Promise<KeyPairSigner> {
 
 const VM_WALLET_SOL_FUNDING = 1_000_000n; // 0.001 SOL - enough for several USDC transfers
 
+async function sendSolanaTransaction(
+  label: string,
+  buildAndSend: () => Promise<void>,
+  maxAttempts = 3,
+): Promise<void> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await buildAndSend();
+      return;
+    } catch (err) {
+      if (isSolanaError(err, SOLANA_ERROR__BLOCK_HEIGHT_EXCEEDED) && attempt < maxAttempts) {
+        logger.warn(
+          `${label}: blockhash expired (attempt ${attempt}/${maxAttempts}), retrying with fresh blockhash`,
+        );
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 export async function fundVmWallet(vmWalletAddress: string): Promise<void> {
   const hotWallet = await getHotWallet();
   const sati = getSati();
   const rpc = sati.getRpc();
 
-  const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
+  await sendSolanaTransaction("SOL funding", async () => {
+    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
 
-  const transferIx = getTransferSolInstruction({
-    source: hotWallet,
-    destination: address(vmWalletAddress),
-    amount: VM_WALLET_SOL_FUNDING,
+    const transferIx = getTransferSolInstruction({
+      source: hotWallet,
+      destination: address(vmWalletAddress),
+      amount: VM_WALLET_SOL_FUNDING,
+    });
+
+    const tx = pipe(
+      createTransactionMessage({ version: 0 }),
+      (tx) => setTransactionMessageFeePayer(hotWallet.address, tx),
+      (tx) => appendTransactionMessageInstruction(transferIx, tx),
+      (tx) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, tx),
+    );
+
+    const signed = await signTransactionMessageWithSigners(tx);
+    assertIsSendableTransaction(signed);
+    assertIsTransactionWithBlockhashLifetime(signed);
+    await sati.getSendAndConfirm()(signed, { commitment: "confirmed" });
   });
 
-  const tx = pipe(
-    createTransactionMessage({ version: 0 }),
-    (tx) => setTransactionMessageFeePayer(hotWallet.address, tx),
-    (tx) => appendTransactionMessageInstruction(transferIx, tx),
-    (tx) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, tx),
-  );
-
-  const signed = await signTransactionMessageWithSigners(tx);
-  assertIsSendableTransaction(signed);
-  assertIsTransactionWithBlockhashLifetime(signed);
-  await sati.getSendAndConfirm()(signed, { commitment: "confirmed" });
   logger.info(`SOL funding confirmed for ${vmWalletAddress} (0.001 SOL)`);
   recordEvent(
     "instance.funded",
@@ -133,9 +159,6 @@ export async function fundVmWalletUsdc(vmWalletAddress: string): Promise<void> {
   const hotWallet = await getHotWallet();
   const sati = getSati();
   const rpc = sati.getRpc();
-
-  const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
-
   const destOwner = address(vmWalletAddress);
 
   const [sourceAta] = await findAssociatedTokenPda({
@@ -150,35 +173,40 @@ export async function fundVmWalletUsdc(vmWalletAddress: string): Promise<void> {
     tokenProgram: TOKEN_PROGRAM_ADDRESS,
   });
 
-  const createAtaIx = getCreateAssociatedTokenIdempotentInstruction({
-    payer: hotWallet,
-    ata: destAta,
-    owner: destOwner,
-    mint: USDC_MINT,
-    tokenProgram: TOKEN_PROGRAM_ADDRESS,
+  await sendSolanaTransaction("USDC funding", async () => {
+    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
+
+    const createAtaIx = getCreateAssociatedTokenIdempotentInstruction({
+      payer: hotWallet,
+      ata: destAta,
+      owner: destOwner,
+      mint: USDC_MINT,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+
+    const transferIx = getTransferCheckedInstruction({
+      source: sourceAta,
+      mint: USDC_MINT,
+      destination: destAta,
+      authority: hotWallet,
+      amount: VM_WALLET_USDC_FUNDING,
+      decimals: USDC_DECIMALS,
+    });
+
+    const tx = pipe(
+      createTransactionMessage({ version: 0 }),
+      (tx) => setTransactionMessageFeePayer(hotWallet.address, tx),
+      (tx) => appendTransactionMessageInstruction(createAtaIx, tx),
+      (tx) => appendTransactionMessageInstruction(transferIx, tx),
+      (tx) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, tx),
+    );
+
+    const signed = await signTransactionMessageWithSigners(tx);
+    assertIsSendableTransaction(signed);
+    assertIsTransactionWithBlockhashLifetime(signed);
+    await sati.getSendAndConfirm()(signed, { commitment: "confirmed" });
   });
 
-  const transferIx = getTransferCheckedInstruction({
-    source: sourceAta,
-    mint: USDC_MINT,
-    destination: destAta,
-    authority: hotWallet,
-    amount: VM_WALLET_USDC_FUNDING,
-    decimals: USDC_DECIMALS,
-  });
-
-  const tx = pipe(
-    createTransactionMessage({ version: 0 }),
-    (tx) => setTransactionMessageFeePayer(hotWallet.address, tx),
-    (tx) => appendTransactionMessageInstruction(createAtaIx, tx),
-    (tx) => appendTransactionMessageInstruction(transferIx, tx),
-    (tx) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, tx),
-  );
-
-  const signed = await signTransactionMessageWithSigners(tx);
-  assertIsSendableTransaction(signed);
-  assertIsTransactionWithBlockhashLifetime(signed);
-  await sati.getSendAndConfirm()(signed, { commitment: "confirmed" });
   logger.info(`USDC funding confirmed for ${vmWalletAddress} (1 USDC)`);
   recordEvent(
     "instance.funded",

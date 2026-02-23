@@ -61,6 +61,7 @@
 - Config: `ops/packer/` - `agentbox.pkr.hcl`, `setup.sh` (build-time), `agentbox-init.sh` (boot-time)
 - Build: `just build-image` - auto-bumps version in `agentbox.pkr.hcl`, runs packer build, outputs new snapshot ID
 - After build: update `HETZNER_SNAPSHOT_ID` default in `packages/backend/src/lib/env.ts` with the new snapshot ID
+- NEVER override `HETZNER_SNAPSHOT_ID` via `.env` on remote or local machines - the `env.ts` default is the single source of truth for which image to provision. Overriding it in `.env` causes drift between deployed code and the actual image used.
 - Base: `ubuntu-24.04`, built on cpx42 (fast compile), snapshotted for cx33 (80GB disk)
 - Pre-installed: Node.js 24, OpenClaw (npm global + native modules), Caddy, ttyd, Solana CLI, create-sati-agent, openclaw-x402 plugin, build-essential/cmake/python3 (for node-gyp)
 - Plugin install: `openclaw-x402` is extracted via `npm pack` + `tar` into `~/.openclaw/extensions/openclaw-x402/` (auto-discovered, no `plugins.load.paths` needed)
