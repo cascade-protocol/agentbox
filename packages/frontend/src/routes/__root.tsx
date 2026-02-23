@@ -157,6 +157,7 @@ function RootLayout() {
           <ErrorBoundary>
             <Outlet />
           </ErrorBoundary>
+          <Footer compact />
         </div>
       </div>
     );
@@ -165,31 +166,34 @@ function RootLayout() {
   // Wallet connected but no valid JWT - compact sign-in
   if (session) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-sm">
-          <CardHeader className="text-center">
-            <CardTitle className="text-xl font-semibold tracking-tight">
-              Sign in to AgentBox
-            </CardTitle>
-            <p className="mt-1 font-mono text-xs text-muted-foreground">
-              {truncateAddress(String(session.account.address))}
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {activeError && <p className="text-sm text-destructive">{activeError}</p>}
-            <Button onClick={() => void signIn(session)} className="w-full">
-              <Wallet className="size-4" />
-              Sign Message & Continue
-            </Button>
-            <Button variant="outline" onClick={logout} className="w-full">
-              <LogOut className="size-4" />
-              Disconnect Wallet
-            </Button>
-            <p className="text-center text-xs text-muted-foreground">
-              Sign a message to prove wallet ownership.
-            </p>
-          </CardContent>
-        </Card>
+      <div className="flex min-h-screen flex-col bg-background">
+        <div className="flex flex-1 items-center justify-center p-4">
+          <Card className="w-full max-w-sm">
+            <CardHeader className="text-center">
+              <CardTitle className="text-xl font-semibold tracking-tight">
+                Sign in to AgentBox
+              </CardTitle>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">
+                {truncateAddress(String(session.account.address))}
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {activeError && <p className="text-sm text-destructive">{activeError}</p>}
+              <Button onClick={() => void signIn(session)} className="w-full">
+                <Wallet className="size-4" />
+                Sign Message & Continue
+              </Button>
+              <Button variant="outline" onClick={logout} className="w-full">
+                <LogOut className="size-4" />
+                Disconnect Wallet
+              </Button>
+              <p className="text-center text-xs text-muted-foreground">
+                Sign a message to prove wallet ownership.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+        <Footer compact />
       </div>
     );
   }
@@ -498,10 +502,27 @@ function RootLayout() {
         </section>
       </main>
 
-      <footer className="border-t border-border/70 px-4 py-6 text-center text-sm text-muted-foreground md:px-6">
-        AgentBox by Cascade | Every agent gets an identity.
-      </footer>
+      <Footer />
     </div>
+  );
+}
+
+function Footer({ compact }: { compact?: boolean }) {
+  return (
+    <footer
+      className={`shrink-0 border-t border-border/70 px-4 text-center text-muted-foreground md:px-6 ${compact ? "py-3 text-xs" : "py-6 text-sm"}`}
+    >
+      AgentBox by Cascade | Questions? DM{" "}
+      <a
+        href="https://x.com/opwizardx"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline hover:text-foreground"
+      >
+        @opwizardx
+      </a>{" "}
+      on X
+    </footer>
   );
 }
 
