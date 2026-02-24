@@ -276,21 +276,33 @@ instanceRoutes.post("/instances", auth, async (c) => {
   }
 
   let name = "";
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const candidate = generateAgentName();
+  if (input.data.name) {
     const [existing] = await db
       .select({ id: instances.id })
       .from(instances)
-      .where(and(eq(instances.name, candidate), isNull(instances.deletedAt)))
+      .where(eq(instances.name, input.data.name))
       .limit(1);
-    if (!existing) {
-      name = candidate;
-      break;
+    if (existing) {
+      return c.json({ error: "Name is already taken" }, 409);
     }
-    logger.warn(`Name collision on "${candidate}", retrying (${attempt + 1}/5)`);
-  }
-  if (!name) {
-    return c.json({ error: "Failed to generate unique name" }, 500);
+    name = input.data.name;
+  } else {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const candidate = generateAgentName();
+      const [existing] = await db
+        .select({ id: instances.id })
+        .from(instances)
+        .where(eq(instances.name, candidate))
+        .limit(1);
+      if (!existing) {
+        name = candidate;
+        break;
+      }
+      logger.warn(`Name collision on "${candidate}", retrying (${attempt + 1}/5)`);
+    }
+    if (!name) {
+      return c.json({ error: "Failed to generate unique name" }, 500);
+    }
   }
 
   const hostname = `${name}.${env.INSTANCE_BASE_DOMAIN}`;

@@ -152,6 +152,12 @@ jq --argjson pluginConfig "$PLUGIN_CONFIG" \
    }
    | .plugins.entries.telegram.enabled = true
    | .agents.defaults.model.primary = ($providerName + "/" + $defaultModel)
+   | .agents.defaults.models = (
+       [$providerDef.models[] | {
+         key: ($providerName + "/" + .id),
+         value: {alias: .name}
+       }] | from_entries
+     )
    | .models.providers[$providerName] = $providerDef
    | if $telegramBotToken != "" then
        .channels.telegram = {

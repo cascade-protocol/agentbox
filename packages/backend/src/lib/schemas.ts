@@ -33,7 +33,15 @@ const telegramTokenSchema = z
   .string()
   .regex(/^\d+:[A-Za-z0-9_-]{35}$/, "Invalid Telegram bot token format");
 
+/** DNS-safe name: lowercase alphanumeric + hyphens, 3-63 chars, no leading/trailing hyphen. */
+export const instanceNameSchema = z
+  .string()
+  .min(3)
+  .max(63)
+  .regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/, "Must be lowercase letters, numbers, and hyphens");
+
 export const createInstanceInputSchema = z.object({
+  name: instanceNameSchema.optional(),
   telegramBotToken: telegramTokenSchema.optional(),
 });
 

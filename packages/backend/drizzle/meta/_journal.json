@@ -64,6 +64,20 @@
       "when": 1771948140588,
       "tag": "0008_early_spencer_smythe",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1771948276694,
+      "tag": "0009_boring_norrin_radd",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1771948662492,
+      "tag": "0010_windy_the_hunter",
+      "breakpoints": true
     }
   ]
 }

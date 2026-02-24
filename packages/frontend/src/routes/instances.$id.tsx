@@ -871,7 +871,7 @@ function InstanceDetail() {
               <dt className="text-muted-foreground">IP Address</dt>
               <dd className="font-mono">{instance.ip}</dd>
 
-              <dt className="text-muted-foreground">Image</dt>
+              <dt className="text-muted-foreground">Image ID</dt>
               <dd className="font-mono">{instance.snapshotId ?? "—"}</dd>
 
               <dt className="text-muted-foreground">Owner Wallet</dt>

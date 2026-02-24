@@ -136,9 +136,13 @@ export const api = {
     list: (all?: boolean) =>
       request<{ instances: Instance[] }>(`/instances${all ? "?all=true" : ""}`),
     get: (id: number) => request<Instance>(`/instances/${id}`),
-    create: async (signer: TransactionSigner, opts?: { telegramBotToken?: string }) => {
+    create: async (
+      signer: TransactionSigner,
+      opts?: { name?: string; telegramBotToken?: string },
+    ) => {
       const payFetch = createPaymentFetch(signer);
       const body: Record<string, string> = {};
+      if (opts?.name) body.name = opts.name;
       if (opts?.telegramBotToken) body.telegramBotToken = opts.telegramBotToken;
       const res = await payFetch(`${API_URL}/instances`, {
         method: "POST",

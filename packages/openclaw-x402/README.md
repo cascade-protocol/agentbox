@@ -1,24 +1,30 @@
 # openclaw-x402
 
-OpenClaw plugin that enables automatic x402 USDC payments on Solana for LLM inference providers. It patches `globalThis.fetch` to intercept requests to a configured provider URL, handles HTTP 402 payment challenges, and signs transactions from a local Solana keypair.
+OpenClaw plugin for x402 USDC payments on Solana. Handles LLM inference billing automatically, and gives the agent tools to discover and pay for external x402 services.
 
 ## What it does
 
+**Fetch interception (automatic):**
 - Intercepts outgoing fetch calls to your configured provider URL
-- Automatically handles `402 Payment Required` responses using the x402 protocol
-- Signs USDC SPL token payments from a Solana keypair file
-- Strips `Authorization` headers before forwarding (payment is the auth)
-- Exposes `/balance-x402` and `/send-x402` commands in the OpenClaw gateway
+- Handles `402 Payment Required` responses using the x402 protocol
+- Signs USDC SPL token payments from a local Solana keypair
+
+**Agent tools (AI-callable):**
+- `x402_balance` - check wallet balance with available/reserved breakdown
+- `x402_payment` - call any x402-enabled paid API with automatic USDC payment
+- `x402_discover` - search the zauth verified provider directory for paid services
+
+**User commands (slash commands):**
+- `/x402_balance` - show wallet address and USDC balance
+- `/x402_send` - send USDC to a Solana address
 
 ## Installation
-
-Install as an OpenClaw plugin:
 
 ```bash
 npm install openclaw-x402
 ```
 
-Then add it to your OpenClaw plugin config (e.g. `~/.openclaw/plugins.json`):
+Add to your OpenClaw plugin config:
 
 ```json
 {
@@ -39,47 +45,23 @@ Then add it to your OpenClaw plugin config (e.g. `~/.openclaw/plugins.json`):
 | Field | Required | Default | Description |
 |---|---|---|---|
 | `providerUrl` | Yes | - | Base URL of the x402-enabled provider to intercept |
-| `keypairPath` | No | `/home/openclaw/.openclaw/agentbox/wallet-sol.json` | Path to Solana keypair JSON file |
+| `keypairPath` | No | `~/.openclaw/agentbox/wallet-sol.json` | Path to Solana keypair JSON |
+| `providerName` | No | `aimo` | Provider ID for OpenClaw registration |
 | `rpcUrl` | No | `https://api.mainnet-beta.solana.com` | Solana RPC endpoint |
 
-## Commands
+## Inference reserve
 
-Once the plugin is loaded, these slash commands are available in the OpenClaw gateway:
-
-### `/balance-x402`
-
-Shows the wallet public key and current USDC balance.
-
-```
-Wallet: 7xKXtg...
-USDC balance: $1.234500
-
-To top up, send USDC (SPL) on Solana to:
-7xKXtg...
-```
-
-### `/send-x402 <amount|all> <address>`
-
-Sends USDC from the plugin wallet to a Solana address.
-
-```
-/send-x402 0.5 7xKXtg...
-/send-x402 all 7xKXtg...
-```
-
-The recipient must already have a USDC token account (have received USDC at least once).
+$0.30 USDC is reserved for LLM inference and cannot be spent by agent tools. This prevents the agent from spending all funds on external APIs and losing the ability to respond.
 
 ## Funding the wallet
 
-The wallet is a standard Solana keypair. To pay for inference:
-
-1. Run `/balance-x402` to get your wallet address
+1. Run `/x402_balance` to get your wallet address
 2. Send USDC (SPL token on Solana mainnet) to that address
 3. Keep a small amount of SOL (0.001+) for transaction fees
 
 ## How it works
 
-On startup the plugin loads the keypair, creates an x402 client with the `ExactSvmScheme` for Solana mainnet, and replaces `globalThis.fetch` with a wrapper. Any request to `providerUrl` goes through x402 payment handling. All other requests pass through unmodified.
+On startup the plugin loads the keypair, creates an x402 client with `ExactSvmScheme` for Solana mainnet, and replaces `globalThis.fetch` with a wrapper. Any request to `providerUrl` goes through x402 payment handling. All other requests pass through unmodified. Agent tools use the same x402 fetch wrapper to pay for external endpoints.
 
 ## License
 

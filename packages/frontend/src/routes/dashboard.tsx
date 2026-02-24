@@ -7,6 +7,8 @@ import {
   AlertTriangle,
   Check,
   ChevronDown,
+  Copy,
+  ExternalLink,
   Loader2,
   Pencil,
   Plus,
@@ -14,6 +16,7 @@ import {
   RotateCw,
   Send,
   Server,
+  Shuffle,
   TerminalSquare,
   Trash2,
   X,
@@ -45,6 +48,7 @@ import {
 import { env } from "../env";
 import { api, getIsAdmin, type Instance, instanceUrls } from "../lib/api";
 import { formatDate, relativeTime, shortDate, truncateAddress } from "../lib/format";
+import { generateAgentName } from "../lib/names";
 import { getProvisioningStepLabel, getStatusVariant } from "../lib/status";
 
 export const Route = createFileRoute("/dashboard")({
@@ -247,6 +251,31 @@ function HomeSkeleton() {
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const USDC_PRICE = 5;
 const TELEGRAM_TOKEN_RE = /^\d+:[A-Za-z0-9_-]{35}$/;
+const NAME_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
+
+function CopyChip({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <code className="inline-flex items-center gap-1 rounded bg-muted px-1 py-0.5 text-xs">
+      {value}
+      <button
+        type="button"
+        onClick={() => {
+          void navigator.clipboard.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        }}
+        className="inline-flex size-5 shrink-0 items-center justify-center rounded transition-colors hover:bg-accent"
+      >
+        {copied ? (
+          <Check className="size-3 text-green-500" />
+        ) : (
+          <Copy className="size-3 text-muted-foreground" />
+        )}
+      </button>
+    </code>
+  );
+}
 
 function CreateInstanceDialog({
   session,
@@ -267,20 +296,40 @@ function CreateInstanceDialog({
   const usdcBalance = Number(balance?.uiAmount ?? 0);
   const hasEnough = usdcBalance >= USDC_PRICE;
   const [creating, setCreating] = useState(false);
+  const [createdInstance, setCreatedInstance] = useState<Instance | null>(null);
+  const [name, setName] = useState(generateAgentName);
   const [showTelegram, setShowTelegram] = useState(false);
   const [telegramToken, setTelegramToken] = useState("");
   const telegramValid = telegramToken === "" || TELEGRAM_TOKEN_RE.test(telegramToken.trim());
+  const nameValid = name.length >= 3 && name.length <= 63 && NAME_RE.test(name);
+
+  const suggestedBotName = name
+    .split("-")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+  const suggestedBotUsername = `ab_${name.replace(/-/g, "_")}_bot`;
+
+  function resetDialog() {
+    setCreatedInstance(null);
+    setTelegramToken("");
+    setShowTelegram(false);
+    setName(generateAgentName());
+  }
 
   async function handleCreate() {
     setCreating(true);
     try {
-      const opts = telegramToken.trim() ? { telegramBotToken: telegramToken.trim() } : undefined;
-      await api.instances.create(signer, opts);
-      toast.success("Instance created - provisioning will take ~3 minutes");
-      onOpenChange(false);
-      setTelegramToken("");
-      setShowTelegram(false);
+      const opts: { name: string; telegramBotToken?: string } = { name };
+      if (telegramToken.trim()) opts.telegramBotToken = telegramToken.trim();
+      const instance = await api.instances.create(signer, opts);
       await onCreated();
+      if (instance.telegramBotUsername) {
+        setCreatedInstance(instance);
+      } else {
+        toast.success("Instance created - provisioning will take ~3 minutes");
+        onOpenChange(false);
+        resetDialog();
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Create failed");
     } finally {
@@ -289,7 +338,13 @@ function CreateInstanceDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) resetDialog();
+        onOpenChange(v);
+      }}
+    >
       <DialogTrigger asChild>
         <Button size="sm">
           <Plus className="size-4" />
@@ -297,81 +352,191 @@ function CreateInstanceDialog({
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Create Instance</DialogTitle>
-          <DialogDescription>
-            Provision a new AgentBox VM for {USDC_PRICE} USDC on Solana (7 days). Your wallet will
-            be prompted to approve the payment.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="rounded-md border px-4 py-3 text-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Your Solana USDC balance</span>
-            <span className={hasEnough ? "text-foreground" : "text-destructive font-medium"}>
-              {balance ? `${usdcBalance.toFixed(2)} USDC` : "Loading..."}
-            </span>
-          </div>
-          {balance && !hasEnough && (
-            <p className="mt-2 text-destructive text-xs">
-              Insufficient balance. You need at least {USDC_PRICE} USDC on Solana to create an
-              instance. Make sure your USDC is on Solana, not another chain.
-            </p>
-          )}
-        </div>
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowTelegram(!showTelegram)}
-            className="flex w-full items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <Send className="size-3.5" />
-            <span>Connect Telegram Bot (optional)</span>
-            <ChevronDown
-              className={`ml-auto size-4 transition-transform ${showTelegram ? "rotate-180" : ""}`}
-            />
-          </button>
-          {showTelegram && (
-            <div className="mt-3 space-y-2">
-              <p className="text-xs text-muted-foreground">
-                Create a bot via{" "}
-                <a
-                  href="https://t.me/BotFather"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  @BotFather
-                </a>{" "}
-                and paste the token below. The bot will be configured automatically when the
-                instance boots.
+        {createdInstance ? (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Check className="size-5 text-green-500" />
+                Instance Created
+              </DialogTitle>
+              <DialogDescription>
+                Your agent is provisioning and will be ready in ~3 minutes.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="rounded-md border border-green-500/20 bg-green-500/5 px-4 py-3">
+              <p className="text-sm font-medium">Open your bot and press Start</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Your message will be queued and the agent will reply as soon as it's ready.
               </p>
-              <input
-                className="w-full rounded-md border border-input bg-muted px-3 py-2 font-mono text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
-                placeholder="123456789:ABCdefGHI..."
-                value={telegramToken}
-                onChange={(e) => setTelegramToken(e.target.value)}
-                disabled={creating}
-              />
-              {telegramToken && !telegramValid && (
-                <p className="text-xs text-destructive">Invalid bot token format</p>
+              <a
+                href={`https://t.me/${createdInstance.telegramBotUsername}?start=hi`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-flex items-center gap-2 rounded-md bg-[#2AABEE] px-4 py-2 text-sm font-medium text-white hover:bg-[#229ED9] transition-colors"
+              >
+                <Send className="size-4" />
+                Open @{createdInstance.telegramBotUsername}
+                <ExternalLink className="size-3.5" />
+              </a>
+            </div>
+            <DialogFooter>
+              <Link to="/instances/$id" params={{ id: String(createdInstance.id) }}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    onOpenChange(false);
+                    resetDialog();
+                  }}
+                >
+                  Go to instance
+                </Button>
+              </Link>
+              <Button
+                onClick={() => {
+                  onOpenChange(false);
+                  resetDialog();
+                }}
+              >
+                Done
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Create Instance</DialogTitle>
+              <DialogDescription>
+                Provision a new AgentBox VM for {USDC_PRICE} USDC on Solana (7 days). Your wallet
+                will be prompted to approve the payment.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="rounded-md border px-4 py-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Your Solana USDC balance</span>
+                <span className={hasEnough ? "text-foreground" : "text-destructive font-medium"}>
+                  {balance ? `${usdcBalance.toFixed(2)} USDC` : "Loading..."}
+                </span>
+              </div>
+              {balance && !hasEnough && (
+                <p className="mt-2 text-destructive text-xs">
+                  Insufficient balance. You need at least {USDC_PRICE} USDC on Solana to create an
+                  instance. Make sure your USDC is on Solana, not another chain.
+                </p>
               )}
             </div>
-          )}
-        </div>
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button type="button" variant="outline" disabled={creating}>
-              Cancel
-            </Button>
-          </DialogClose>
-          <Button
-            onClick={() => void handleCreate()}
-            disabled={creating || !hasEnough || !telegramValid}
-          >
-            {creating && <Loader2 className="size-4 animate-spin" />}
-            {creating ? "Creating..." : `Pay ${USDC_PRICE} USDC & Create`}
-          </Button>
-        </DialogFooter>
+            <div className="space-y-1.5">
+              <label htmlFor="instance-name" className="text-sm text-muted-foreground">
+                Instance name
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="instance-name"
+                  className="flex-1 rounded-md border border-input bg-muted px-3 py-2 font-mono text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
+                  value={name}
+                  onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                  disabled={creating}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setName(generateAgentName())}
+                  disabled={creating}
+                  title="Randomize name"
+                >
+                  <Shuffle className="size-4" />
+                </Button>
+              </div>
+              {name && !nameValid && (
+                <p className="text-xs text-destructive">
+                  3-63 chars, lowercase letters, numbers, and hyphens
+                </p>
+              )}
+            </div>
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowTelegram(!showTelegram)}
+                className="flex w-full items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+              >
+                <Send className="size-3.5" />
+                <span>Connect Telegram Bot (optional)</span>
+                <ChevronDown
+                  className={`ml-auto size-4 transition-transform ${showTelegram ? "rotate-180" : ""}`}
+                />
+              </button>
+              {showTelegram && (
+                <div className="mt-3 space-y-3">
+                  <ol className="space-y-2 text-sm text-muted-foreground">
+                    <li className="flex items-start gap-2">
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-medium text-foreground">
+                        1
+                      </span>
+                      <span>
+                        Open{" "}
+                        <a
+                          href="https://t.me/BotFather"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          @BotFather
+                        </a>{" "}
+                        in Telegram and send <CopyChip value="/newbot" />
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-medium text-foreground">
+                        2
+                      </span>
+                      <span>
+                        For the name, send: <CopyChip value={suggestedBotName} />
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-medium text-foreground">
+                        3
+                      </span>
+                      <span>
+                        For the username, send: <CopyChip value={suggestedBotUsername} />
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-medium text-foreground">
+                        4
+                      </span>
+                      <span>Copy the bot token and paste it below</span>
+                    </li>
+                  </ol>
+                  <input
+                    className="w-full rounded-md border border-input bg-muted px-3 py-2 font-mono text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
+                    placeholder="123456789:ABCdefGHI..."
+                    value={telegramToken}
+                    onChange={(e) => setTelegramToken(e.target.value)}
+                    disabled={creating}
+                  />
+                  {telegramToken && !telegramValid && (
+                    <p className="text-xs text-destructive">Invalid bot token format</p>
+                  )}
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline" disabled={creating}>
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button
+                onClick={() => void handleCreate()}
+                disabled={creating || !hasEnough || !nameValid || !telegramValid}
+              >
+                {creating && <Loader2 className="size-4 animate-spin" />}
+                {creating ? "Creating..." : `Pay ${USDC_PRICE} USDC & Create`}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
