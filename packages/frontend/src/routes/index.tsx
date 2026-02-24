@@ -1,6 +1,6 @@
 import { createWalletTransactionSigner, type WalletSession } from "@solana/client";
 import type { TransactionSigner } from "@solana/kit";
-import { useWalletSession } from "@solana/react-hooks";
+import { useSplToken, useWalletSession } from "@solana/react-hooks";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Activity,
@@ -221,6 +221,9 @@ function HomeSkeleton() {
   );
 }
 
+const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const USDC_PRICE = 5;
+
 function CreateInstanceDialog({
   session,
   open,
@@ -236,6 +239,9 @@ function CreateInstanceDialog({
     () => createWalletTransactionSigner(session).signer,
     [session],
   );
+  const { balance } = useSplToken(USDC_MINT);
+  const usdcBalance = Number(balance?.uiAmount ?? 0);
+  const hasEnough = usdcBalance >= USDC_PRICE;
   const [creating, setCreating] = useState(false);
 
   async function handleCreate() {
@@ -264,19 +270,33 @@ function CreateInstanceDialog({
         <DialogHeader>
           <DialogTitle>Create Instance</DialogTitle>
           <DialogDescription>
-            Provision a new AgentBox VM for 5 USDC (7 days). Your wallet will be prompted to approve
-            the payment.
+            Provision a new AgentBox VM for {USDC_PRICE} USDC on Solana (7 days). Your wallet will
+            be prompted to approve the payment.
           </DialogDescription>
         </DialogHeader>
+        <div className="rounded-md border px-4 py-3 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Your Solana USDC balance</span>
+            <span className={hasEnough ? "text-foreground" : "text-destructive font-medium"}>
+              {balance ? `${usdcBalance.toFixed(2)} USDC` : "Loading..."}
+            </span>
+          </div>
+          {balance && !hasEnough && (
+            <p className="mt-2 text-destructive text-xs">
+              Insufficient balance. You need at least {USDC_PRICE} USDC on Solana to create an
+              instance. Make sure your USDC is on Solana, not another chain.
+            </p>
+          )}
+        </div>
         <DialogFooter>
           <DialogClose asChild>
             <Button type="button" variant="outline" disabled={creating}>
               Cancel
             </Button>
           </DialogClose>
-          <Button onClick={() => void handleCreate()} disabled={creating}>
+          <Button onClick={() => void handleCreate()} disabled={creating || !hasEnough}>
             {creating && <Loader2 className="size-4 animate-spin" />}
-            {creating ? "Creating..." : "Pay 5 USDC & Create"}
+            {creating ? "Creating..." : `Pay ${USDC_PRICE} USDC & Create`}
           </Button>
         </DialogFooter>
       </DialogContent>
