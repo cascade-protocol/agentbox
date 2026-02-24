@@ -86,12 +86,6 @@ app.use("/*", secureHeaders());
 const facilitator = new HTTPFacilitatorClient({ url: env.FACILITATOR_URL });
 const resourceServer = new x402ResourceServer([facilitator])
   .register(SOLANA_MAINNET, new ExactSvmScheme())
-  .onBeforeVerify(async (ctx) => {
-    logger.debug("x402 before verify", {
-      accepted: ctx.paymentPayload.accepted,
-      payload: JSON.stringify(ctx.paymentPayload).slice(0, 500),
-    });
-  })
   .onAfterVerify(async (ctx) => {
     logger.info("x402 after verify", {
       isValid: ctx.result.isValid,
