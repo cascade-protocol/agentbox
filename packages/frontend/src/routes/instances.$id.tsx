@@ -329,34 +329,30 @@ function GettingStartedCard({ telegramBotUsername }: { telegramBotUsername?: str
               <ul className="space-y-1.5 text-sm text-muted-foreground">
                 <li>
                   <span className="font-medium text-foreground">Claude Sonnet 4.6</span>{" "}
-                  <span className="text-xs">(default)</span> -{" "}
-                  <code className="text-xs">anthropic/claude-sonnet-4.6</code>{" "}
-                  <span className="text-xs">- ~$0.031/call</span>
+                  <span className="text-xs">(default)</span>{" "}
+                  <span className="text-xs text-muted-foreground">- ~$0.05-0.09/msg</span>
                 </li>
                 <li>
-                  <span className="font-medium text-foreground">Claude Opus 4.6</span> -{" "}
-                  <code className="text-xs">anthropic/claude-opus-4.6</code>{" "}
-                  <span className="text-xs">- ~$0.051/call</span>
+                  <span className="font-medium text-foreground">Claude Opus 4.6</span>{" "}
+                  <span className="text-xs text-muted-foreground">- ~$0.09-0.15/msg</span>
                 </li>
                 <li>
-                  <span className="font-medium text-foreground">GPT-5.2</span> -{" "}
-                  <code className="text-xs">openai/gpt-5.2</code>{" "}
-                  <span className="text-xs">- ~$0.029/call</span>
+                  <span className="font-medium text-foreground">GPT-5.2</span>{" "}
+                  <span className="text-xs text-muted-foreground">- ~$0.04-0.07/msg</span>
                 </li>
                 <li>
-                  <span className="font-medium text-foreground">Kimi K2.5</span> -{" "}
-                  <code className="text-xs">moonshot/kimi-k2.5</code>{" "}
-                  <span className="text-xs">- ~$0.012/call</span>
+                  <span className="font-medium text-foreground">Kimi K2.5</span>{" "}
+                  <span className="text-xs text-muted-foreground">- ~$0.02-0.03/msg</span>
                 </li>
                 <li>
-                  <span className="font-medium text-foreground">DeepSeek V3.2</span> -{" "}
-                  <code className="text-xs">deepseek/deepseek-v3.2</code>{" "}
-                  <span className="text-xs">- ~$0.001/call</span>
+                  <span className="font-medium text-foreground">DeepSeek V3.2</span>{" "}
+                  <span className="text-xs text-muted-foreground">- ~$0.003-0.006/msg</span>
                 </li>
               </ul>
               <p className="mt-2 text-sm text-muted-foreground">
-                Prices are output token costs only. Input costs vary by conversation length. Switch
-                models in the chat interface.
+                Costs start low and grow as the conversation gets longer (the full chat history is
+                sent with each message). Start a new chat to reset costs. Switch models in the chat
+                interface.
               </p>
             </AccordionContent>
           </AccordionItem>
