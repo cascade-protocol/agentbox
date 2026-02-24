@@ -2,6 +2,45 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.4.3] - 2026-02-24
+
+### Fixed
+
+- Fixed contextWindow for Claude models (200K, was incorrectly set to 1M)
+- Fixed configSchema providerName default description (aimo, was blockrun)
+
+## [0.4.2] - 2026-02-24
+
+### Changed
+
+- Renamed commands from hyphens to underscores (`/x402_balance`, `/x402_send`) for Telegram compatibility
+
+## [0.4.1] - 2026-02-24
+
+### Changed
+
+- Updated README with tools documentation, inference reserve section, and corrected command names
+- Updated package description to reflect new capabilities
+
+## [0.4.0] - 2026-02-24
+
+### Added
+
+- `x402_payment` agent tool - calls any x402-enabled paid API with automatic USDC payment
+- `x402_balance` agent tool - checks wallet balance with available/reserved split
+- `x402_discover` agent tool - searches zauth's verified provider directory for paid services
+- $0.30 USDC inference reserve - tools cannot spend below this threshold to keep LLM running
+- Response truncation at 50KB to protect agent context window
+
+### Changed
+
+- Renamed `/balance-x402` to `/x402_balance` and `/send-x402` to `/x402_send` (x402 prefix)
+- Removed `/pricing-x402` command (agent gets pricing from discover results)
+
+### Dependencies
+
+- Added `@sinclair/typebox` for tool parameter schemas
+
 ## [0.3.2] - 2026-02-23
 
 ### Changed

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { Type } from "@sinclair/typebox";
 import {
   type Address,
   address,
@@ -19,6 +20,9 @@ import { ExactSvmScheme } from "@x402/svm/exact/client";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
 const SOLANA_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+const INFERENCE_RESERVE_USDC = 0.3;
+const ZAUTH_DIRECTORY_URL = "https://back.zauthx402.com/api/directory";
+const MAX_RESPONSE_CHARS = 50000;
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const USDC_DECIMALS = 6;
 const TOKEN_PROGRAM: Address = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -82,7 +86,7 @@ const CURATED_MODELS = [
     reasoning: true,
     input: ["text", "image"] as Array<"text" | "image">,
     cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-    contextWindow: 1000000,
+    contextWindow: 200000,
     maxTokens: 2048,
   },
   {
@@ -91,7 +95,7 @@ const CURATED_MODELS = [
     reasoning: true,
     input: ["text", "image"] as Array<"text" | "image">,
     cost: { input: 10, output: 37.5, cacheRead: 1, cacheWrite: 12.5 },
-    contextWindow: 1000000,
+    contextWindow: 200000,
     maxTokens: 2048,
   },
   {
@@ -155,9 +159,12 @@ export function register(api: OpenClawPluginApi): void {
 
   let walletAddress: string | null = null;
   let signerRef: KeyPairSigner | null = null;
+  let x402FetchRef:
+    | ((input: string | URL | Request, init?: RequestInit) => Promise<Response>)
+    | null = null;
 
   api.registerCommand({
-    name: "balance-x402",
+    name: "x402_balance",
     description: "Show wallet USDC balance and address for topping up",
     acceptsArgs: false,
     handler: async () => {
@@ -182,8 +189,8 @@ export function register(api: OpenClawPluginApi): void {
   });
 
   api.registerCommand({
-    name: "send-x402",
-    description: "Send USDC to a Solana address. Usage: /send-x402 <amount|all> <address>",
+    name: "x402_send",
+    description: "Send USDC to a Solana address. Usage: /x402_send <amount|all> <address>",
     acceptsArgs: true,
     handler: async (ctx) => {
       if (!walletAddress || !signerRef) {
@@ -195,7 +202,7 @@ export function register(api: OpenClawPluginApi): void {
       const parts = args.split(/\s+/);
       if (parts.length !== 2) {
         return {
-          text: "Usage: /send-x402 <amount|all> <address>\nExamples:\n  /send-x402 0.5 7xKXtg...\n  /send-x402 all 7xKXtg...",
+          text: "Usage: /x402_send <amount|all> <address>\nExamples:\n  /x402_send 0.5 7xKXtg...\n  /x402_send all 7xKXtg...",
         };
       }
 
@@ -296,44 +303,241 @@ export function register(api: OpenClawPluginApi): void {
     },
   });
 
-  api.registerCommand({
-    name: "pricing-x402",
-    description: "Show model pricing from the x402 provider",
-    acceptsArgs: false,
-    handler: async () => {
-      try {
-        const res = await globalThis.fetch(`${baseUrl}/models`);
-        if (!res.ok) {
-          return { text: `Failed to fetch models: HTTP ${res.status}` };
-        }
-        const json = (await res.json()) as {
-          data?: Array<{
-            id: string;
-            billing_mode?: string;
-            pricing?: { input?: number; output?: number };
-          }>;
+  // --- Agent tools ---
+
+  api.registerTool({
+    name: "x402_balance",
+    label: "x402 Balance",
+    description:
+      "Check the x402 wallet USDC balance and address. Use before making payments to verify sufficient funds.",
+    parameters: Type.Object({}),
+    async execute() {
+      if (!walletAddress) {
+        return {
+          content: [
+            { type: "text" as const, text: "Wallet not loaded yet. Wait for gateway startup." },
+          ],
+          details: {},
         };
-        const models = json.data ?? [];
-        if (models.length === 0) {
-          return { text: "No models returned from provider." };
+      }
+      try {
+        const { ui } = await getUsdcBalance(rpcUrl, walletAddress);
+        const total = Number.parseFloat(ui);
+        const available = Math.max(0, total - INFERENCE_RESERVE_USDC);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                `Wallet: ${walletAddress}`,
+                `Total USDC: $${ui}`,
+                `Available for tools: $${available.toFixed(2)}`,
+                `Reserved for inference: $${INFERENCE_RESERVE_USDC.toFixed(2)}`,
+                "",
+                "To top up, send USDC (SPL) on Solana to:",
+                walletAddress,
+              ].join("\n"),
+            },
+          ],
+          details: {},
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `Failed to check balance: ${String(err)}` }],
+          details: {},
+        };
+      }
+    },
+  });
+
+  api.registerTool({
+    name: "x402_payment",
+    label: "x402 Payment",
+    description:
+      "Call an x402-enabled paid API endpoint with automatic USDC payment on Solana. " +
+      "Use this when you need to call a paid service discovered via x402_discover or given by the user. " +
+      "Note: $0.30 USDC is reserved for LLM inference and cannot be spent by this tool.",
+    parameters: Type.Object({
+      url: Type.String({ description: "The x402-enabled endpoint URL" }),
+      method: Type.Optional(Type.String({ description: "HTTP method (default: GET)" })),
+      params: Type.Optional(
+        Type.String({
+          description:
+            "For GET: query params as JSON object. For POST/PUT/PATCH: JSON request body.",
+        }),
+      ),
+      headers: Type.Optional(Type.String({ description: "Custom HTTP headers as JSON object" })),
+    }),
+    async execute(_id, params) {
+      if (!walletAddress || !x402FetchRef) {
+        return {
+          content: [
+            { type: "text" as const, text: "Wallet not loaded yet. Wait for gateway startup." },
+          ],
+          details: {},
+        };
+      }
+
+      // Check inference reserve
+      try {
+        const { ui } = await getUsdcBalance(rpcUrl, walletAddress);
+        const balance = Number.parseFloat(ui);
+        if (balance <= INFERENCE_RESERVE_USDC) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text:
+                  `Insufficient funds. Balance: $${ui}, reserved for inference: $${INFERENCE_RESERVE_USDC.toFixed(2)}. ` +
+                  `Top up wallet: ${walletAddress}`,
+              },
+            ],
+            details: {},
+          };
+        }
+      } catch {
+        // If balance check fails, proceed anyway - x402Fetch will fail on payment if truly broke
+      }
+
+      const method = (params.method || "GET").toUpperCase();
+      let url = params.url;
+      const reqInit: RequestInit = { method };
+
+      // Parse headers
+      if (params.headers) {
+        try {
+          reqInit.headers = JSON.parse(params.headers) as Record<string, string>;
+        } catch {
+          return {
+            content: [{ type: "text" as const, text: "Invalid headers JSON." }],
+            details: {},
+          };
+        }
+      }
+
+      // Handle params
+      if (params.params) {
+        if (method === "GET" || method === "HEAD") {
+          try {
+            const qp = JSON.parse(params.params) as Record<string, string>;
+            const qs = new URLSearchParams(qp).toString();
+            url = qs ? `${url}${url.includes("?") ? "&" : "?"}${qs}` : url;
+          } catch {
+            return {
+              content: [{ type: "text" as const, text: "Invalid params JSON for GET request." }],
+              details: {},
+            };
+          }
+        } else {
+          reqInit.body = params.params;
+          reqInit.headers = {
+            "Content-Type": "application/json",
+            ...(reqInit.headers as Record<string, string> | undefined),
+          };
+        }
+      }
+
+      try {
+        const response = await x402FetchRef(url, reqInit);
+        const body = await response.text();
+
+        if (response.status === 402) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text:
+                  `Payment failed (402): ${body.substring(0, 500)}. ` + `Wallet: ${walletAddress}`,
+              },
+            ],
+            details: {},
+          };
         }
 
-        const curatedIds = new Set(CURATED_MODELS.map((m) => m.id));
-        const lines = [`**${providerName} models** (${models.length} total)\n`];
-        for (const m of models) {
-          const tag = curatedIds.has(m.id) ? " [curated]" : "";
-          const isFree = m.billing_mode === "free";
-          const pricing = isFree
-            ? " - free"
-            : m.pricing
-              ? ` - $${m.pricing.input ?? "?"}/M in, $${m.pricing.output ?? "?"}/M out`
-              : "";
-          lines.push(`- \`${m.id}\`${pricing}${tag}`);
-        }
-        lines.push("", `Use \`${providerName}/<model-id>\` to select a model.`);
-        return { text: lines.join("\n") };
+        const truncated =
+          body.length > MAX_RESPONSE_CHARS
+            ? `${body.substring(0, MAX_RESPONSE_CHARS)}\n\n[Truncated - response was ${body.length} chars]`
+            : body;
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `HTTP ${response.status}\n\n${truncated}`,
+            },
+          ],
+          details: {},
+        };
       } catch (err) {
-        return { text: `Failed to fetch models: ${String(err)}` };
+        const msg = String(err);
+        let text: string;
+        if (msg.includes("Simulation failed") || msg.includes("insufficient")) {
+          text = `Payment failed - insufficient funds. Wallet: ${walletAddress}. Error: ${msg}`;
+        } else {
+          text = `Request failed: ${msg}`;
+        }
+        return {
+          content: [{ type: "text" as const, text }],
+          details: {},
+        };
+      }
+    },
+  });
+
+  api.registerTool({
+    name: "x402_discover",
+    label: "x402 Discover",
+    description:
+      "Search for x402-enabled paid APIs in the zauth verified provider directory. " +
+      "Use this to find services the user needs - weather, trading signals, blockchain data, AI agents, etc.",
+    parameters: Type.Object({
+      query: Type.Optional(
+        Type.String({
+          description: "Search keyword (e.g. 'trending tokens', 'weather', 'trading')",
+        }),
+      ),
+      network: Type.Optional(
+        Type.String({ description: "Filter by blockchain network (e.g. 'solana', 'base')" }),
+      ),
+      verified: Type.Optional(
+        Type.Boolean({ description: "Only show verified endpoints (default: false)" }),
+      ),
+      limit: Type.Optional(Type.Number({ description: "Max results to return (default: 10)" })),
+    }),
+    async execute(_id, params) {
+      const url = new URL(ZAUTH_DIRECTORY_URL);
+      if (params.query) url.searchParams.set("search", params.query);
+      if (params.network) url.searchParams.set("network", params.network);
+      if (params.verified) url.searchParams.set("verified", "true");
+      url.searchParams.set("limit", String(params.limit || 10));
+
+      try {
+        const res = await globalThis.fetch(url.toString());
+        if (!res.ok) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Directory returned HTTP ${res.status}: ${await res.text()}`,
+              },
+            ],
+            details: {},
+          };
+        }
+        const data = await res.text();
+        const truncated =
+          data.length > MAX_RESPONSE_CHARS
+            ? `${data.substring(0, MAX_RESPONSE_CHARS)}\n\n[Truncated]`
+            : data;
+        return {
+          content: [{ type: "text" as const, text: truncated }],
+          details: {},
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `Failed to search directory: ${String(err)}` }],
+          details: {},
+        };
       }
     },
   });
@@ -357,6 +561,7 @@ export function register(api: OpenClawPluginApi): void {
       client.register(SOLANA_MAINNET, new ExactSvmScheme(signer, { rpcUrl }));
 
       const x402Fetch = wrapFetchWithPayment(globalThis.fetch, client);
+      x402FetchRef = x402Fetch;
 
       const origFetch = globalThis.fetch;
       globalThis.fetch = async (
