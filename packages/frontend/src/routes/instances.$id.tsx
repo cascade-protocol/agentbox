@@ -330,27 +330,33 @@ function GettingStartedCard({ telegramBotUsername }: { telegramBotUsername?: str
                 <li>
                   <span className="font-medium text-foreground">Claude Sonnet 4.6</span>{" "}
                   <span className="text-xs">(default)</span> -{" "}
-                  <code className="text-xs">anthropic/claude-sonnet-4.6</code>
+                  <code className="text-xs">anthropic/claude-sonnet-4.6</code>{" "}
+                  <span className="text-xs">- ~$0.031/call</span>
                 </li>
                 <li>
                   <span className="font-medium text-foreground">Claude Opus 4.6</span> -{" "}
-                  <code className="text-xs">anthropic/claude-opus-4.6</code>
+                  <code className="text-xs">anthropic/claude-opus-4.6</code>{" "}
+                  <span className="text-xs">- ~$0.051/call</span>
                 </li>
                 <li>
                   <span className="font-medium text-foreground">GPT-5.2</span> -{" "}
-                  <code className="text-xs">openai/gpt-5.2</code>
+                  <code className="text-xs">openai/gpt-5.2</code>{" "}
+                  <span className="text-xs">- ~$0.029/call</span>
                 </li>
                 <li>
                   <span className="font-medium text-foreground">Kimi K2.5</span> -{" "}
-                  <code className="text-xs">moonshot/kimi-k2.5</code>
+                  <code className="text-xs">moonshot/kimi-k2.5</code>{" "}
+                  <span className="text-xs">- ~$0.012/call</span>
                 </li>
                 <li>
                   <span className="font-medium text-foreground">DeepSeek V3.2</span> -{" "}
-                  <code className="text-xs">deepseek/deepseek-v3.2</code>
+                  <code className="text-xs">deepseek/deepseek-v3.2</code>{" "}
+                  <span className="text-xs">- ~$0.001/call</span>
                 </li>
               </ul>
               <p className="mt-2 text-sm text-muted-foreground">
-                Switch models in the chat interface.
+                Prices are output token costs only. Input costs vary by conversation length. Switch
+                models in the chat interface.
               </p>
             </AccordionContent>
           </AccordionItem>
