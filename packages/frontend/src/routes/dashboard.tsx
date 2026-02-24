@@ -197,7 +197,7 @@ function CreateInstanceDialog({
   const [creating, setCreating] = useState(false);
   const [createdInstance, setCreatedInstance] = useState<Instance | null>(null);
   const [name, setName] = useState(generateAgentName);
-  const [showTelegram, setShowTelegram] = useState(false);
+  const [showTelegram, setShowTelegram] = useState(true);
   const [telegramToken, setTelegramToken] = useState("");
   const telegramValid = telegramToken === "" || TELEGRAM_TOKEN_RE.test(telegramToken.trim());
   const nameValid = name.length >= 3 && name.length <= 63 && NAME_RE.test(name);
