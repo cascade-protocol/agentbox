@@ -20,11 +20,11 @@ export const provisioningStepOrder = [
 ] as const;
 
 const provisioningStepLabels: Record<(typeof provisioningStepOrder)[number], string> = {
-  vm_created: "Starting VM...",
-  configuring: "Configuring services...",
-  wallet_created: "Wallet created",
-  openclaw_ready: "OpenClaw ready",
-  services_starting: "Almost ready...",
+  vm_created: "Starting VM",
+  configuring: "Configuring",
+  wallet_created: "Creating wallet",
+  openclaw_ready: "Starting agent",
+  services_starting: "Finishing up",
 };
 
 export function getStatusVariant(status: string): BadgeVariant {

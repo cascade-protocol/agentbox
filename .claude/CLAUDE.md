@@ -26,6 +26,12 @@
 - Frontend: all env vars go in `packages/frontend/src/env.ts`. Import `env` from there, never read `import.meta.env` directly in components or lib code.
 - When adding a new env var, add it to the appropriate env file first, then use the typed `env.VAR_NAME` everywhere.
 
+## Baked-in Constants
+- Values that are source-of-truth in the codebase (not env-overridable) live in `packages/backend/src/lib/constants.ts`. Import from there, never add these to env.ts or .env files.
+- Current constants: `HETZNER_SNAPSHOT_ID`, `LLM_PROVIDER_URL`, `LLM_PROVIDER_NAME`, `LLM_DEFAULT_MODEL`
+- After `just build-image`, update `HETZNER_SNAPSHOT_ID` in `constants.ts` (not env.ts)
+- LLM provider/model changes are code changes in `constants.ts` + matching fallback defaults in `agentbox-init.sh`
+
 ## Logging (Backend)
 - Use the Winston logger from `packages/backend/src/logger.ts` for all backend logging. Never use `console.log`/`console.error` directly.
 - Log levels: `logger.error()` for failures, `logger.warn()` for recoverable issues (retries, fallbacks), `logger.info()` for operational events (startup, requests, cleanup), `logger.debug()` for verbose dev diagnostics.
@@ -60,8 +66,7 @@
 ## VM Golden Image (Packer)
 - Config: `ops/packer/` - `agentbox.pkr.hcl`, `setup.sh` (build-time), `agentbox-init.sh` (boot-time)
 - Build: `just build-image` - auto-bumps version in `agentbox.pkr.hcl`, runs packer build, outputs new snapshot ID
-- After build: update `HETZNER_SNAPSHOT_ID` default in `packages/backend/src/lib/env.ts` with the new snapshot ID
-- NEVER override `HETZNER_SNAPSHOT_ID` via `.env` on remote or local machines - the `env.ts` default is the single source of truth for which image to provision. Overriding it in `.env` causes drift between deployed code and the actual image used.
+- After build: update `HETZNER_SNAPSHOT_ID` in `packages/backend/src/lib/constants.ts` with the new snapshot ID
 - Base: `ubuntu-24.04`, built on cpx42 (fast compile), snapshotted for cx33 (80GB disk)
 - Pre-installed: Node.js 24, OpenClaw (npm global + native modules), Caddy, ttyd, Solana CLI, create-sati-agent, openclaw-x402 plugin, build-essential/cmake/python3 (for node-gyp)
 - Plugin install: `openclaw-x402` is extracted via `npm pack` + `tar` into `~/.openclaw/extensions/openclaw-x402/` (auto-discovered, no `plugins.load.paths` needed)
@@ -100,11 +105,11 @@
 ## Release & Deploy
 - **When ops/packer files are changed** (setup.sh, agentbox-init.sh, agentbox.pkr.hcl), the image MUST be built BEFORE committing:
   1. `just build-image` - builds new snapshot with current ops scripts
-  2. Update `HETZNER_SNAPSHOT_ID` in `packages/backend/src/lib/env.ts` with the new snapshot ID
+  2. Update `HETZNER_SNAPSHOT_ID` in `packages/backend/src/lib/constants.ts` with the new snapshot ID
   3. `pnpm check` - verify everything passes
   4. Commit & push (now the committed snapshot ID matches the built image)
   5. `just deploy`
-- **Why this order matters:** The backend provisions VMs from the snapshot ID in env.ts. If we commit/deploy first with a stale snapshot ID, new VMs get an old image missing the ops changes. The image must exist and be referenced correctly at deploy time.
+- **Why this order matters:** The backend provisions VMs from the snapshot ID in constants.ts. If we commit/deploy first with a stale snapshot ID, new VMs get an old image missing the ops changes. The image must exist and be referenced correctly at deploy time.
 - **When only backend/frontend code changes** (no ops files): commit, push, `just deploy` is sufficient
 - Validate: `pnpm check` (biome + type-check)
 - Commit: conventional commit on `main`

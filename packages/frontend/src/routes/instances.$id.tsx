@@ -11,7 +11,7 @@ import {
   signTransactionMessageWithSigners,
   type TransactionSigner,
 } from "@solana/kit";
-import { useWalletSession } from "@solana/react-hooks";
+import { useBalance, useSplToken, useWalletSession } from "@solana/react-hooks";
 import {
   findAssociatedTokenPda as findAta2022,
   getCreateAssociatedTokenIdempotentInstruction as getCreateAta2022,
@@ -20,6 +20,7 @@ import {
 } from "@solana-program/token-2022";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRightLeft,
   Check,
@@ -29,8 +30,10 @@ import {
   MessageSquare,
   Pencil,
   RotateCw,
+  Send,
   TerminalSquare,
   Trash2,
+  Wallet,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -68,6 +71,234 @@ function formatStatus(status: string): string {
 
 function getSolscanTokenUrl(mint: string): string {
   return `https://solscan.io/token/${mint}`;
+}
+
+function getSolscanTxUrl(signature: string): string {
+  return `https://solscan.io/tx/${signature}`;
+}
+
+const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+function WithdrawDialog({
+  token,
+  balance,
+  usdcBalance,
+  instanceId,
+  ownerWallet,
+  open,
+  onOpenChange,
+  onWithdrawn,
+}: {
+  token: "SOL" | "USDC";
+  balance: number;
+  usdcBalance: number;
+  instanceId: number;
+  ownerWallet: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onWithdrawn: () => void;
+}) {
+  const [amount, setAmount] = useState("");
+  const [withdrawing, setWithdrawing] = useState(false);
+  const numAmount = Number.parseFloat(amount);
+  const validAmount =
+    amount !== "" && !Number.isNaN(numAmount) && numAmount > 0 && numAmount <= balance;
+  const showUsdcWarning = token === "SOL" && usdcBalance > 0;
+
+  async function handleWithdraw() {
+    setWithdrawing(true);
+    try {
+      const res = await api.instances.withdraw(instanceId, {
+        token,
+        amount: amount === String(balance) ? "ALL" : amount,
+      });
+      toast.success(
+        <span>
+          Withdrew {amount} {token}.{" "}
+          <a
+            href={getSolscanTxUrl(res.signature)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
+          >
+            View on Solscan
+          </a>
+        </span>,
+      );
+      onOpenChange(false);
+      setAmount("");
+      onWithdrawn();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Withdrawal failed");
+    } finally {
+      setWithdrawing(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Withdraw {token}</DialogTitle>
+          <DialogDescription>Transfer funds from the VM wallet to your wallet.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          {showUsdcWarning && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>
+                Your VM wallet still has {usdcBalance.toFixed(2)} USDC. Withdrawing all SOL will
+                make it impossible to withdraw USDC later (SOL is needed for transfer fees).
+                Withdraw USDC first.
+              </span>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <label htmlFor="withdraw-amount" className="text-sm text-muted-foreground">
+              Amount
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="withdraw-amount"
+                className="flex-1 rounded-md border border-input bg-muted px-3 py-2 font-mono text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                disabled={withdrawing}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setAmount(String(balance))}
+                disabled={withdrawing}
+              >
+                Max
+              </Button>
+            </div>
+            {amount && !validAmount && (
+              <p className="text-xs text-destructive">Enter an amount between 0 and {balance}</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-sm text-muted-foreground">Destination</span>
+            <div className="rounded-md border border-input bg-muted px-3 py-2 font-mono text-sm text-muted-foreground">
+              {ownerWallet}
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline" disabled={withdrawing}>
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button
+            variant={showUsdcWarning ? "destructive" : "default"}
+            onClick={() => void handleWithdraw()}
+            disabled={!validAmount || withdrawing}
+          >
+            {withdrawing && <Loader2 className="size-4 animate-spin" />}
+            {withdrawing
+              ? "Withdrawing..."
+              : showUsdcWarning
+                ? `Withdraw anyway`
+                : `Withdraw ${amount || "0"} ${token}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WalletBalanceCard({
+  instanceId,
+  vmWallet,
+  ownerWallet,
+}: {
+  instanceId: number;
+  vmWallet: string;
+  ownerWallet: string;
+}) {
+  const { lamports, fetching: solFetching } = useBalance(vmWallet);
+  const {
+    balance: usdcData,
+    isFetching: usdcFetching,
+    refresh: refreshUsdc,
+  } = useSplToken(USDC_MINT, { owner: vmWallet });
+  const [withdrawToken, setWithdrawToken] = useState<"SOL" | "USDC" | null>(null);
+
+  const sol = lamports !== null ? Number(lamports) / 1e9 : null;
+  const usdc = usdcData ? Number(usdcData.uiAmount) : null;
+  const loading = (solFetching && sol === null) || (usdcFetching && usdc === null);
+
+  return (
+    <>
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Wallet className="size-4" />
+            VM Wallet Balance
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Loading balances...
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium">SOL</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono">{sol !== null ? sol.toFixed(4) : "-"}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    disabled={!sol || sol <= 0}
+                    onClick={() => setWithdrawToken("SOL")}
+                  >
+                    Withdraw
+                  </Button>
+                </div>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium">USDC</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono">{usdc !== null ? usdc.toFixed(2) : "-"}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    disabled={!usdc || usdc <= 0}
+                    onClick={() => setWithdrawToken("USDC")}
+                  >
+                    Withdraw
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {withdrawToken && (
+        <WithdrawDialog
+          token={withdrawToken}
+          balance={withdrawToken === "SOL" ? (sol ?? 0) : (usdc ?? 0)}
+          usdcBalance={usdc ?? 0}
+          instanceId={instanceId}
+          ownerWallet={ownerWallet}
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setWithdrawToken(null);
+          }}
+          onWithdrawn={() => void refreshUsdc()}
+        />
+      )}
+    </>
+  );
 }
 
 function CopyButton({ value }: { value: string }) {
@@ -108,37 +339,92 @@ function StatusDisplay({ instance }: { instance: InstanceAccess }) {
   );
 }
 
-function ProvisioningStepper({ step }: { step: string | null | undefined }) {
+function useElapsed(since: string) {
+  const [elapsed, setElapsed] = useState(() =>
+    Math.max(0, Math.floor((Date.now() - new Date(since).getTime()) / 1000)),
+  );
+  useEffect(() => {
+    const id = setInterval(
+      () => setElapsed(Math.max(0, Math.floor((Date.now() - new Date(since).getTime()) / 1000))),
+      1000,
+    );
+    return () => clearInterval(id);
+  }, [since]);
+  const m = Math.floor(elapsed / 60);
+  const s = elapsed % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function ProvisioningStepper({
+  step,
+  createdAt,
+}: {
+  step: string | null | undefined;
+  createdAt: string;
+}) {
   const current = getProvisioningStepIndex(step);
+  const elapsed = useElapsed(createdAt);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Provisioning progress</CardTitle>
+    <Card className="shadow-sm">
+      <CardHeader className="pb-2">
+        <div className="flex items-baseline justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Loader2 className="size-4 animate-spin text-info" />
+            Provisioning - {elapsed}
+          </CardTitle>
+          <span className="text-xs text-muted-foreground">Usually takes ~3 minutes</span>
+        </div>
       </CardHeader>
       <CardContent>
-        <ol className="space-y-3">
+        <div className="flex items-start">
           {provisioningStepOrder.map((item, index) => {
             const label = getProvisioningStepLabel(item);
             const completed = index < current;
             const active = index === current;
+            const isLast = index === provisioningStepOrder.length - 1;
 
             return (
-              <li key={item} className="flex items-center gap-3 text-sm">
-                <span className="inline-flex size-5 items-center justify-center rounded-full border border-border bg-background">
-                  {completed ? (
-                    <Check className="size-3 text-success" />
-                  ) : active ? (
-                    <Loader2 className="size-3 animate-spin text-info" />
-                  ) : (
-                    <span className="size-2 rounded-full bg-muted-foreground/60" />
-                  )}
-                </span>
-                <span className={active ? "font-medium" : "text-muted-foreground"}>{label}</span>
-              </li>
+              <div key={item} className={`flex items-start ${isLast ? "" : "flex-1"}`}>
+                <div className="flex flex-col items-center">
+                  <span
+                    className={`inline-flex size-7 items-center justify-center rounded-full border-2 ${
+                      completed
+                        ? "border-success bg-success/10"
+                        : active
+                          ? "animate-pulse border-info bg-info/10"
+                          : "border-border bg-background"
+                    }`}
+                  >
+                    {completed ? (
+                      <Check className="size-3.5 text-success" />
+                    ) : active ? (
+                      <Loader2 className="size-3.5 animate-spin text-info" />
+                    ) : (
+                      <span className="size-2 rounded-full bg-muted-foreground/40" />
+                    )}
+                  </span>
+                  <span
+                    className={`mt-1.5 text-center text-xs leading-tight ${
+                      active ? "font-medium text-foreground" : "text-muted-foreground"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </div>
+                {!isLast && (
+                  <div className="mt-3.5 flex-1 px-1">
+                    <div
+                      className={`h-0.5 w-full rounded ${
+                        index < current ? "bg-success" : "bg-border"
+                      }`}
+                    />
+                  </div>
+                )}
+              </div>
             );
           })}
-        </ol>
+        </div>
       </CardContent>
     </Card>
   );
@@ -332,6 +618,7 @@ function InstanceDetail() {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [confirmAction, setConfirmAction] = useState<"restart" | "delete" | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [telegramSetupOpen, setTelegramSetupOpen] = useState(false);
   const [agentName, setAgentName] = useState("");
   const [agentDescription, setAgentDescription] = useState("");
   const [agentSaving, setAgentSaving] = useState(false);
@@ -572,7 +859,7 @@ function InstanceDetail() {
         </div>
 
         {instance.status === "provisioning" && (
-          <ProvisioningStepper step={instance.provisioningStep} />
+          <ProvisioningStepper step={instance.provisioningStep} createdAt={instance.createdAt} />
         )}
 
         <Card className="shadow-sm">
@@ -583,6 +870,9 @@ function InstanceDetail() {
             <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
               <dt className="text-muted-foreground">IP Address</dt>
               <dd className="font-mono">{instance.ip}</dd>
+
+              <dt className="text-muted-foreground">Image</dt>
+              <dd className="font-mono">{instance.snapshotId ?? "—"}</dd>
 
               <dt className="text-muted-foreground">Owner Wallet</dt>
               <dd className="font-mono">{instance.ownerWallet}</dd>
@@ -638,6 +928,36 @@ function InstanceDetail() {
 
               <dt className="text-muted-foreground">Expires</dt>
               <dd title={formatDate(instance.expiresAt)}>{relativeTime(instance.expiresAt)}</dd>
+
+              <dt className="text-muted-foreground">Telegram Bot</dt>
+              <dd>
+                {instance.telegramBotUsername ? (
+                  <a
+                    href={`https://t.me/${instance.telegramBotUsername}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                  >
+                    @{instance.telegramBotUsername}
+                    <ExternalLink className="size-3" />
+                  </a>
+                ) : instance.status === "running" ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="italic text-muted-foreground">Not configured</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setTelegramSetupOpen(true)}
+                    >
+                      <Send className="size-3" />
+                      Set up
+                    </Button>
+                  </span>
+                ) : (
+                  <span className="italic text-muted-foreground">Not configured</span>
+                )}
+              </dd>
             </dl>
           </CardContent>
         </Card>
@@ -651,6 +971,24 @@ function InstanceDetail() {
             <AccessRow label="Terminal" value={instance.terminalUrl} />
           </CardContent>
         </Card>
+
+        {instance.status === "running" && instance.vmWallet && (
+          <WalletBalanceCard
+            instanceId={instance.id}
+            vmWallet={instance.vmWallet}
+            ownerWallet={instance.ownerWallet}
+          />
+        )}
+
+        {instance.status === "running" && (
+          <TelegramSetupDialog
+            instanceId={instance.id}
+            instanceName={instance.name}
+            open={telegramSetupOpen}
+            onOpenChange={setTelegramSetupOpen}
+            onConfigured={() => void fetchDetail()}
+          />
+        )}
 
         {health && (
           <Card className="shadow-sm">
@@ -846,6 +1184,245 @@ function InstanceDetail() {
         />
       )}
     </main>
+  );
+}
+
+const TELEGRAM_TOKEN_RE = /^\d+:[A-Za-z0-9_-]{35}$/;
+const POLL_INTERVAL = 5_000;
+const POLL_TIMEOUT = 90_000;
+
+type TelegramPhase = "form" | "starting" | "live" | "error" | "timeout";
+
+function TelegramSetupDialog({
+  instanceId,
+  instanceName,
+  open,
+  onOpenChange,
+  onConfigured,
+}: {
+  instanceId: number;
+  instanceName: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfigured: () => void;
+}) {
+  const [token, setToken] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [phase, setPhase] = useState<TelegramPhase>("form");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollStartRef = useRef<number>(0);
+  const isValid = TELEGRAM_TOKEN_RE.test(token.trim());
+  const suggestedName = instanceName
+    .split("-")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+  const suggestedUsername = `ab_${instanceName.replace(/-/g, "_")}_bot`;
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  const checkStatus = useCallback(async () => {
+    try {
+      const res = await api.instances.telegramStatus(instanceId);
+
+      if (res.status === "live") {
+        setPhase("live");
+        stopPolling();
+        toast.success("Telegram bot is live!");
+        onConfigured();
+        onOpenChange(false);
+      } else if (res.status === "error") {
+        setPhase("error");
+        setErrorMsg(res.error ?? "Unknown error");
+        stopPolling();
+      }
+    } catch {
+      // Transient failure, keep polling
+    }
+
+    if (pollStartRef.current && Date.now() - pollStartRef.current > POLL_TIMEOUT) {
+      setPhase("timeout");
+      stopPolling();
+    }
+  }, [instanceId, stopPolling, onConfigured, onOpenChange]);
+
+  const startPolling = useCallback(() => {
+    stopPolling();
+    setPhase("starting");
+    pollStartRef.current = Date.now();
+    void checkStatus();
+    pollRef.current = setInterval(() => void checkStatus(), POLL_INTERVAL);
+  }, [checkStatus, stopPolling]);
+
+  // Clean up polling on unmount / close
+  useEffect(() => {
+    if (!open) {
+      stopPolling();
+      setPhase("form");
+      setToken("");
+      setErrorMsg(null);
+    }
+    return () => stopPolling();
+  }, [open, stopPolling]);
+
+  async function handleSubmit() {
+    setSubmitting(true);
+    try {
+      await api.instances.telegram(instanceId, token.trim());
+      toast.success("Bot token configured - checking connection...");
+      startPolling();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to connect bot");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Send className="size-4" />
+            Set Up Telegram Bot
+          </DialogTitle>
+          <DialogDescription>Connect a Telegram bot to chat with your agent.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {phase === "starting" && (
+            <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Waiting for agent to connect bot...
+            </div>
+          )}
+
+          {phase === "timeout" && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                Agent is still starting. Your bot will be ready shortly.
+              </div>
+              <Button size="sm" variant="outline" className="w-full" onClick={startPolling}>
+                Check again
+              </Button>
+            </div>
+          )}
+
+          {phase === "error" && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <X className="size-4 shrink-0" />
+                {errorMsg}
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setPhase("form");
+                  setToken("");
+                  setErrorMsg(null);
+                }}
+              >
+                Try again
+              </Button>
+            </div>
+          )}
+
+          {phase === "form" && (
+            <>
+              <ol className="space-y-2 text-sm text-muted-foreground">
+                <li className="flex items-start gap-2">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-medium text-foreground">
+                    1
+                  </span>
+                  <span>
+                    Open{" "}
+                    <a
+                      href="https://t.me/BotFather"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      @BotFather
+                    </a>{" "}
+                    in Telegram and send{" "}
+                    <code className="inline-flex items-center gap-1 rounded bg-muted px-1 py-0.5 text-xs">
+                      /newbot
+                      <CopyButton value="/newbot" />
+                    </code>
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-medium text-foreground">
+                    2
+                  </span>
+                  <span>
+                    For the name, send:{" "}
+                    <code className="inline-flex items-center gap-1 rounded bg-muted px-1 py-0.5 text-xs">
+                      {suggestedName}
+                      <CopyButton value={suggestedName} />
+                    </code>
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-medium text-foreground">
+                    3
+                  </span>
+                  <span>
+                    For the username, send:{" "}
+                    <code className="inline-flex items-center gap-1 rounded bg-muted px-1 py-0.5 text-xs">
+                      {suggestedUsername}
+                      <CopyButton value={suggestedUsername} />
+                    </code>
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-medium text-foreground">
+                    4
+                  </span>
+                  <span>Copy the bot token and paste it below</span>
+                </li>
+              </ol>
+
+              <div className="space-y-2">
+                <input
+                  className="w-full rounded-md border border-input bg-muted px-3 py-2 font-mono text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
+                  placeholder="123456789:ABCdefGHI..."
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  disabled={submitting}
+                />
+                <Button
+                  size="sm"
+                  className="w-full"
+                  disabled={!isValid || submitting}
+                  onClick={() => void handleSubmit()}
+                >
+                  {submitting ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Send className="size-3.5" />
+                  )}
+                  {submitting ? "Configuring on agent..." : "Connect Bot"}
+                </Button>
+                {token.length > 0 && !isValid && (
+                  <p className="text-xs text-destructive">
+                    Token format: digits, colon, then 35 characters
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

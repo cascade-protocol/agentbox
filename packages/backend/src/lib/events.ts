@@ -44,6 +44,12 @@ const eventMetaSchemas = {
   "instance.deleted": empty,
   "instance.mint_retried": empty,
   "instance.restarted": empty,
+  "instance.telegram_configured": empty,
+  "instance.withdrawal": z.object({
+    token: z.string(),
+    amount: z.string(),
+    destination: z.string(),
+  }),
   "instance.extended": z.object({ newExpiresAt: z.string() }),
   "instance.expired": empty,
   "instance.claimed": z.object({ previousOwner: z.string() }),

@@ -14,7 +14,6 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/instances": "http://localhost:8080",
       "/health": "http://localhost:8080",
     },
   },

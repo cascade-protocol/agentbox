@@ -13,6 +13,8 @@ export type Instance = {
   vmWallet?: string | null;
   gatewayToken?: string;
   terminalToken?: string | null;
+  telegramBotUsername?: string | null;
+  snapshotId?: string | null;
   provisioningStep?: string | null;
   createdAt: string;
   expiresAt: string;
@@ -134,17 +136,19 @@ export const api = {
     list: (all?: boolean) =>
       request<{ instances: Instance[] }>(`/instances${all ? "?all=true" : ""}`),
     get: (id: number) => request<Instance>(`/instances/${id}`),
-    create: async (signer: TransactionSigner) => {
+    create: async (signer: TransactionSigner, opts?: { telegramBotToken?: string }) => {
       const payFetch = createPaymentFetch(signer);
+      const body: Record<string, string> = {};
+      if (opts?.telegramBotToken) body.telegramBotToken = opts.telegramBotToken;
       const res = await payFetch(`${API_URL}/instances`, {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({}),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         handleUnauthorized(res.status);
-        const body = await res.json().catch(() => ({ error: res.statusText }));
-        throw new ApiError(res.status, body.error ?? "Request failed");
+        const errBody = await res.json().catch(() => ({ error: res.statusText }));
+        throw new ApiError(res.status, errBody.error ?? "Request failed");
       }
       return res.json() as Promise<Instance>;
     },
@@ -170,6 +174,22 @@ export const api = {
     sync: () =>
       request<{ claimed: number; recovered: number; instances: Instance[] }>(`/instances/sync`, {
         method: "POST",
+      }),
+    telegram: (id: number, telegramBotToken: string) =>
+      request<{ ok: boolean; botUsername?: string; status?: string }>(`/instances/${id}/telegram`, {
+        method: "POST",
+        body: JSON.stringify({ telegramBotToken }),
+      }),
+    telegramStatus: (id: number) =>
+      request<{
+        status: "live" | "starting" | "error" | "not_configured";
+        botUsername?: string;
+        error?: string;
+      }>(`/instances/${id}/telegram/status`),
+    withdraw: (id: number, data: { token: "SOL" | "USDC"; amount: string }) =>
+      request<{ ok: boolean; signature: string }>(`/instances/${id}/withdraw`, {
+        method: "POST",
+        body: JSON.stringify(data),
       }),
   },
 };

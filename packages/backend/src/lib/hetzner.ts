@@ -1,4 +1,5 @@
 import { logger } from "../logger";
+import { HETZNER_SNAPSHOT_ID } from "./constants";
 import { env } from "./env";
 
 const API_BASE = "https://api.hetzner.cloud/v1";
@@ -50,7 +51,7 @@ export async function createServer(name: string, userData: string): Promise<Crea
       body: JSON.stringify({
         name,
         server_type: env.HETZNER_SERVER_TYPE,
-        image: Number(env.HETZNER_SNAPSHOT_ID),
+        image: Number(HETZNER_SNAPSHOT_ID),
         location,
         start_after_create: true,
         user_data: userData,

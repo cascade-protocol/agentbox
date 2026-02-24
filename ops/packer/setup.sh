@@ -186,7 +186,8 @@ SOLANA_VERSION="v2.3.8"
 sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_VERSION}/install)"
 cp /root/.local/share/solana/install/active_release/bin/solana /usr/local/bin/solana
 cp /root/.local/share/solana/install/active_release/bin/solana-keygen /usr/local/bin/solana-keygen
-chmod +x /usr/local/bin/solana /usr/local/bin/solana-keygen
+cp /root/.local/share/solana/install/active_release/bin/spl-token /usr/local/bin/spl-token
+chmod +x /usr/local/bin/solana /usr/local/bin/solana-keygen /usr/local/bin/spl-token
 rm -rf /root/.local/share/solana
 echo "    Solana $(solana --version)"
 

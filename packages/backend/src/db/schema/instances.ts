@@ -14,6 +14,9 @@ export const instances = pgTable(
     terminalToken: text("terminal_token"),
     callbackToken: text("callback_token"),
 
+    telegramBotToken: text("telegram_bot_token"),
+    telegramBotUsername: text("telegram_bot_username"),
+    snapshotId: text("snapshot_id"),
     provisioningStep: text("provisioning_step"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

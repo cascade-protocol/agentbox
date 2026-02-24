@@ -1,0 +1,1 @@
+ALTER TABLE "instances" ADD COLUMN "snapshot_id" text;

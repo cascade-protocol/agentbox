@@ -77,75 +77,57 @@ async function checkAtaExists(rpcUrl: string, owner: string): Promise<boolean> {
 
 const CURATED_MODELS = [
   {
-    id: "nvidia/gpt-oss-120b",
-    name: "NVIDIA GPT-OSS 120B (free)",
-    reasoning: false,
-    input: ["text", "image"] as Array<"text" | "image">,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 131072,
-    maxTokens: 16384,
-  },
-  {
-    id: "deepseek/deepseek-chat",
-    name: "DeepSeek V3",
-    reasoning: false,
-    input: ["text"] as Array<"text" | "image">,
-    cost: { input: 0.28, output: 0.42, cacheRead: 0.14, cacheWrite: 0.28 },
-    contextWindow: 65536,
-    maxTokens: 8192,
-  },
-  {
-    id: "minimax/minimax-m2.5",
-    name: "MiniMax M2.5",
-    reasoning: false,
-    input: ["text", "image"] as Array<"text" | "image">,
-    cost: { input: 0.3, output: 1.2, cacheRead: 0.15, cacheWrite: 0.3 },
-    contextWindow: 1048576,
-    maxTokens: 65536,
-  },
-  {
-    id: "anthropic/claude-sonnet-4.6",
-    name: "Claude Sonnet 4.6",
+    id: "anthropic/claude-sonnet-4.5",
+    name: "Claude Sonnet 4.5",
     reasoning: true,
     input: ["text", "image"] as Array<"text" | "image">,
     cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-    contextWindow: 200000,
-    maxTokens: 16384,
+    contextWindow: 1000000,
+    maxTokens: 2048,
   },
   {
-    id: "anthropic/claude-haiku-4.5",
-    name: "Claude Haiku 4.5",
-    reasoning: false,
-    input: ["text", "image"] as Array<"text" | "image">,
-    cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
-    contextWindow: 200000,
-    maxTokens: 8192,
-  },
-  {
-    id: "google/gemini-2.5-flash",
-    name: "Gemini 2.5 Flash",
+    id: "anthropic/claude-opus-4.6",
+    name: "Claude Opus 4.6",
     reasoning: true,
     input: ["text", "image"] as Array<"text" | "image">,
-    cost: { input: 0.3, output: 2.5, cacheRead: 0.015, cacheWrite: 0.3 },
-    contextWindow: 1048576,
-    maxTokens: 65536,
+    cost: { input: 10, output: 37.5, cacheRead: 1, cacheWrite: 12.5 },
+    contextWindow: 1000000,
+    maxTokens: 2048,
   },
   {
-    id: "openai/gpt-4.1-mini",
-    name: "GPT-4.1 Mini",
+    id: "openai/gpt-5.2",
+    name: "GPT-5.2",
+    reasoning: true,
+    input: ["text", "image"] as Array<"text" | "image">,
+    cost: { input: 1.75, output: 14, cacheRead: 0.44, cacheWrite: 1.75 },
+    contextWindow: 400000,
+    maxTokens: 2048,
+  },
+  {
+    id: "moonshot/kimi-k2.5",
+    name: "Kimi K2.5",
     reasoning: false,
     input: ["text", "image"] as Array<"text" | "image">,
-    cost: { input: 0.4, output: 1.6, cacheRead: 0.1, cacheWrite: 0.4 },
-    contextWindow: 1047576,
-    maxTokens: 32768,
+    cost: { input: 0.6, output: 3, cacheRead: 0.3, cacheWrite: 0.6 },
+    contextWindow: 262144,
+    maxTokens: 4096,
+  },
+  {
+    id: "deepseek/deepseek-v3.2",
+    name: "DeepSeek V3.2",
+    reasoning: false,
+    input: ["text"] as Array<"text" | "image">,
+    cost: { input: 0.23, output: 0.34, cacheRead: 0.12, cacheWrite: 0.23 },
+    contextWindow: 163840,
+    maxTokens: 4096,
   },
 ];
 
 export function register(api: OpenClawPluginApi): void {
   const config = (api.pluginConfig ?? {}) as Record<string, string>;
-  const keypairPath = config.keypairPath || "/home/openclaw/.config/solana/id.json";
+  const keypairPath = config.keypairPath || "/home/openclaw/.openclaw/agentbox/wallet-sol.json";
   const providerUrl = config.providerUrl || "";
-  const providerName = config.providerName || "blockrun";
+  const providerName = config.providerName || "aimo";
   const rpcUrl = config.rpcUrl || "https://api.mainnet-beta.solana.com";
 
   if (!providerUrl) {

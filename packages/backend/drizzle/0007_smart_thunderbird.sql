@@ -1,0 +1,1 @@
+ALTER TABLE "instances" ADD COLUMN "telegram_bot_username" text;

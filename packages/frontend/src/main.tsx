@@ -25,10 +25,12 @@ declare module "@tanstack/react-router" {
 }
 
 const rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${env.heliusApiKey}` as ClusterUrl;
+const wsUrl = `wss://mainnet.helius-rpc.com/?api-key=${env.heliusApiKey}` as ClusterUrl;
 
 const client = createDefaultClient({
   cluster: "mainnet-beta",
   rpc: rpcUrl,
+  websocket: wsUrl,
   walletConnectors: [...phantom(), ...solflare(), ...backpack()],
 });
 

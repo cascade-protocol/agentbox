@@ -12,6 +12,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { db } from "./db/connection";
 import { instances } from "./db/schema";
 import * as cloudflare from "./lib/cloudflare";
+import { HETZNER_SNAPSHOT_ID } from "./lib/constants";
 import { env } from "./lib/env";
 import { recordEvent } from "./lib/events";
 import * as hetzner from "./lib/hetzner";
@@ -25,7 +26,7 @@ const SOLANA_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const app = new Hono();
 
 function getProvisioningPreflightError(): string | null {
-  if (!env.HETZNER_API_TOKEN || !env.HETZNER_SNAPSHOT_ID) {
+  if (!env.HETZNER_API_TOKEN || !HETZNER_SNAPSHOT_ID) {
     return "Hetzner is not configured";
   }
 

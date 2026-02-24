@@ -22,12 +22,20 @@ export const instanceSchema = z.object({
   vmWallet: z.string().nullable().optional(),
   gatewayToken: z.string(),
   terminalToken: z.string().nullable().optional(),
+  telegramBotUsername: z.string().nullable().optional(),
+  snapshotId: z.string().nullable().optional(),
   provisioningStep: z.string().nullable().optional(),
   createdAt: z.string().datetime(),
   expiresAt: z.string().datetime(),
 });
 
-export const createInstanceInputSchema = z.object({});
+const telegramTokenSchema = z
+  .string()
+  .regex(/^\d+:[A-Za-z0-9_-]{35}$/, "Invalid Telegram bot token format");
+
+export const createInstanceInputSchema = z.object({
+  telegramBotToken: telegramTokenSchema.optional(),
+});
 
 export const authInputSchema = z.object({
   solanaWalletAddress: z.string().min(32).max(44),
@@ -60,6 +68,15 @@ export const updateInstanceInputSchema = z.object({
 export const updateAgentMetadataInputSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().min(1).max(500).optional(),
+});
+
+export const telegramSetupInputSchema = z.object({
+  telegramBotToken: telegramTokenSchema,
+});
+
+export const withdrawInputSchema = z.object({
+  token: z.enum(["SOL", "USDC"]),
+  amount: z.string().regex(/^(\d+\.?\d*|ALL)$/, "Must be a number or ALL"),
 });
 
 export const instanceAccessSchema = instanceSchema.extend({

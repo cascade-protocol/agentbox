@@ -105,10 +105,11 @@ fi
 
 # --- Merge dynamic provider config into baked openclaw.json ---
 
-PROVIDER_NAME=$(echo "$CONFIG_JSON" | jq -r '.provider.name // "blockrun"')
-PROVIDER_URL=$(echo "$CONFIG_JSON" | jq -r '.provider.url // "https://sol.blockrun.ai"')
-DEFAULT_MODEL=$(echo "$CONFIG_JSON" | jq -r '.provider.defaultModel // "nvidia/gpt-oss-120b"')
+PROVIDER_NAME=$(echo "$CONFIG_JSON" | jq -r '.provider.name // "aimo"')
+PROVIDER_URL=$(echo "$CONFIG_JSON" | jq -r '.provider.url // "https://beta.aimo.network"')
+DEFAULT_MODEL=$(echo "$CONFIG_JSON" | jq -r '.provider.defaultModel // "anthropic/claude-sonnet-4.5"')
 SOLANA_RPC=$(echo "$CONFIG_JSON" | jq -r '.provider.rpcUrl // empty')
+TELEGRAM_BOT_TOKEN=$(echo "$CONFIG_JSON" | jq -r '.telegramBotToken // empty')
 
 PLUGIN_CONFIG=$(jq -n \
   --arg providerUrl "$PROVIDER_URL" \
@@ -117,7 +118,7 @@ PLUGIN_CONFIG=$(jq -n \
   '{
     providerUrl: $providerUrl,
     providerName: $providerName,
-    keypairPath: "/home/openclaw/.config/solana/id.json"
+    keypairPath: "/home/openclaw/.openclaw/agentbox/wallet-sol.json"
   } + (if $rpcUrl != "" then {rpcUrl: $rpcUrl} else {} end)')
 
 # OpenClaw's registerProvider() (plugin API) only handles auth metadata -
@@ -131,13 +132,11 @@ PROVIDER_DEF=$(jq -n \
     apiKey: "x402-payment",
     api: "openai-completions",
     models: [
-      {id: "nvidia/gpt-oss-120b", name: "NVIDIA GPT-OSS 120B (free)"},
-      {id: "deepseek/deepseek-chat", name: "DeepSeek V3"},
-      {id: "minimax/minimax-m2.5", name: "MiniMax M2.5"},
-      {id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6"},
-      {id: "anthropic/claude-haiku-4.5", name: "Claude Haiku 4.5"},
-      {id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash"},
-      {id: "openai/gpt-4.1-mini", name: "GPT-4.1 Mini"}
+      {id: "anthropic/claude-sonnet-4.5", name: "Claude Sonnet 4.5", maxTokens: 2048},
+      {id: "anthropic/claude-opus-4.6", name: "Claude Opus 4.6", maxTokens: 2048},
+      {id: "openai/gpt-5.2", name: "GPT-5.2", maxTokens: 2048},
+      {id: "moonshot/kimi-k2.5", name: "Kimi K2.5", maxTokens: 4096},
+      {id: "deepseek/deepseek-v3.2", name: "DeepSeek V3.2", maxTokens: 4096}
     ]
   }')
 
@@ -145,13 +144,25 @@ jq --argjson pluginConfig "$PLUGIN_CONFIG" \
    --argjson providerDef "$PROVIDER_DEF" \
    --arg providerName "$PROVIDER_NAME" \
    --arg defaultModel "$DEFAULT_MODEL" \
+   --arg telegramBotToken "${TELEGRAM_BOT_TOKEN:-}" \
    '
    .plugins.entries."openclaw-x402" = {
      enabled: true,
      config: $pluginConfig
    }
+   | .plugins.entries.telegram.enabled = true
    | .agents.defaults.model.primary = ($providerName + "/" + $defaultModel)
    | .models.providers[$providerName] = $providerDef
+   | if $telegramBotToken != "" then
+       .channels.telegram = {
+         enabled: true,
+         botToken: $telegramBotToken,
+         dmPolicy: "open",
+         allowFrom: ["*"],
+         groups: { "*": { requireMention: true } },
+         ackReaction: "\uD83D\uDC4B"
+       }
+     else . end
    # NOTE: streaming config (agents.defaults.models[].streaming and .params.streaming)
    # is dead code in OpenClaw - pi-ai hardcodes stream:true in buildParams().
    # The openclaw-x402 plugin handles this in the fetch interceptor by forcing
@@ -173,7 +184,9 @@ echo "Using preloaded OpenClaw $(openclaw --version)"
 # --- Create Solana keypair (before gateway - x402 plugin reads it on start) ---
 
 echo "Creating Solana keypair..."
-su - openclaw -c "solana-keygen new --no-bip39-passphrase --force -o /home/openclaw/.config/solana/id.json" 2>&1
+su - openclaw -c "mkdir -p /home/openclaw/.openclaw/agentbox"
+su - openclaw -c "solana-keygen new --no-bip39-passphrase --force -o /home/openclaw/.openclaw/agentbox/wallet-sol.json" 2>&1
+su - openclaw -c "solana config set --keypair /home/openclaw/.openclaw/agentbox/wallet-sol.json" 2>&1
 SOLANA_WALLET_ADDRESS=$(su - openclaw -c "solana address")
 report_step "wallet_created"
 
@@ -203,6 +216,14 @@ jq --arg token "$GATEWAY_TOKEN" \
    /home/openclaw/.openclaw/openclaw.json > /tmp/openclaw.json.tmp
 mv /tmp/openclaw.json.tmp /home/openclaw/.openclaw/openclaw.json
 chown openclaw:openclaw /home/openclaw/.openclaw/openclaw.json
+
+# Clear any stale Telegram webhook right before gateway starts polling.
+# The backend also calls deleteWebhook at provision time, but minutes pass
+# between that and the gateway actually starting getUpdates long-polling.
+if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+  curl -sf "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/deleteWebhook" >/dev/null || true
+  echo "Cleared any stale Telegram webhook"
+fi
 
 systemctl daemon-reload
 systemctl enable openclaw-gateway

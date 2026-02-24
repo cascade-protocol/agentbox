@@ -8,6 +8,13 @@ import { jwtVerify, SignJWT } from "jose";
 import { db } from "../db/connection";
 import { instances } from "../db/schema";
 import * as cloudflare from "../lib/cloudflare";
+import {
+  HETZNER_SNAPSHOT_ID,
+  LLM_DEFAULT_MODEL,
+  LLM_PROVIDER_NAME,
+  LLM_PROVIDER_URL,
+} from "../lib/constants";
+import { decrypt, encrypt } from "../lib/crypto";
 import { env } from "../lib/env";
 import { recordEvent } from "../lib/events";
 import * as hetzner from "../lib/hetzner";
@@ -22,11 +29,15 @@ import {
 import {
   authInputSchema,
   callbackInputSchema,
+  createInstanceInputSchema,
   instanceConfigQuerySchema,
   provisioningUpdateInputSchema,
+  telegramSetupInputSchema,
   updateAgentMetadataInputSchema,
   updateInstanceInputSchema,
+  withdrawInputSchema,
 } from "../lib/schemas";
+import { withVM } from "../lib/ssh";
 import { logger } from "../logger";
 
 type AppEnv = { Variables: { walletAddress: string } };
@@ -79,6 +90,8 @@ function toInstanceResponse(row: typeof instances.$inferSelect) {
     vmWallet: row.vmWallet,
     gatewayToken: row.gatewayToken,
     terminalToken: row.terminalToken,
+    telegramBotUsername: row.telegramBotUsername,
+    snapshotId: row.snapshotId,
     provisioningStep: row.provisioningStep,
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
@@ -89,7 +102,17 @@ function buildUserData(opts: {
   apiBaseUrl: string;
   callbackToken: string;
   terminalToken: string;
+  telegramBotToken?: string;
 }): string {
+  const envLines = [
+    `API_BASE_URL="${opts.apiBaseUrl}"`,
+    `CALLBACK_SECRET="${opts.callbackToken}"`,
+    `TERMINAL_TOKEN="${opts.terminalToken}"`,
+  ];
+  if (opts.telegramBotToken) {
+    envLines.push(`TELEGRAM_BOT_TOKEN="${opts.telegramBotToken}"`);
+  }
+
   const lines = [
     "#!/bin/bash",
     "set -euo pipefail",
@@ -98,9 +121,7 @@ function buildUserData(opts: {
     "SERVER_ID=$(curl -s http://169.254.169.254/hetzner/v1/metadata/instance-id)",
     "",
     "cat > /etc/agentbox/callback.env << 'ENVEOF'",
-    `API_BASE_URL="${opts.apiBaseUrl}"`,
-    `CALLBACK_SECRET="${opts.callbackToken}"`,
-    `TERMINAL_TOKEN="${opts.terminalToken}"`,
+    ...envLines,
     "ENVEOF",
     "",
     "# SERVER_ID must be unquoted (numeric) so append outside heredoc",
@@ -219,8 +240,39 @@ instanceRoutes.post("/instances/auth", async (c) => {
 instanceRoutes.post("/instances", auth, async (c) => {
   const wallet = c.get("walletAddress");
 
-  if (!env.HETZNER_API_TOKEN || !env.HETZNER_SNAPSHOT_ID) {
+  if (!env.HETZNER_API_TOKEN || !HETZNER_SNAPSHOT_ID) {
     return c.json({ error: "Hetzner is not configured" }, 503);
+  }
+
+  // Parse optional body (telegramBotToken)
+  const body = await c.req.json().catch(() => ({}));
+  const input = createInstanceInputSchema.safeParse(body);
+  if (!input.success) {
+    return c.json({ error: "Invalid input", details: input.error.issues }, 400);
+  }
+
+  // Validate bot token early if provided
+  let telegramBotToken: string | undefined;
+  let telegramBotUsername: string | undefined;
+  if (input.data.telegramBotToken) {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${input.data.telegramBotToken}/getMe`);
+      const data = (await res.json()) as { ok: boolean; result?: { username?: string } };
+      if (!data.ok) {
+        return c.json({ error: "Invalid Telegram bot token" }, 400);
+      }
+      telegramBotToken = input.data.telegramBotToken;
+      telegramBotUsername = data.result?.username;
+    } catch {
+      return c.json({ error: "Failed to validate bot token with Telegram" }, 502);
+    }
+
+    // Clear stale webhook so long polling works at boot
+    try {
+      await fetch(`https://api.telegram.org/bot${telegramBotToken}/deleteWebhook`);
+    } catch {
+      // Non-critical
+    }
   }
 
   let name = "";
@@ -249,6 +301,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
     apiBaseUrl: env.API_BASE_URL,
     callbackToken,
     terminalToken,
+    telegramBotToken,
   });
 
   let result: Awaited<ReturnType<typeof hetzner.createServer>>;
@@ -284,6 +337,9 @@ instanceRoutes.post("/instances", auth, async (c) => {
       gatewayToken: "pending",
       callbackToken,
       terminalToken,
+      telegramBotToken: telegramBotToken ? encrypt(telegramBotToken) : null,
+      telegramBotUsername: telegramBotUsername ?? null,
+      snapshotId: HETZNER_SNAPSHOT_ID,
       nftMint: null,
       vmWallet: null,
       provisioningStep: "vm_created",
@@ -464,13 +520,24 @@ instanceRoutes.get("/instances/config", async (c) => {
 
   const hostname = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
 
+  // Decrypt telegram bot token if stored at creation time
+  let telegramBotToken: string | undefined;
+  if (row.telegramBotToken) {
+    try {
+      telegramBotToken = decrypt(row.telegramBotToken);
+    } catch {
+      logger.warn(`Failed to decrypt telegram token for instance ${row.id} in config endpoint`);
+    }
+  }
+
   return c.json({
     hostname,
     terminalToken: row.terminalToken,
+    telegramBotToken,
     provider: {
-      name: env.LLM_PROVIDER_NAME,
-      url: env.LLM_PROVIDER_URL,
-      defaultModel: env.LLM_DEFAULT_MODEL,
+      name: LLM_PROVIDER_NAME,
+      url: LLM_PROVIDER_URL,
+      defaultModel: LLM_DEFAULT_MODEL,
       rpcUrl: env.SOLANA_RPC_URL || null,
     },
   });
@@ -711,7 +778,7 @@ instanceRoutes.get("/instances/:id/access", auth, async (c) => {
   const terminalPath = row.terminalToken ? `/terminal/${row.terminalToken}/` : "/terminal/";
   return c.json({
     ...toInstanceResponse(row),
-    chatUrl: `https://${instanceHost}/overview#token=${row.gatewayToken}`,
+    chatUrl: `https://${instanceHost}/chat#token=${row.gatewayToken}`,
     terminalUrl: `https://${instanceHost}${terminalPath}`,
   });
 });
@@ -742,4 +809,210 @@ instanceRoutes.get("/instances/:id/health", auth, async (c) => {
     instanceStatus: row.status,
     callbackReceived: row.vmWallet !== null,
   });
+});
+
+// POST /instances/:id/telegram - Write Telegram bot config via SSH
+instanceRoutes.post("/instances/:id/telegram", auth, async (c) => {
+  if (!env.SSH_PRIVATE_KEY) {
+    return c.json({ error: "SSH access is not configured" }, 503);
+  }
+
+  const id = Number(c.req.param("id"));
+  const body = await c.req.json();
+  const input = telegramSetupInputSchema.safeParse(body);
+  if (!input.success) {
+    return c.json({ error: "Invalid input", details: input.error.issues }, 400);
+  }
+
+  const [row] = await db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+  if (!row) return c.json({ error: "Instance not found" }, 404);
+  if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
+  if (row.status !== "running") {
+    return c.json({ error: "Instance is not running" }, 409);
+  }
+
+  const token = input.data.telegramBotToken;
+
+  // Resolve bot username and validate token via getMe
+  let botUsername: string | undefined;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+    const data = (await res.json()) as { ok: boolean; result?: { username?: string } };
+    if (!data.ok) {
+      return c.json({ error: "Invalid Telegram bot token" }, 400);
+    }
+    botUsername = data.result?.username;
+  } catch {
+    return c.json({ error: "Failed to validate bot token with Telegram" }, 502);
+  }
+
+  // Clear any stale webhook so long polling works
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`);
+  } catch {
+    logger.warn(`Failed to delete webhook for instance ${id}, proceeding anyway`);
+  }
+
+  const configPath = "/home/openclaw/.openclaw/openclaw.json";
+
+  try {
+    await withVM(row.ip, async (vm) => {
+      // biome-ignore lint/suspicious/noExplicitAny: openclaw config is untyped JSON
+      const cfg = await vm.readJson<any>(configPath);
+      cfg.channels ??= {};
+      cfg.channels.telegram = {
+        enabled: true,
+        botToken: token,
+        dmPolicy: "open",
+        allowFrom: ["*"],
+        groups: { "*": { requireMention: true } },
+        ackReaction: "\u{1F44B}",
+      };
+      cfg.plugins ??= {};
+      cfg.plugins.entries ??= {};
+      cfg.plugins.entries.telegram = { enabled: true };
+      await vm.writeJson(configPath, cfg, "openclaw");
+      await vm.restart("openclaw-gateway");
+    });
+  } catch (err) {
+    logger.error(`Telegram SSH config failed for instance ${id}`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return c.json({ error: "Failed to configure Telegram on instance" }, 500);
+  }
+
+  // Store encrypted token + username in DB
+  await db
+    .update(instances)
+    .set({ telegramBotToken: encrypt(token), telegramBotUsername: botUsername ?? null })
+    .where(eq(instances.id, id));
+
+  recordEvent(
+    "instance.telegram_configured",
+    { type: "wallet", id: c.get("walletAddress") },
+    { type: "instance", id: String(id) },
+    {},
+  );
+
+  return c.json({ ok: true, botUsername, status: "starting" });
+});
+
+// GET /instances/:id/telegram/status - Check if Telegram bot is actively polling
+instanceRoutes.get("/instances/:id/telegram/status", auth, async (c) => {
+  const id = Number(c.req.param("id"));
+  const [row] = await db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+  if (!row) return c.json({ error: "Instance not found" }, 404);
+  if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
+
+  if (!row.telegramBotToken) {
+    return c.json({ status: "not_configured" });
+  }
+
+  let token: string;
+  try {
+    token = decrypt(row.telegramBotToken);
+  } catch {
+    logger.error(`Failed to decrypt telegram token for instance ${id}`);
+    return c.json({ status: "error", error: "Stored token is corrupted" });
+  }
+
+  // Resolve bot username
+  let botUsername: string | undefined;
+  try {
+    const meRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+    const meData = (await meRes.json()) as { ok: boolean; result?: { username?: string } };
+    if (!meData.ok) {
+      return c.json({ status: "error", error: "Token is invalid or revoked" });
+    }
+    botUsername = meData.result?.username;
+  } catch {
+    return c.json({ status: "error", error: "Failed to reach Telegram API" });
+  }
+
+  // Probe getUpdates with timeout=0 for instant response.
+  // 409 = gateway is actively polling (bot is live).
+  // 200 = nobody is polling yet (bot still starting).
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/getUpdates?limit=0&timeout=0`);
+    if (res.status === 409) {
+      return c.json({ status: "live", botUsername });
+    }
+    return c.json({ status: "starting", botUsername });
+  } catch {
+    return c.json({ status: "starting", botUsername });
+  }
+});
+
+const USDC_MINT_ADDRESS = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+// POST /instances/:id/withdraw - Withdraw SOL or USDC from VM wallet to owner
+instanceRoutes.post("/instances/:id/withdraw", auth, async (c) => {
+  if (!env.SSH_PRIVATE_KEY) {
+    return c.json({ error: "SSH access is not configured" }, 503);
+  }
+
+  const id = Number(c.req.param("id"));
+  const body = await c.req.json();
+  const input = withdrawInputSchema.safeParse(body);
+  if (!input.success) {
+    return c.json({ error: "Invalid input", details: input.error.issues }, 400);
+  }
+
+  const [row] = await db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+  if (!row) return c.json({ error: "Instance not found" }, 404);
+  if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
+  if (row.status !== "running") {
+    return c.json({ error: "Instance is not running" }, 409);
+  }
+
+  const { token, amount } = input.data;
+  const dest = row.ownerWallet;
+
+  try {
+    const result = await withVM(
+      row.ip,
+      async (vm) => {
+        let cmd: string;
+        if (token === "USDC") {
+          cmd = `su - openclaw -c 'spl-token transfer ${USDC_MINT_ADDRESS} ${amount} ${dest} --fund-recipient --allow-unfunded-recipient'`;
+        } else {
+          cmd = `su - openclaw -c 'solana transfer ${dest} ${amount} --allow-unfunded-recipient'`;
+        }
+
+        const { stdout, stderr, code } = await vm.exec(cmd);
+        if (code !== 0) {
+          throw new Error(stderr.trim() || `Transfer failed with exit code ${code}`);
+        }
+
+        // Parse tx signature from CLI output (last non-empty line typically contains it)
+        const lines = stdout.trim().split("\n");
+        const signature = lines[lines.length - 1]?.trim() ?? "";
+        return { signature };
+      },
+      60_000,
+    );
+
+    recordEvent(
+      "instance.withdrawal",
+      { type: "wallet", id: c.get("walletAddress") },
+      { type: "instance", id: String(id) },
+      { token, amount, destination: dest },
+    );
+
+    return c.json({ ok: true, signature: result.signature });
+  } catch (err) {
+    logger.error(`Withdrawal failed for instance ${id}`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return c.json({ error: err instanceof Error ? err.message : "Withdrawal failed" }, 500);
+  }
 });

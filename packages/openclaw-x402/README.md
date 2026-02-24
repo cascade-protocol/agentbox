@@ -39,7 +39,7 @@ Then add it to your OpenClaw plugin config (e.g. `~/.openclaw/plugins.json`):
 | Field | Required | Default | Description |
 |---|---|---|---|
 | `providerUrl` | Yes | - | Base URL of the x402-enabled provider to intercept |
-| `keypairPath` | No | `/home/openclaw/.config/solana/id.json` | Path to Solana keypair JSON file |
+| `keypairPath` | No | `/home/openclaw/.openclaw/agentbox/wallet-sol.json` | Path to Solana keypair JSON file |
 | `rpcUrl` | No | `https://api.mainnet-beta.solana.com` | Solana RPC endpoint |
 
 ## Commands
