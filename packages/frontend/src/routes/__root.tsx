@@ -271,7 +271,25 @@ function RootLayout() {
                 ))
               ) : (
                 <p className="rounded-md border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
-                  No compatible wallet detected in this browser.
+                  No compatible wallet detected. Install{" "}
+                  <a
+                    href="https://phantom.app"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    Phantom
+                  </a>{" "}
+                  or{" "}
+                  <a
+                    href="https://solflare.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    Solflare
+                  </a>{" "}
+                  to continue.
                 </p>
               )}
               <p className="text-center text-xs text-muted-foreground">
@@ -332,7 +350,7 @@ function RootLayout() {
               </Button>
             ) : env.enableInstanceCreation ? (
               <Button asChild size="sm">
-                <a href="#connect-wallet">Deploy for 5 USDC</a>
+                <a href="#connect-wallet">Launch for 5 USDC</a>
               </Button>
             ) : (
               <Button size="sm" disabled>
@@ -347,15 +365,15 @@ function RootLayout() {
         <section className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
           <div className="space-y-6">
             <p className="inline-flex rounded-full border border-primary/35 bg-primary/12 px-3 py-1 text-xs font-semibold tracking-wide text-primary">
-              Pay with USDC. No API keys.
+              x402 payments on Solana. No API keys.
             </p>
             <div className="space-y-4">
               <h1 className="text-4xl font-semibold leading-tight tracking-tight text-foreground md:text-5xl">
                 Agent in a Box
               </h1>
               <p className="max-w-2xl text-base text-muted-foreground md:text-lg">
-                A ready-to-use OpenClaw agent on its own VM. Pre-funded wallet for model access, web
-                terminal, on-chain identity. No setup. Running in 3 minutes.
+                A ready-to-use OpenClaw agent on its own VM. It pays for AI models via x402, talks
+                to you on Telegram, and can call any paid API autonomously. Running in 3 minutes.
               </p>
             </div>
             <div className="space-y-3">
@@ -369,7 +387,7 @@ function RootLayout() {
               ) : env.enableInstanceCreation ? (
                 <Button asChild size="lg">
                   <a href="#connect-wallet">
-                    Deploy for 5 USDC
+                    Launch for 5 USDC
                     <ArrowRight className="size-4" />
                   </a>
                 </Button>
@@ -427,8 +445,8 @@ function RootLayout() {
                   No API Keys
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Your agent&apos;s wallet pays for Claude, GPT-4o, and more via USDC. Free model
-                  included out of the box, top up for premium.
+                  Your agent&apos;s wallet pays for Claude, GPT-5, DeepSeek, and more via USDC. Free
+                  model included, top up for premium.
                 </p>
               </CardContent>
             </Card>
@@ -601,7 +619,25 @@ function RootLayout() {
                     ))
                   ) : (
                     <p className="rounded-md border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
-                      No compatible wallet detected in this browser.
+                      No compatible wallet detected. Install{" "}
+                      <a
+                        href="https://phantom.app"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Phantom
+                      </a>{" "}
+                      or{" "}
+                      <a
+                        href="https://solflare.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Solflare
+                      </a>{" "}
+                      to continue.
                     </p>
                   )}
                   <p className="text-xs text-muted-foreground">

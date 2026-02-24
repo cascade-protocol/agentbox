@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRightLeft,
+  BookOpen,
   Check,
   Copy,
   ExternalLink,
@@ -38,6 +39,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "../components/ui/accordion";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -278,6 +285,10 @@ function WalletBalanceCard({
                   </Button>
                 </div>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Withdraw funds before your agent expires - remaining balance is not automatically
+                returned.
+              </p>
             </div>
           )}
         </CardContent>
@@ -298,6 +309,100 @@ function WalletBalanceCard({
         />
       )}
     </>
+  );
+}
+
+function GettingStartedCard({ telegramBotUsername }: { telegramBotUsername?: string | null }) {
+  return (
+    <Card className="shadow-sm">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <BookOpen className="size-4" />
+          Getting Started
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Accordion type="multiple" className="w-full">
+          <AccordionItem value="models">
+            <AccordionTrigger>Available models</AccordionTrigger>
+            <AccordionContent>
+              <ul className="space-y-1.5 text-sm text-muted-foreground">
+                <li>
+                  <span className="font-medium text-foreground">Claude Sonnet 4.6</span>{" "}
+                  <span className="text-xs">(default)</span> -{" "}
+                  <code className="text-xs">anthropic/claude-sonnet-4.6</code>
+                </li>
+                <li>
+                  <span className="font-medium text-foreground">Claude Opus 4.6</span> -{" "}
+                  <code className="text-xs">anthropic/claude-opus-4.6</code>
+                </li>
+                <li>
+                  <span className="font-medium text-foreground">GPT-5.2</span> -{" "}
+                  <code className="text-xs">openai/gpt-5.2</code>
+                </li>
+                <li>
+                  <span className="font-medium text-foreground">Kimi K2.5</span> -{" "}
+                  <code className="text-xs">moonshot/kimi-k2.5</code>
+                </li>
+                <li>
+                  <span className="font-medium text-foreground">DeepSeek V3.2</span> -{" "}
+                  <code className="text-xs">deepseek/deepseek-v3.2</code>
+                </li>
+              </ul>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Switch models in the chat interface.
+              </p>
+            </AccordionContent>
+          </AccordionItem>
+
+          <AccordionItem value="wallet">
+            <AccordionTrigger>Agent wallet & x402</AccordionTrigger>
+            <AccordionContent>
+              <p className="text-sm text-muted-foreground">
+                Your agent has its own Solana wallet that pays for AI models and x402 services
+                automatically. $0.30 USDC is reserved for inference - the rest is available for x402
+                API calls. Top up by sending USDC (SPL) on Solana mainnet to the wallet address
+                shown in Details above.
+              </p>
+            </AccordionContent>
+          </AccordionItem>
+
+          {telegramBotUsername && (
+            <AccordionItem value="telegram">
+              <AccordionTrigger>Telegram commands</AccordionTrigger>
+              <AccordionContent>
+                <ul className="space-y-1.5 text-sm text-muted-foreground">
+                  <li>
+                    <code className="font-medium text-foreground">/x402_balance</code> - Check
+                    wallet balance and get the address for topping up
+                  </li>
+                  <li>
+                    <code className="font-medium text-foreground">
+                      /x402_send &lt;amount|all&gt; &lt;address&gt;
+                    </code>{" "}
+                    - Send USDC to any Solana address
+                  </li>
+                </ul>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  You can also just chat naturally - your agent responds to regular messages too.
+                </p>
+              </AccordionContent>
+            </AccordionItem>
+          )}
+
+          <AccordionItem value="capabilities">
+            <AccordionTrigger>What your agent can do</AccordionTrigger>
+            <AccordionContent>
+              <p className="text-sm text-muted-foreground">
+                Your agent can autonomously call any x402-enabled paid API using its wallet. It can
+                also discover new paid APIs in the zauth directory. Try asking in the chat:
+                &quot;What x402 APIs can you find?&quot;
+              </p>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -519,7 +624,7 @@ function TransferDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Transfer Instance</DialogTitle>
+          <DialogTitle>Transfer Agent</DialogTitle>
           <DialogDescription>
             Transfer this instance's NFT to another wallet. The new owner will gain access and you
             will lose it.
@@ -622,6 +727,7 @@ function InstanceDetail() {
   const [agentName, setAgentName] = useState("");
   const [agentDescription, setAgentDescription] = useState("");
   const [agentSaving, setAgentSaving] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const fetchDetail = useCallback(
     async ({
@@ -697,7 +803,7 @@ function InstanceDetail() {
     try {
       const updated = await api.instances.update(numId, { name: trimmed });
       setInstance((prev) => (prev ? { ...prev, name: updated.name } : prev));
-      toast.success("Instance renamed");
+      toast.success("Agent renamed");
       setEditingName(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Rename failed");
@@ -715,11 +821,11 @@ function InstanceDetail() {
     try {
       if (confirmAction === "restart") {
         await api.instances.restart(numId);
-        toast.success("Instance restarting");
+        toast.success("Agent restarting");
         await fetchDetail({ showErrorToast: true });
       } else {
         await api.instances.delete(numId);
-        toast.success("Instance deleted");
+        toast.success("Agent deleted");
         navigate({ to: "/dashboard" });
         return;
       }
@@ -745,9 +851,10 @@ function InstanceDetail() {
   }
 
   async function handleExtend() {
+    if (!signer) return;
     setActionLoading("extend");
     try {
-      const updated = await api.instances.extend(numId);
+      const updated = await api.instances.extend(numId, signer);
       setInstance((prev) => (prev ? { ...prev, ...updated } : prev));
       toast.success("Extended by 7 days");
     } catch (err) {
@@ -863,16 +970,27 @@ function InstanceDetail() {
         )}
 
         <Card className="shadow-sm">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <CardTitle>Details</CardTitle>
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              {showAdvanced ? "Hide details" : "Show details"}
+            </button>
           </CardHeader>
           <CardContent>
             <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
-              <dt className="text-muted-foreground">IP Address</dt>
-              <dd className="font-mono">{instance.ip}</dd>
+              {showAdvanced && (
+                <>
+                  <dt className="text-muted-foreground">IP Address</dt>
+                  <dd className="font-mono">{instance.ip}</dd>
 
-              <dt className="text-muted-foreground">Image ID</dt>
-              <dd className="font-mono">{instance.snapshotId ?? "—"}</dd>
+                  <dt className="text-muted-foreground">Image ID</dt>
+                  <dd className="font-mono">{instance.snapshotId ?? "—"}</dd>
+                </>
+              )}
 
               <dt className="text-muted-foreground">Owner Wallet</dt>
               <dd className="font-mono">{instance.ownerWallet}</dd>
@@ -990,25 +1108,20 @@ function InstanceDetail() {
           />
         )}
 
+        {instance.status === "running" && (
+          <GettingStartedCard telegramBotUsername={instance.telegramBotUsername} />
+        )}
+
         {health && (
           <Card className="shadow-sm">
             <CardHeader>
-              <CardTitle>Health</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                Health
+                <Badge variant={health.healthy ? "success" : "destructive"}>
+                  {health.healthy ? "Healthy" : "Unhealthy"}
+                </Badge>
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
-                <dt className="text-muted-foreground">Status</dt>
-                <dd>
-                  <Badge variant={health.healthy ? "success" : "destructive"}>
-                    {health.healthy ? "Healthy" : "Unhealthy"}
-                  </Badge>
-                </dd>
-                <dt className="text-muted-foreground">Hetzner</dt>
-                <dd>{health.hetznerStatus}</dd>
-                <dt className="text-muted-foreground">Callback</dt>
-                <dd>{health.callbackReceived ? "Received" : "Pending"}</dd>
-              </dl>
-            </CardContent>
           </Card>
         )}
 
@@ -1104,7 +1217,7 @@ function InstanceDetail() {
             <Button
               variant="outline"
               onClick={() => void handleExtend()}
-              disabled={actionLoading !== null}
+              disabled={actionLoading !== null || !signer}
             >
               {actionLoading === "extend" ? <Loader2 className="size-4 animate-spin" /> : null}
               {actionLoading === "extend" ? "Extending..." : "Extend 7 days"}
@@ -1142,7 +1255,7 @@ function InstanceDetail() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {confirmAction === "restart" ? "Restart Instance" : "Delete Instance"}
+              {confirmAction === "restart" ? "Restart Agent" : "Delete Agent"}
             </DialogTitle>
             <DialogDescription>
               {confirmAction === "restart"

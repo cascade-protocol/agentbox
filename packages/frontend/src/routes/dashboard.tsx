@@ -326,7 +326,7 @@ function CreateInstanceDialog({
       if (instance.telegramBotUsername) {
         setCreatedInstance(instance);
       } else {
-        toast.success("Instance created - provisioning will take ~3 minutes");
+        toast.success("Agent launched - provisioning will take ~3 minutes");
         onOpenChange(false);
         resetDialog();
       }
@@ -404,9 +404,9 @@ function CreateInstanceDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>Create Instance</DialogTitle>
+              <DialogTitle>Launch Agent</DialogTitle>
               <DialogDescription>
-                Provision a new AgentBox VM for {USDC_PRICE} USDC on Solana (7 days). Your wallet
+                Launch a new AgentBox agent for {USDC_PRICE} USDC on Solana (7 days). Your wallet
                 will be prompted to approve the payment.
               </DialogDescription>
             </DialogHeader>
@@ -419,14 +419,14 @@ function CreateInstanceDialog({
               </div>
               {balance && !hasEnough && (
                 <p className="mt-2 text-destructive text-xs">
-                  Insufficient balance. You need at least {USDC_PRICE} USDC on Solana to create an
-                  instance. Make sure your USDC is on Solana, not another chain.
+                  Insufficient balance. You need at least {USDC_PRICE} USDC on Solana to launch an
+                  agent. Make sure your USDC is on Solana, not another chain.
                 </p>
               )}
             </div>
             <div className="space-y-1.5">
               <label htmlFor="instance-name" className="text-sm text-muted-foreground">
-                Instance name
+                Agent name
               </label>
               <div className="flex gap-2">
                 <input
@@ -607,7 +607,7 @@ function Home() {
           instance.id === id ? { ...instance, name: updated.name } : instance,
         ),
       );
-      toast.success("Instance renamed");
+      toast.success("Agent renamed");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Rename failed");
       throw err;
@@ -623,10 +623,10 @@ function Home() {
     try {
       if (confirmAction.type === "restart") {
         await api.instances.restart(confirmAction.instance.id);
-        toast.success("Instance restarting");
+        toast.success("Agent restarting");
       } else {
         await api.instances.delete(confirmAction.instance.id);
-        toast.success("Instance deleted");
+        toast.success("Agent deleted");
       }
       setConfirmAction(null);
       await fetchInstances();
@@ -669,8 +669,8 @@ function Home() {
         <div className="rounded-xl border border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur md:p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Instances</h1>
-              <p className="mt-1 text-sm text-muted-foreground">Manage your AgentBox instances</p>
+              <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Agents</h1>
+              <p className="mt-1 text-sm text-muted-foreground">Manage your AgentBox agents</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {admin && (
@@ -1086,7 +1086,7 @@ function Home() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {confirmAction?.type === "restart" ? "Restart Instance" : "Delete Instance"}
+              {confirmAction?.type === "restart" ? "Restart Agent" : "Delete Agent"}
             </DialogTitle>
             <DialogDescription>
               {confirmAction?.type === "restart"

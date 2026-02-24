@@ -170,7 +170,19 @@ export const api = {
     mint: (id: number) => request<{ ok: boolean }>(`/instances/${id}/mint`, { method: "POST" }),
     restart: (id: number) =>
       request<{ ok: boolean }>(`/instances/${id}/restart`, { method: "POST" }),
-    extend: (id: number) => request<Instance>(`/instances/${id}/extend`, { method: "POST" }),
+    extend: async (id: number, signer: TransactionSigner) => {
+      const payFetch = createPaymentFetch(signer);
+      const res = await payFetch(`${API_URL}/instances/${id}/extend`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      if (!res.ok) {
+        handleUnauthorized(res.status);
+        const errBody = await res.json().catch(() => ({ error: res.statusText }));
+        throw new ApiError(res.status, errBody.error ?? "Request failed");
+      }
+      return res.json() as Promise<Instance>;
+    },
     access: (id: number) => request<InstanceAccess>(`/instances/${id}/access`),
     health: (id: number) => request<InstanceHealth>(`/instances/${id}/health`),
     expiring: (days?: number) =>

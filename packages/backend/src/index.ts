@@ -116,6 +116,18 @@ const x402Payment = paymentMiddleware(
       description: "Provision AgentBox VM (7 days)",
       mimeType: "application/json",
     },
+    "POST /instances/[id]/extend": {
+      accepts: [
+        {
+          scheme: "exact",
+          network: SOLANA_MAINNET,
+          price: "$5",
+          payTo: env.PAY_TO_ADDRESS,
+        },
+      ],
+      description: "Extend AgentBox VM (7 days)",
+      mimeType: "application/json",
+    },
   },
   resourceServer,
 );
