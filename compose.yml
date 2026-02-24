@@ -46,7 +46,6 @@ services:
       SOLANA_RPC_URL: ${SOLANA_RPC_URL}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       SSH_PRIVATE_KEY: ${SSH_PRIVATE_KEY}
-      HETZNER_SSH_KEY_IDS: ${HETZNER_SSH_KEY_IDS}
     depends_on:
       postgres:
         condition: service_healthy

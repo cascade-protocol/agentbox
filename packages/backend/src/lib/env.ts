@@ -17,7 +17,6 @@ const envSchema = z.object({
   FACILITATOR_URL: z.string().default("https://facilitator.payai.network"),
   INSTANCE_BASE_DOMAIN: z.string().default("agentbox.fyi"),
   CF_API_TOKEN: z.string().optional(),
-  HETZNER_SSH_KEY_IDS: z.string().default("107690222,108071540"),
   SSH_PRIVATE_KEY: z.string().optional(),
   CF_ZONE_ID: z.string().default("fda671fa572b4c2d26de8aedcbf94f6e"),
   SATI_HOT_WALLET_PRIVATE_KEY: z

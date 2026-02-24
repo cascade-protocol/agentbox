@@ -1,5 +1,5 @@
 import { logger } from "../logger";
-import { HETZNER_SNAPSHOT_ID } from "./constants";
+import { HETZNER_SNAPSHOT_ID, HETZNER_SSH_KEY_IDS } from "./constants";
 import { env } from "./env";
 
 const API_BASE = "https://api.hetzner.cloud/v1";
@@ -38,10 +38,6 @@ type ActionResponse = {
 };
 
 export async function createServer(name: string, userData: string): Promise<CreateServerResponse> {
-  const sshKeyIds = env.HETZNER_SSH_KEY_IDS
-    ? env.HETZNER_SSH_KEY_IDS.split(",").map(Number)
-    : undefined;
-
   const locations = env.HETZNER_LOCATIONS.split(",").map((l) => l.trim());
 
   for (const location of locations) {
@@ -55,7 +51,7 @@ export async function createServer(name: string, userData: string): Promise<Crea
         location,
         start_after_create: true,
         user_data: userData,
-        ...(sshKeyIds && { ssh_keys: sshKeyIds }),
+        ssh_keys: HETZNER_SSH_KEY_IDS,
       }),
     });
 
