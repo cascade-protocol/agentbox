@@ -56,7 +56,8 @@ app.use("/*", async (c, next) => {
 
   const start = Date.now();
   const stopTimer = httpRequestDuration.startTimer({ method });
-  logger.info(`--> ${method} ${path}`);
+  const hasPayment = !!(c.req.header("payment-signature") || c.req.header("x-payment"));
+  logger.info(`--> ${method} ${path}${hasPayment ? " [x402-payment]" : ""}`);
   await next();
   const status = c.res.status;
   const route = c.req.routePath || path;
