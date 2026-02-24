@@ -133,7 +133,7 @@ const x402Payment = paymentMiddleware(
 );
 
 // Skip x402 payment for operator token
-app.use("/instances", async (c, next) => {
+app.use("/instances/*", async (c, next) => {
   if (c.req.method === "POST" && c.req.path === "/instances") {
     const preflightError = getProvisioningPreflightError();
     if (preflightError) {

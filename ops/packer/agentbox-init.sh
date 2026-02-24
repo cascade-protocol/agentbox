@@ -217,7 +217,8 @@ chmod 600 /etc/systemd/system/openclaw-gateway.service.d/token.conf
 # Without this, `openclaw agent` falls back to embedded mode which doesn't start
 # plugin services (the x402 fetch interceptor never activates).
 jq --arg token "$GATEWAY_TOKEN" \
-   '.gateway.auth.token = $token | .gateway.remote.token = $token' \
+   --arg origin "https://${INSTANCE_HOSTNAME}" \
+   '.gateway.auth.token = $token | .gateway.remote.token = $token | .gateway.controlUi.allowedOrigins = [$origin]' \
    /home/openclaw/.openclaw/openclaw.json > /tmp/openclaw.json.tmp
 mv /tmp/openclaw.json.tmp /home/openclaw/.openclaw/openclaw.json
 chown openclaw:openclaw /home/openclaw/.openclaw/openclaw.json
