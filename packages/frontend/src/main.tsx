@@ -1,4 +1,4 @@
-import { backpack, createDefaultClient, phantom, solflare } from "@solana/client";
+import { backpack, createDefaultClient, metamask, phantom, solflare } from "@solana/client";
 import type { ClusterUrl } from "@solana/kit";
 import { SolanaProvider } from "@solana/react-hooks";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
@@ -31,7 +31,7 @@ const client = createDefaultClient({
   cluster: "mainnet-beta",
   rpc: rpcUrl,
   websocket: wsUrl,
-  walletConnectors: [...phantom(), ...solflare(), ...backpack()],
+  walletConnectors: [...phantom(), ...solflare(), ...backpack(), ...metamask()],
 });
 
 const rootElement = document.getElementById("app");
