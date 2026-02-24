@@ -1,16 +1,16 @@
 import { createWalletTransactionSigner, type WalletSession } from "@solana/client";
 import type { TransactionSigner } from "@solana/kit";
 import { useSplToken, useWalletSession } from "@solana/react-hooks";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   Activity,
   AlertTriangle,
   Check,
   ChevronDown,
+  ChevronRight,
   Copy,
   ExternalLink,
   Loader2,
-  Pencil,
   Plus,
   RefreshCw,
   RotateCw,
@@ -19,9 +19,8 @@ import {
   Shuffle,
   TerminalSquare,
   Trash2,
-  X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -97,106 +96,6 @@ function StatusDisplay({ instance }: { instance: Instance }) {
       {instance.status === "minting" && (
         <p className="animate-pulse text-xs text-muted-foreground">Minting identity NFT...</p>
       )}
-    </div>
-  );
-}
-
-function EditableName({
-  instance,
-  onSave,
-}: {
-  instance: Instance;
-  onSave: (id: number, name: string) => Promise<void>;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(instance.name);
-  const [saving, setSaving] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (editing) {
-      inputRef.current?.select();
-    }
-  }, [editing]);
-
-  async function save() {
-    const trimmed = value.trim();
-    if (!trimmed || trimmed === instance.name) {
-      setValue(instance.name);
-      setEditing(false);
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await onSave(instance.id, trimmed);
-      setEditing(false);
-    } catch {
-      setValue(instance.name);
-      setEditing(false);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (editing) {
-    return (
-      <div className="flex items-center gap-1">
-        <input
-          ref={inputRef}
-          className="w-full min-w-0 rounded border border-input bg-muted px-2 py-0.5 text-sm font-medium outline-none focus:ring-1 focus:ring-ring"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              void save();
-            }
-            if (e.key === "Escape") {
-              setValue(instance.name);
-              setEditing(false);
-            }
-          }}
-          disabled={saving}
-        />
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={saving}
-          className="inline-flex size-6 shrink-0 items-center justify-center rounded transition-colors hover:bg-accent"
-        >
-          <Check className="size-3 text-success" />
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setValue(instance.name);
-            setEditing(false);
-          }}
-          disabled={saving}
-          className="inline-flex size-6 shrink-0 items-center justify-center rounded transition-colors hover:bg-accent"
-        >
-          <X className="size-3 text-muted-foreground" />
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="group flex items-center gap-1">
-      <Link
-        to="/instances/$id"
-        params={{ id: String(instance.id) }}
-        className="truncate text-sm font-medium hover:underline"
-      >
-        {instance.name}
-      </Link>
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
-        className="inline-flex size-6 shrink-0 items-center justify-center rounded opacity-0 transition-colors group-hover:opacity-100 hover:bg-accent"
-      >
-        <Pencil className="size-3 text-muted-foreground" />
-      </button>
     </div>
   );
 }
@@ -543,6 +442,7 @@ function CreateInstanceDialog({
 }
 
 function Home() {
+  const navigate = useNavigate();
   const session = useWalletSession();
   const instanceCreationEnabled = env.enableInstanceCreation;
   const admin = getIsAdmin();
@@ -598,21 +498,6 @@ function Home() {
     }, intervalMs);
     return () => clearInterval(interval);
   }, [fetchInstances, hasFastPolling]);
-
-  async function handleRename(id: number, name: string) {
-    try {
-      const updated = await api.instances.update(id, { name });
-      setInstances((prev) =>
-        prev.map((instance) =>
-          instance.id === id ? { ...instance, name: updated.name } : instance,
-        ),
-      );
-      toast.success("Agent renamed");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Rename failed");
-      throw err;
-    }
-  }
 
   async function handleConfirm() {
     if (!confirmAction) {
@@ -791,6 +676,7 @@ function Home() {
                         <TableHead>Created</TableHead>
                         <TableHead>Expires</TableHead>
                         <TableHead className="pr-3 text-right">Actions</TableHead>
+                        <TableHead className="w-8" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -801,9 +687,25 @@ function Home() {
                           instance.terminalToken,
                         );
                         return (
-                          <TableRow key={instance.id}>
+                          <TableRow
+                            key={instance.id}
+                            className="group/row cursor-pointer"
+                            onClick={() =>
+                              navigate({
+                                to: "/instances/$id",
+                                params: { id: String(instance.id) },
+                              })
+                            }
+                          >
                             <TableCell className="max-w-[240px] pl-3">
-                              <EditableName instance={instance} onSave={handleRename} />
+                              <Link
+                                to="/instances/$id"
+                                params={{ id: String(instance.id) }}
+                                className="truncate text-sm font-medium transition-colors group-hover/row:text-primary"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {instance.name}
+                              </Link>
                             </TableCell>
                             <TableCell
                               title={instance.ownerWallet}
@@ -827,7 +729,12 @@ function Home() {
                               {relativeTime(instance.expiresAt)}
                             </TableCell>
                             <TableCell className="pr-3 text-right">
-                              <div className="flex items-center justify-end gap-1">
+                              <div
+                                role="toolbar"
+                                className="flex items-center justify-end gap-1"
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                              >
                                 {instance.telegramBotUsername ? (
                                   <Button
                                     variant="outline"
@@ -921,6 +828,9 @@ function Home() {
                                 </Button>
                               </div>
                             </TableCell>
+                            <TableCell className="w-8 pr-2">
+                              <ChevronRight className="size-4 text-muted-foreground/50 transition-all duration-150 group-hover/row:translate-x-0.5 group-hover/row:text-muted-foreground" />
+                            </TableCell>
                           </TableRow>
                         );
                       })}
@@ -936,16 +846,29 @@ function Home() {
                       instance.terminalToken,
                     );
                     return (
-                      <Card key={instance.id}>
+                      <Card
+                        key={instance.id}
+                        className="cursor-pointer transition-colors hover:bg-muted/30"
+                        onClick={() =>
+                          navigate({
+                            to: "/instances/$id",
+                            params: { id: String(instance.id) },
+                          })
+                        }
+                      >
                         <CardContent className="space-y-3 px-4 py-4">
                           <div className="flex items-start justify-between gap-3">
-                            <Link
-                              to="/instances/$id"
-                              params={{ id: String(instance.id) }}
-                              className="truncate text-sm font-semibold hover:underline"
-                            >
-                              {instance.name}
-                            </Link>
+                            <div className="flex min-w-0 items-center gap-1">
+                              <Link
+                                to="/instances/$id"
+                                params={{ id: String(instance.id) }}
+                                className="truncate text-sm font-semibold"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {instance.name}
+                              </Link>
+                              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50" />
+                            </div>
                             <StatusDisplay instance={instance} />
                           </div>
                           <div className="space-y-1 text-xs">
@@ -969,7 +892,12 @@ function Home() {
                               Expires {relativeTime(instance.expiresAt)}
                             </p>
                           </div>
-                          <div className="grid grid-cols-4 gap-2">
+                          <div
+                            role="toolbar"
+                            className="grid grid-cols-4 gap-2"
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                          >
                             {instance.telegramBotUsername ? (
                               <Button
                                 variant="outline"
