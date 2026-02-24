@@ -1,6 +1,6 @@
 import type { WalletSession } from "@solana/client";
 import { useDisconnectWallet, useWallet, useWalletConnection } from "@solana/react-hooks";
-import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
+import { createRootRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   ArrowRight,
   BadgeCheck,
@@ -33,6 +33,14 @@ function RootLayout() {
   const walletStatus = useWallet();
   const { connectors, connect, isReady, connecting } = useWalletConnection();
   const disconnectWallet = useDisconnectWallet();
+  const navigate = useNavigate();
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+  const inDashboard =
+    pathname === "/dashboard" ||
+    pathname.startsWith("/dashboard/") ||
+    pathname.startsWith("/instances/");
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,18 +99,20 @@ function RootLayout() {
           allowInteractiveFallback: true,
         });
         await signIn(walletSession);
+        void navigate({ to: "/dashboard" });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Wallet connection failed");
       }
     },
-    [connect, signIn],
+    [connect, navigate, signIn],
   );
 
   const logout = useCallback(() => {
     clearToken();
     setTokenState(null);
     void disconnectWallet();
-  }, [disconnectWallet]);
+    void navigate({ to: "/" });
+  }, [disconnectWallet, navigate]);
 
   const walletError =
     walletStatus.status === "error"
@@ -112,8 +122,8 @@ function RootLayout() {
       : null;
   const activeError = error ?? walletError;
 
-  // Auto-connecting or signing in - show loading
-  if (walletStatus.status === "connecting" || signingIn) {
+  // Auto-connecting or signing in - show loading (only block dashboard routes)
+  if (inDashboard && (walletStatus.status === "connecting" || signingIn)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
@@ -127,7 +137,7 @@ function RootLayout() {
   }
 
   // Authenticated - show dashboard
-  if (authenticated) {
+  if (inDashboard && authenticated) {
     return (
       <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
         <Toaster />
@@ -198,7 +208,7 @@ function RootLayout() {
   }
 
   // Wallet connected but no valid JWT - compact sign-in
-  if (session) {
+  if (inDashboard && session) {
     return (
       <div className="flex min-h-screen flex-col bg-background">
         <div className="flex flex-1 items-center justify-center p-4">
@@ -223,6 +233,49 @@ function RootLayout() {
               </Button>
               <p className="text-center text-xs text-muted-foreground">
                 Sign a message to prove wallet ownership.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (inDashboard) {
+    return (
+      <div className="flex min-h-screen flex-col bg-background">
+        <div className="flex flex-1 items-center justify-center p-4">
+          <Card className="w-full max-w-sm">
+            <CardHeader className="text-center">
+              <CardTitle className="text-xl font-semibold tracking-tight">Open Dashboard</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {activeError && <p className="text-sm text-destructive">{activeError}</p>}
+              {!isReady ? (
+                <p className="rounded-md border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
+                  Loading wallet connectors...
+                </p>
+              ) : connectors.length ? (
+                connectors.map((connector) => (
+                  <Button
+                    key={connector.id}
+                    onClick={() => void handleConnect(connector.id)}
+                    variant="outline"
+                    className="w-full"
+                    disabled={connecting}
+                  >
+                    <Wallet className="size-4" />
+                    Connect {connector.name}
+                  </Button>
+                ))
+              ) : (
+                <p className="rounded-md border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
+                  No compatible wallet detected in this browser.
+                </p>
+              )}
+              <p className="text-center text-xs text-muted-foreground">
+                Connect your wallet, sign once, and continue to your dashboard.
               </p>
             </CardContent>
           </Card>
@@ -273,7 +326,11 @@ function RootLayout() {
               </svg>
               <span className="sr-only">X</span>
             </a>
-            {env.enableInstanceCreation ? (
+            {authenticated ? (
+              <Button asChild size="sm">
+                <Link to="/dashboard">Dashboard</Link>
+              </Button>
+            ) : env.enableInstanceCreation ? (
               <Button asChild size="sm">
                 <a href="#connect-wallet">Deploy for 5 USDC</a>
               </Button>
@@ -302,7 +359,14 @@ function RootLayout() {
               </p>
             </div>
             <div className="space-y-3">
-              {env.enableInstanceCreation ? (
+              {authenticated ? (
+                <Button asChild size="lg">
+                  <Link to="/dashboard">
+                    Go to Dashboard
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </Button>
+              ) : env.enableInstanceCreation ? (
                 <Button asChild size="lg">
                   <a href="#connect-wallet">
                     Deploy for 5 USDC
@@ -499,38 +563,54 @@ function RootLayout() {
           <Card id="connect-wallet">
             <CardHeader>
               <CardTitle className="text-xl font-semibold tracking-tight">
-                Deploy your agent
+                {authenticated ? "Welcome back" : "Deploy your agent"}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {activeError && <p className="text-sm text-destructive">{activeError}</p>}
-              {!isReady ? (
-                <p className="rounded-md border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
-                  Loading wallet connectors...
-                </p>
-              ) : connectors.length ? (
-                connectors.map((connector) => (
-                  <Button
-                    key={connector.id}
-                    onClick={() => void handleConnect(connector.id)}
-                    variant="outline"
-                    className="w-full"
-                    disabled={connecting}
-                  >
-                    <Wallet className="size-4" />
-                    Connect {connector.name}
+              {authenticated && session ? (
+                <>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {truncateAddress(String(session.account.address))}
+                  </p>
+                  <Button asChild className="w-full">
+                    <Link to="/dashboard">
+                      Go to Dashboard
+                      <ArrowRight className="size-4" />
+                    </Link>
                   </Button>
-                ))
+                </>
               ) : (
-                <p className="rounded-md border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
-                  No compatible wallet detected in this browser.
-                </p>
+                <>
+                  {activeError && <p className="text-sm text-destructive">{activeError}</p>}
+                  {!isReady ? (
+                    <p className="rounded-md border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
+                      Loading wallet connectors...
+                    </p>
+                  ) : connectors.length ? (
+                    connectors.map((connector) => (
+                      <Button
+                        key={connector.id}
+                        onClick={() => void handleConnect(connector.id)}
+                        variant="outline"
+                        className="w-full"
+                        disabled={connecting}
+                      >
+                        <Wallet className="size-4" />
+                        Connect {connector.name}
+                      </Button>
+                    ))
+                  ) : (
+                    <p className="rounded-md border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
+                      No compatible wallet detected in this browser.
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {env.enableInstanceCreation
+                      ? "You'll sign a message to prove ownership, then complete a single 5 USDC transaction."
+                      : "Wallet connection is live. Instance creation is temporarily disabled while we finish the product."}
+                  </p>
+                </>
               )}
-              <p className="text-xs text-muted-foreground">
-                {env.enableInstanceCreation
-                  ? "You'll sign a message to prove ownership, then complete a single 5 USDC transaction."
-                  : "Wallet connection is live. Instance creation is temporarily disabled while we finish the product."}
-              </p>
             </CardContent>
           </Card>
         </section>
@@ -567,7 +647,7 @@ function NotFoundPage() {
         </CardHeader>
         <CardContent>
           <Button asChild>
-            <Link to="/">Go to Dashboard</Link>
+            <Link to="/dashboard">Go to Dashboard</Link>
           </Button>
         </CardContent>
       </Card>

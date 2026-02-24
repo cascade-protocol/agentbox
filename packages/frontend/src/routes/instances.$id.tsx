@@ -433,7 +433,7 @@ function InstanceDetail() {
       } else {
         await api.instances.delete(numId);
         toast.success("Instance deleted");
-        navigate({ to: "/" });
+        navigate({ to: "/dashboard" });
         return;
       }
       setConfirmAction(null);
@@ -494,7 +494,7 @@ function InstanceDetail() {
     return (
       <main className="container mx-auto flex-1 max-w-4xl px-4 py-6 md:py-8">
         <Link
-          to="/"
+          to="/dashboard"
           className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" /> Back
@@ -509,7 +509,7 @@ function InstanceDetail() {
       <div className="space-y-6">
         <div className="rounded-xl border border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur md:p-5">
           <Link
-            to="/"
+            to="/dashboard"
             className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="size-4" /> Back
@@ -842,7 +842,7 @@ function InstanceDetail() {
           signer={signer}
           open={transferOpen}
           onOpenChange={setTransferOpen}
-          onTransferred={() => navigate({ to: "/" })}
+          onTransferred={() => navigate({ to: "/dashboard" })}
         />
       )}
     </main>
