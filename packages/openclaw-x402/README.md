@@ -46,8 +46,9 @@ Add to your OpenClaw plugin config:
 |---|---|---|---|
 | `providerUrl` | Yes | - | Base URL of the x402-enabled provider to intercept |
 | `keypairPath` | No | `~/.openclaw/agentbox/wallet-sol.json` | Path to Solana keypair JSON |
-| `providerName` | No | `aimo` | Provider ID for OpenClaw registration |
+| `providerName` | No | `blockrun` | Provider ID for OpenClaw registration |
 | `rpcUrl` | No | `https://api.mainnet-beta.solana.com` | Solana RPC endpoint |
+| `models` | No | built-in list | Array of model objects from backend config. When provided, overrides the hardcoded model catalog. |
 
 ## Inference reserve
 

@@ -81,6 +81,15 @@ async function checkAtaExists(rpcUrl: string, owner: string): Promise<boolean> {
 
 const CURATED_MODELS = [
   {
+    id: "anthropic/claude-sonnet-4.6",
+    name: "Claude Sonnet 4.6",
+    reasoning: true,
+    input: ["text", "image"] as Array<"text" | "image">,
+    cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+    contextWindow: 200000,
+    maxTokens: 2048,
+  },
+  {
     id: "anthropic/claude-sonnet-4.5",
     name: "Claude Sonnet 4.5",
     reasoning: true,
@@ -128,16 +137,22 @@ const CURATED_MODELS = [
 ];
 
 export function register(api: OpenClawPluginApi): void {
-  const config = (api.pluginConfig ?? {}) as Record<string, string>;
-  const keypairPath = config.keypairPath || "/home/openclaw/.openclaw/agentbox/wallet-sol.json";
-  const providerUrl = config.providerUrl || "";
-  const providerName = config.providerName || "aimo";
-  const rpcUrl = config.rpcUrl || "https://api.mainnet-beta.solana.com";
+  const config = (api.pluginConfig ?? {}) as Record<string, unknown>;
+  const keypairPath =
+    (config.keypairPath as string) || "/home/openclaw/.openclaw/agentbox/wallet-sol.json";
+  const providerUrl = (config.providerUrl as string) || "";
+  const providerName = (config.providerName as string) || "blockrun";
+  const rpcUrl = (config.rpcUrl as string) || "https://api.mainnet-beta.solana.com";
 
   if (!providerUrl) {
     api.logger.error("openclaw-x402: providerUrl is required in plugin config");
     return;
   }
+
+  // Models come from backend config (dynamic); fall back to hardcoded list for old images
+  const configModels =
+    Array.isArray(config.models) && config.models.length > 0 ? config.models : null;
+  const models = configModels ?? CURATED_MODELS;
 
   const baseUrl = `${providerUrl.replace(/\/+$/, "")}/api/v1`;
 
@@ -149,7 +164,7 @@ export function register(api: OpenClawPluginApi): void {
       baseUrl,
       api: "openai-completions",
       authHeader: false,
-      models: CURATED_MODELS,
+      models,
     },
   });
 
@@ -638,6 +653,27 @@ export function register(api: OpenClawPluginApi): void {
                   },
                 }),
                 { status: 402, headers: { "Content-Type": "application/json" } },
+              );
+            }
+
+            // Upstream failed after payment settled (404, 500, 503 etc.)
+            // Don't retry (would trigger another payment). Return clean error
+            // instead of leaking provider's internal URLs to the user.
+            if (!response.ok && isChatCompletion) {
+              const body = await response.text();
+              ctx.logger.error(
+                `x402: upstream error ${response.status}: ${body.substring(0, 300)}`,
+              );
+
+              return new Response(
+                JSON.stringify({
+                  error: {
+                    message: `LLM provider temporarily unavailable (HTTP ${response.status}). Try again shortly.`,
+                    type: "x402_upstream_error",
+                    code: "upstream_failed",
+                  },
+                }),
+                { status: 502, headers: { "Content-Type": "application/json" } },
               );
             }
 

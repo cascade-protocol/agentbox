@@ -2,6 +2,18 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.5.0] - 2026-02-24
+
+### Added
+
+- Dynamic model catalog: plugin reads models from `pluginConfig.models` (served by backend config endpoint) instead of hardcoded list. Falls back to built-in CURATED_MODELS for backwards compatibility.
+- Upstream error handling: non-402 failures (404, 500, 503) from the LLM provider now return a clean "LLM provider temporarily unavailable" message instead of leaking internal URLs to the user.
+
+### Changed
+
+- Default `providerName` fallback changed from `aimo` to `blockrun`
+- Plugin config type widened from `Record<string, string>` to `Record<string, unknown>` to support `models` array
+
 ## [0.4.3] - 2026-02-24
 
 ### Fixed

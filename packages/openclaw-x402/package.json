@@ -1,6 +1,6 @@
 {
   "name": "openclaw-x402",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "OpenClaw plugin for x402 USDC payments on Solana",
   "type": "module",
   "sideEffects": false,

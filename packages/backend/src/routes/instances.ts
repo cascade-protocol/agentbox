@@ -11,6 +11,7 @@ import * as cloudflare from "../lib/cloudflare";
 import {
   HETZNER_SNAPSHOT_ID,
   LLM_DEFAULT_MODEL,
+  LLM_MODELS,
   LLM_PROVIDER_NAME,
   LLM_PROVIDER_URL,
 } from "../lib/constants";
@@ -550,6 +551,7 @@ instanceRoutes.get("/instances/config", async (c) => {
       name: LLM_PROVIDER_NAME,
       url: LLM_PROVIDER_URL,
       defaultModel: LLM_DEFAULT_MODEL,
+      models: LLM_MODELS,
       rpcUrl: env.SOLANA_RPC_URL || null,
     },
   });

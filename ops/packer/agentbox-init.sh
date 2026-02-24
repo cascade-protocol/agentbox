@@ -111,33 +111,32 @@ DEFAULT_MODEL=$(echo "$CONFIG_JSON" | jq -r '.provider.defaultModel // "anthropi
 SOLANA_RPC=$(echo "$CONFIG_JSON" | jq -r '.provider.rpcUrl // empty')
 TELEGRAM_BOT_TOKEN=$(echo "$CONFIG_JSON" | jq -r '.telegramBotToken // empty')
 
+# Models come from backend config; empty array triggers plugin fallback
+MODELS_JSON=$(echo "$CONFIG_JSON" | jq -c '.provider.models // []')
+
 PLUGIN_CONFIG=$(jq -n \
   --arg providerUrl "$PROVIDER_URL" \
   --arg providerName "$PROVIDER_NAME" \
   --arg rpcUrl "${SOLANA_RPC:-}" \
+  --argjson models "$MODELS_JSON" \
   '{
     providerUrl: $providerUrl,
     providerName: $providerName,
-    keypairPath: "/home/openclaw/.openclaw/agentbox/wallet-sol.json"
+    keypairPath: "/home/openclaw/.openclaw/agentbox/wallet-sol.json",
+    models: $models
   } + (if $rpcUrl != "" then {rpcUrl: $rpcUrl} else {} end)')
 
 # OpenClaw's registerProvider() (plugin API) only handles auth metadata -
 # models must also be in models.providers for the model resolution system.
 # apiKey is a dummy value: the x402 fetch patch strips Authorization headers
 # and handles payment automatically.
-PROVIDER_DEF=$(jq -n \
+PROVIDER_DEF=$(echo "$MODELS_JSON" | jq \
   --arg baseUrl "${PROVIDER_URL%/}/api/v1" \
   '{
     baseUrl: $baseUrl,
     apiKey: "x402-payment",
     api: "openai-completions",
-    models: [
-      {id: "anthropic/claude-sonnet-4.5", name: "Claude Sonnet 4.5", maxTokens: 2048},
-      {id: "anthropic/claude-opus-4.6", name: "Claude Opus 4.6", maxTokens: 2048},
-      {id: "openai/gpt-5.2", name: "GPT-5.2", maxTokens: 2048},
-      {id: "moonshot/kimi-k2.5", name: "Kimi K2.5", maxTokens: 4096},
-      {id: "deepseek/deepseek-v3.2", name: "DeepSeek V3.2", maxTokens: 4096}
-    ]
+    models: [.[] | {id: .id, name: .name, maxTokens: .maxTokens}]
   }')
 
 jq --argjson pluginConfig "$PLUGIN_CONFIG" \

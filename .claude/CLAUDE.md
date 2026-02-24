@@ -28,9 +28,9 @@
 
 ## Baked-in Constants
 - Values that are source-of-truth in the codebase (not env-overridable) live in `packages/backend/src/lib/constants.ts`. Import from there, never add these to env.ts or .env files.
-- Current constants: `HETZNER_SNAPSHOT_ID`, `LLM_PROVIDER_URL`, `LLM_PROVIDER_NAME`, `LLM_DEFAULT_MODEL`
+- Current constants: `HETZNER_SNAPSHOT_ID`, `LLM_PROVIDER_URL`, `LLM_PROVIDER_NAME`, `LLM_DEFAULT_MODEL`, `LLM_MODELS`
 - After `just build-image`, update `HETZNER_SNAPSHOT_ID` in `constants.ts` (not env.ts)
-- LLM provider/model changes are code changes in `constants.ts` + matching fallback defaults in `agentbox-init.sh`
+- LLM provider/model changes (URL, name, default model, model catalog) are ONLY `constants.ts` changes - no image rebuild needed. The backend serves these dynamically to VMs via the config endpoint.
 
 ## Logging (Backend)
 - Use the Winston logger from `packages/backend/src/logger.ts` for all backend logging. Never use `console.log`/`console.error` directly.
@@ -103,18 +103,48 @@
 - The VM calls back to the local backend through the tunnel - no need to deploy to test provisioning flow
 
 ## Release & Deploy
-- **When ops/packer files are changed** (setup.sh, agentbox-init.sh, agentbox.pkr.hcl), the image MUST be built BEFORE committing:
-  1. `just build-image` - builds new snapshot with current ops scripts
-  2. Update `HETZNER_SNAPSHOT_ID` in `packages/backend/src/lib/constants.ts` with the new snapshot ID
-  3. `pnpm check` - verify everything passes
-  4. Commit & push (now the committed snapshot ID matches the built image)
-  5. `just deploy`
-- **Why this order matters:** The backend provisions VMs from the snapshot ID in constants.ts. If we commit/deploy first with a stale snapshot ID, new VMs get an old image missing the ops changes. The image must exist and be referenced correctly at deploy time.
-- **When only backend/frontend code changes** (no ops files): commit, push, `just deploy` is sufficient
-- Validate: `pnpm check` (biome + type-check)
-- Commit: conventional commit on `main`
-- Push: `git push`
-- Deploy: `just deploy` (see `justfile` for details)
+
+### CRITICAL: When does the image need rebuilding?
+
+**Image rebuild required** (full cycle below) when ANY of these files changed:
+- `ops/packer/setup.sh` - packages/software installed on the image
+- `ops/packer/agentbox-init.sh` - boot-time init script
+- `ops/packer/agentbox.pkr.hcl` - Packer config
+- `packages/openclaw-x402/src/**` - plugin source code (baked into image as binary)
+
+**NO image rebuild needed** for:
+- LLM provider/model changes (URL, name, default model, model catalog) - just edit `constants.ts`, these are served dynamically to VMs via the config endpoint
+- Backend/frontend code changes - just commit + deploy
+- Environment variable changes
+
+### Deploy with image rebuild (ops/plugin changes)
+
+This sequence is MANDATORY. Do NOT skip steps. Do NOT reorder.
+
+**If plugin source (`packages/openclaw-x402/src/**`) changed, publish it first:**
+1. Bump `version` in `packages/openclaw-x402/package.json`
+2. Update `packages/openclaw-x402/CHANGELOG.md` with new version entry
+3. Update `packages/openclaw-x402/README.md` if the changes affect config, commands, or behavior
+4. `pnpm check` - verify everything passes
+5. `pnpm --filter openclaw-x402 build`
+6. Commit & push ONLY plugin files (`packages/openclaw-x402/` - source, package.json, CHANGELOG, README)
+7. `cd packages/openclaw-x402 && npm publish`
+8. The image build pulls `openclaw-x402@latest` from npm - if you skip publish, the image bakes the OLD plugin
+
+**Then build the image:**
+9. `just build-image` - builds new snapshot with current init script + published plugin
+10. Update `HETZNER_SNAPSHOT_ID` in `packages/backend/src/lib/constants.ts` with the new snapshot ID from build output
+11. `pnpm check` - verify everything passes
+12. Commit & push remaining changes (backend, ops, constants, docs)
+13. `just deploy`
+
+**Why this order matters:** The image pulls the plugin from npm and bakes it in. The backend provisions VMs from the snapshot ID in constants.ts. If any step is skipped or reordered, new VMs get stale code.
+
+### Deploy without image rebuild (backend/frontend/constants only)
+
+1. `pnpm check`
+2. Commit & push
+3. `just deploy`
 
 ## Hetzner Operations
 - Use `hcloud server ssh <server-name> '<command>'` to SSH into instances - never raw `ssh root@<ip>` (avoids known_hosts conflicts when IPs get reused across VMs)
