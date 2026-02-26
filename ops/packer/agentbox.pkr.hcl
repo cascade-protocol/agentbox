@@ -64,7 +64,7 @@ build {
   }
 
   # Upload workspace seed file (AGENTS.md) for the OpenClaw workspace.
-  # Skills are installed from ClawHub at build time, not uploaded from local.
+  # Skills are loaded from the agentbox git repo cloned at build time.
   provisioner "file" {
     source      = "workspace/AGENTS.md"
     destination = "/tmp/agentbox-AGENTS.md"

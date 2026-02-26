@@ -26,7 +26,7 @@ Caddy routes HTTPS traffic to the gateway and terminal. Do NOT modify Caddy or s
 | OpenClaw config | `~/.openclaw/openclaw.json` |
 | Solana wallet | `~/.openclaw/agentbox/wallet-sol.json` |
 | Workspace | `~/.openclaw/workspace/` |
-| Skills | `~/.openclaw/workspace/skills/` |
+| Skills (git repo) | `~/agentbox/skills/` |
 | x402 plugin | `~/.openclaw/extensions/openclaw-x402/` |
 | Gateway logs | `~/.openclaw/logs/` |
 
@@ -59,17 +59,17 @@ openclaw status
 
 To get the latest AgentBox skills:
 ```bash
-clawhub update --all
+git -C ~/agentbox pull
 ```
 
-This updates all installed skills from ClawHub. Changes take effect on the next new session.
+Skills are loaded from `~/agentbox/skills/` via `skills.load.extraDirs`. Changes take effect on the next new session.
 
 ## Troubleshooting
 
 - **Gateway won't start**: Check `openclaw status` and gateway logs at `~/.openclaw/logs/`
 - **x402 payments failing**: Check USDC balance (see above). Wallet needs USDC on Solana mainnet.
 - **Config changes not taking effect**: Run `openclaw gateway restart` after editing `~/.openclaw/openclaw.json`
-- **Skills not showing**: Run `clawhub list` to see installed skills. Run `clawhub update --all` to refresh.
+- **Skills not showing**: Check `ls ~/agentbox/skills/`. Run `git -C ~/agentbox pull` to refresh.
 
 ## Important rules
 
