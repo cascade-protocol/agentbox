@@ -65,7 +65,15 @@ export async function withVM<T>(
     };
 
     const restart = async (service: string): Promise<void> => {
-      const { code, stderr } = await exec(`systemctl restart ${service}`);
+      // Gateway is a user-level systemd service (openclaw user); other services are system-level.
+      let cmd: string;
+      if (service === "openclaw-gateway") {
+        const rtdir = "/run/user/$(id -u openclaw)";
+        cmd = `sudo -u openclaw XDG_RUNTIME_DIR=${rtdir} DBUS_SESSION_BUS_ADDRESS=unix:path=${rtdir}/bus systemctl --user restart ${service}`;
+      } else {
+        cmd = `systemctl restart ${service}`;
+      }
+      const { code, stderr } = await exec(cmd);
       if (code !== 0) throw new Error(`Failed to restart ${service}: ${stderr}`);
     };
 

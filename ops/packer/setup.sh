@@ -93,9 +93,19 @@ fi
 echo "openclaw ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/openclaw
 chmod 440 /etc/sudoers.d/openclaw
 
+# Enable lingering so user-level systemd services persist without a login session.
+# This allows `openclaw gateway restart` (which uses systemctl --user) to work.
+loginctl enable-linger openclaw
+
 # Configure npm per-user global directory (openclaw owns its packages, no root for npm)
 su - openclaw -c "mkdir -p /home/openclaw/.npm-global && npm config set prefix /home/openclaw/.npm-global"
 echo 'export PATH="/home/openclaw/.npm-global/bin:$PATH"' >> /home/openclaw/.profile
+
+# Set XDG_RUNTIME_DIR so `openclaw gateway restart` (systemctl --user) works in
+# all shell contexts: login shells (SSH), interactive non-login (ttyd terminal).
+# .profile covers login shells; .bashrc covers ttyd (interactive non-login).
+echo 'export XDG_RUNTIME_DIR="/run/user/$(id -u)"' >> /home/openclaw/.profile
+echo 'export XDG_RUNTIME_DIR="/run/user/$(id -u)"' >> /home/openclaw/.bashrc
 
 # --- Install OpenClaw (npm, openclaw user) ---
 #
@@ -199,8 +209,11 @@ echo "    create-sati-agent $(create-sati-agent --version 2>/dev/null || echo in
 
 # --- Pre-install systemd services ---
 #
-# Unit files written at build time. Only the gateway token (per-instance) is
-# injected at boot via a systemd drop-in. ttyd is pre-enabled (no runtime deps).
+# Gateway is a USER-LEVEL systemd service (~/.config/systemd/user/) so that
+# OpenClaw's built-in `openclaw gateway restart` (which uses systemctl --user)
+# works on the VM. Requires loginctl enable-linger (set above when creating user).
+#
+# ttyd stays system-level (not managed by OpenClaw CLI).
 # Gateway is NOT pre-enabled - agentbox-init.sh enables it after writing the token.
 
 echo ""
@@ -208,12 +221,14 @@ echo "==> Installing systemd services"
 
 OPENCLAW_BIN=$(which openclaw)
 
-# Gateway: token injected at boot via drop-in Environment= directive.
+# Gateway (user-level): token injected at boot via drop-in Environment= directive.
 # KillMode=process prevents child processes from blocking systemd shutdown.
 # OPENCLAW_GATEWAY_PORT env is needed because gateway.port config is IGNORED
 # at runtime - only the env var or CLI flag takes effect.
 # See: https://github.com/openclaw/openclaw/issues/7626
-cat > /etc/systemd/system/openclaw-gateway.service << EOF
+GATEWAY_UNIT_DIR=/home/openclaw/.config/systemd/user
+mkdir -p "$GATEWAY_UNIT_DIR"
+cat > "$GATEWAY_UNIT_DIR/openclaw-gateway.service" << EOF
 [Unit]
 Description=OpenClaw Gateway (AgentBox)
 After=network-online.target
@@ -221,7 +236,6 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=openclaw
 WorkingDirectory=/home/openclaw
 ExecStart=${OPENCLAW_BIN} gateway run --port 18789 --bind loopback
 Restart=always
@@ -232,12 +246,13 @@ Environment=OPENCLAW_GATEWAY_PORT=18789
 Environment=NODE_OPTIONS=--max-old-space-size=2048
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 EOF
 
-mkdir -p /etc/systemd/system/openclaw-gateway.service.d
+mkdir -p "$GATEWAY_UNIT_DIR/openclaw-gateway.service.d"
+chown -R openclaw:openclaw /home/openclaw/.config/systemd
 
-# ttyd web terminal - pre-enabled, no runtime config needed
+# ttyd web terminal (system-level) - pre-enabled, no runtime config needed
 cat > /etc/systemd/system/ttyd.service << 'EOF'
 [Unit]
 Description=ttyd web terminal (AgentBox)

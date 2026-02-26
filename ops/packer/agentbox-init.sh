@@ -51,6 +51,37 @@ report_step() {
 
 report_step "configuring"
 
+# --- Helper: run systemctl --user as the openclaw user ---
+#
+# The gateway is a user-level systemd service (installed to ~/.config/systemd/user/).
+# This script runs as root (cloud-init), so we need XDG_RUNTIME_DIR and
+# DBUS_SESSION_BUS_ADDRESS to reach the openclaw user's systemd manager.
+# Linger is enabled in the golden image, so the user session starts at boot.
+
+OPENCLAW_UID=$(id -u openclaw)
+OPENCLAW_RUNTIME_DIR="/run/user/$OPENCLAW_UID"
+
+oc_systemctl() {
+  sudo -u openclaw \
+    XDG_RUNTIME_DIR="$OPENCLAW_RUNTIME_DIR" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$OPENCLAW_RUNTIME_DIR/bus" \
+    systemctl --user "$@"
+}
+
+# Wait for the user systemd manager (started by linger) to be fully ready.
+# Cloud-init and user@.service have no guaranteed ordering, so we wait for
+# the private socket that systemctl --user actually connects to.
+echo "Waiting for openclaw user session..."
+for i in $(seq 1 30); do
+  [[ -S "$OPENCLAW_RUNTIME_DIR/systemd/private" ]] && break
+  if [[ "$i" -eq 30 ]]; then
+    echo "ERROR: openclaw user systemd manager not ready after 30s"
+    exit 1
+  fi
+  sleep 1
+done
+echo "User session ready"
+
 # --- Fetch dynamic config from backend ---
 
 echo "Fetching config from backend..."
@@ -151,12 +182,6 @@ jq --argjson pluginConfig "$PLUGIN_CONFIG" \
    }
    | .plugins.entries.telegram.enabled = true
    | .agents.defaults.model.primary = ($providerName + "/" + $defaultModel)
-   | .agents.defaults.models = (
-       [$providerDef.models[] | {
-         key: ($providerName + "/" + .id),
-         value: {alias: .name}
-       }] | from_entries
-     )
    | .models.providers[$providerName] = $providerDef
    | if $telegramBotToken != "" then
        .channels.telegram = {
@@ -207,11 +232,12 @@ echo "Solana wallet: $SOLANA_WALLET_ADDRESS"
 GATEWAY_TOKEN=$(openssl rand -hex 32)
 echo "Gateway token generated"
 
-cat > /etc/systemd/system/openclaw-gateway.service.d/token.conf << EOF
+GATEWAY_DROPIN_DIR=/home/openclaw/.config/systemd/user/openclaw-gateway.service.d
+cat > "$GATEWAY_DROPIN_DIR/token.conf" << EOF
 [Service]
 Environment=OPENCLAW_GATEWAY_TOKEN=${GATEWAY_TOKEN}
 EOF
-chmod 600 /etc/systemd/system/openclaw-gateway.service.d/token.conf
+chown openclaw:openclaw "$GATEWAY_DROPIN_DIR/token.conf"
 
 # Write token into openclaw.json so the CLI can authenticate against the gateway.
 # Without this, `openclaw agent` falls back to embedded mode which doesn't start
@@ -231,9 +257,9 @@ if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
   echo "Cleared any stale Telegram webhook"
 fi
 
-systemctl daemon-reload
-systemctl enable openclaw-gateway
-systemctl start openclaw-gateway
+oc_systemctl daemon-reload
+oc_systemctl enable openclaw-gateway
+oc_systemctl start openclaw-gateway
 echo "Gateway starting (cold start ~72s on cx23)..."
 report_step "openclaw_ready"
 
@@ -251,7 +277,7 @@ report_step "services_starting"
 echo "Waiting for OpenClaw gateway..."
 HEALTHY=false
 for i in $(seq 1 60); do
-  if systemctl is-active --quiet openclaw-gateway && ss -ltn '( sport = :18789 )' | grep -q 18789; then
+  if oc_systemctl is-active --quiet openclaw-gateway && ss -ltn '( sport = :18789 )' | grep -q 18789; then
     echo "OpenClaw gateway healthy on :18789"
     HEALTHY=true
     break
