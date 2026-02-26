@@ -130,9 +130,12 @@ echo "    OpenClaw $(openclaw --version) at $(which openclaw)"
 
 echo ""
 echo "==> Pre-configuring OpenClaw gateway"
-mkdir -p /home/openclaw/.openclaw/devices /home/openclaw/openclaw
+mkdir -p /home/openclaw/.openclaw/devices
 cat > /home/openclaw/.openclaw/openclaw.json << 'OCEOF'
 {
+  "agent": {
+    "skipBootstrap": true
+  },
   "gateway": {
     "mode": "local",
     "port": 18789,
@@ -149,7 +152,6 @@ cat > /home/openclaw/.openclaw/openclaw.json << 'OCEOF'
   },
   "agents": {
     "defaults": {
-      "workspace": "/home/openclaw/openclaw",
       "timeoutSeconds": 120,
       "compaction": {
         "mode": "default",
@@ -167,13 +169,24 @@ cat > /home/openclaw/.openclaw/openclaw.json << 'OCEOF'
 }
 OCEOF
 
+# --- ClawHub CLI (skills registry) ---
+#
+# Used to install and update AgentBox skills from ClawHub.
+# Separate npm package from OpenClaw - must be installed explicitly.
+
+echo ""
+echo "==> Installing ClawHub CLI"
+su - openclaw -c "npm install -g clawhub"
+ln -sf /home/openclaw/.npm-global/bin/clawhub /usr/local/bin/clawhub
+echo "    ClawHub $(clawhub -V 2>/dev/null || echo installed)"
+
 # --- x402 payment plugin ---
 # Patches globalThis.fetch to handle x402 USDC payments on Solana for LLM inference.
 # Published as `openclaw-x402` on npm. Installed directly into the extensions directory
 # where OpenClaw auto-discovers plugins (no load.paths config needed).
 echo ""
 echo "==> Installing x402 payment plugin"
-chown -R openclaw:openclaw /home/openclaw/.openclaw /home/openclaw/openclaw
+chown -R openclaw:openclaw /home/openclaw/.openclaw
 PLUGIN_DIR=/home/openclaw/.openclaw/extensions/openclaw-x402
 su - openclaw -c "
   mkdir -p $PLUGIN_DIR
@@ -183,6 +196,24 @@ su - openclaw -c "
   cd $PLUGIN_DIR && npm install --omit=dev
 "
 echo "    x402 plugin installed"
+
+# --- Seed workspace + install skills from ClawHub ---
+#
+# OpenClaw defaults workspace to ~/.openclaw/workspace (no override needed).
+# AGENTS.md is uploaded by Packer file provisioner to /tmp/agentbox-AGENTS.md.
+# Skills are pulled from ClawHub so they can be updated without image rebuild.
+
+echo ""
+echo "==> Seeding workspace and installing skills"
+WORKSPACE=/home/openclaw/.openclaw/workspace
+su - openclaw -c "mkdir -p $WORKSPACE/skills"
+cp /tmp/agentbox-AGENTS.md $WORKSPACE/AGENTS.md
+chown openclaw:openclaw $WORKSPACE/AGENTS.md
+
+su - openclaw -c "cd $WORKSPACE && clawhub install agentbox --force"
+su - openclaw -c "cd $WORKSPACE && clawhub install agentbox-openrouter --force"
+su - openclaw -c "cd $WORKSPACE && clawhub install agentbox-twitter --force"
+echo "    Workspace seeded, skills installed"
 
 # --- Solana CLI + SATI identity CLI ---
 #

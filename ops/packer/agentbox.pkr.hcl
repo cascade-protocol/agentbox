@@ -25,7 +25,7 @@ variable "server_type" {
 
 variable "image_version" {
   type    = string
-  default = "40"
+  default = "42"
 }
 
 source "hcloud" "agentbox" {
@@ -61,6 +61,13 @@ build {
   provisioner "file" {
     source      = "agentbox-init.sh"
     destination = "/tmp/agentbox-init.sh"
+  }
+
+  # Upload workspace seed file (AGENTS.md) for the OpenClaw workspace.
+  # Skills are installed from ClawHub at build time, not uploaded from local.
+  provisioner "file" {
+    source      = "workspace/AGENTS.md"
+    destination = "/tmp/agentbox-AGENTS.md"
   }
 
   # Build-time setup: installs Node.js, preloads/builds OpenClaw source,

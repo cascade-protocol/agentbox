@@ -1,5 +1,5 @@
 ---
-name: twitter
+name: agentbox-twitter
 description: "Twitter/X research via paid API: search tweets with 50+ operators, fetch tweets with threads/replies/quotes, get user profiles with tweets/followers/following. Uses x402_payment tool for automatic USDC micropayments ($0.003/call). Use when: (1) searching tweets by keyword, user, or advanced operators, (2) fetching specific tweets by ID/URL with context, (3) looking up user profiles and their activity."
 metadata: {"openclaw": {"emoji": "🐦", "requires": {"bins": ["openclaw"]}}}
 allowed-tools: ["x402_payment"]
