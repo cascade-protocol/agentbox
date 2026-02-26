@@ -250,7 +250,7 @@ WantedBy=default.target
 EOF
 
 mkdir -p "$GATEWAY_UNIT_DIR/openclaw-gateway.service.d"
-chown -R openclaw:openclaw /home/openclaw/.config/systemd
+chown -R openclaw:openclaw /home/openclaw/.config
 
 # ttyd web terminal (system-level) - pre-enabled, no runtime config needed
 cat > /etc/systemd/system/ttyd.service << 'EOF'

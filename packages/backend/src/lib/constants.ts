@@ -1,10 +1,10 @@
 /** Hetzner snapshot ID for VM provisioning. Update after `just build-image`. */
-export const HETZNER_SNAPSHOT_ID = "361674744";
+export const HETZNER_SNAPSHOT_ID = "361682478";
 
 /** LLM provider defaults - baked into codebase, not env-overridable. */
 export const LLM_PROVIDER_URL = "https://sol.blockrun.ai";
 export const LLM_PROVIDER_NAME = "blockrun";
-export const LLM_DEFAULT_MODEL = "anthropic/claude-sonnet-4.6";
+export const LLM_DEFAULT_MODEL = "moonshot/kimi-k2.5";
 
 /** Model catalog served to VMs. Change here to add/remove models without image rebuild. */
 export const LLM_MODELS = [
