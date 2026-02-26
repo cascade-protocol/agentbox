@@ -1,5 +1,5 @@
 /** Hetzner snapshot ID for VM provisioning. Update after `just build-image`. */
-export const HETZNER_SNAPSHOT_ID = "361839116";
+export const HETZNER_SNAPSHOT_ID = "361861733";
 
 /** LLM provider defaults - baked into codebase, not env-overridable. */
 export const LLM_PROVIDER_URL = "https://sol.blockrun.ai";

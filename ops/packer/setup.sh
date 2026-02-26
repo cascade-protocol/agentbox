@@ -133,9 +133,6 @@ echo "==> Pre-configuring OpenClaw gateway"
 mkdir -p /home/openclaw/.openclaw/devices
 cat > /home/openclaw/.openclaw/openclaw.json << 'OCEOF'
 {
-  "agent": {
-    "skipBootstrap": true
-  },
   "gateway": {
     "mode": "local",
     "port": 18789,
@@ -157,6 +154,7 @@ cat > /home/openclaw/.openclaw/openclaw.json << 'OCEOF'
   },
   "agents": {
     "defaults": {
+      "skipBootstrap": true,
       "timeoutSeconds": 120,
       "compaction": {
         "mode": "default",
