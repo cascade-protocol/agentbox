@@ -1,320 +1,263 @@
 # OpenClaw Model Guide for AgentBox
 
-> Research compiled 2026-02-24 from OpenClaw source code, Blockrun model catalog, GitHub discussions, Reddit community (r/openclaw, r/clawdbot, r/myclaw, r/ClaudeAI, r/ClaudeCode, r/codex, r/LocalLLaMA), and Twitter/X discourse. All claims are sourced from sustained multi-week usage reports, not first impressions.
+> Updated 2026-03-04. Sources: OpenClaw source (`src/security/audit-extra.sync.ts`), ClawRouter model catalog, SWE-rebench, FoodTruck Bench, BridgeBench, LM Arena, x402 community, Reddit (r/openclaw, r/ClaudeCode, r/ClaudeAI, r/LocalLLaMA), Twitter/X.
+
+## What's Live
+
+Source of truth: `packages/backend/src/lib/constants.ts`
+
+| Provider | Model | ID | Max Out | Per-Call Cost | Role |
+|----------|-------|----|---------|---------------|------|
+| Blockrun | **Claude Opus 4.6** | `anthropic/claude-opus-4.6` | 2048 | ~$0.051 | Brain |
+| Blockrun | **GPT-5.2** | `openai/gpt-5.2` | 2048 | ~$0.029 | Brain (budget) |
+| Blockrun | **Kimi K2.5** | `moonshot/kimi-k2.5` | 4096 | ~$0.012 | **Default** worker |
+| Blockrun | DeepSeek V3.2 | `deepseek/deepseek-chat` | 4096 | ~$0.002 | Ultra-cheap worker |
+| Aimo | **Claude Sonnet 4.5** | `anthropic/claude-sonnet-4.5` | 2048 | ~$0.031 | Mid-price brain |
+| Aimo | Claude Opus 4.6 | `anthropic/claude-opus-4.6` | 2048 | ~$0.051 | Brain (2x Blockrun price) |
+| Aimo | GPT-5.2 | `openai/gpt-5.2` | 2048 | ~$0.029 | Brain |
+| Aimo | Kimi K2.5 | `moonshot/kimi-k2.5` | 4096 | ~$0.012 | Worker |
+| Aimo | DeepSeek V3.2 | `deepseek/deepseek-v3.2` | 4096 | ~$0.002 | Ultra-cheap worker |
+| Aimo | GLM-5 | `zai-org/glm-5` | 4096 | ~$0.012 | Experimental |
+| Aimo | GLM-4.7 Flash | `zai-org/glm-4.7-flash` | 4096 | ~$0.002 | Experimental |
+
+Per-call costs are approximate (input context varies). Sonnet 4.6 is available on Blockrun but intentionally disabled - see Sonnet 4.6 notes below.
+
+## Model Tiers
+
+"Brain" = can independently orchestrate multi-tool workflows, recover from errors, chain tools correctly. "Worker" = executes well-scoped tasks but breaks on complex autonomous chains.
+
+### Brains
+
+| Model | Provider | $/M (in/out) | SWE-rebench | FoodTruck | Why |
+|-------|----------|-------------|-------------|-----------|-----|
+| **Claude Opus 4.6** | Blockrun | $5/$25 | 52.9% (#1) | $49.5K (#1) | Best agentic model. Multi-layer bug tracing, zero truncation issues, best prompt-injection resistance |
+| **GPT-5.2 (xhigh)** | Blockrun | $1.75/$14 | 51.7% (#2) | $28K (#2) | Near-Opus on decontaminated benchmarks at 65% lower cost. Most token-efficient (14-17 steps median). Slow (5-10 min/task) |
+| **Claude Sonnet 4.5** | Aimo only | $3/$15 | 47.1% (#6) | ~$1.4K | Best value brain. Token-efficient, reliable instruction following. Community consensus "sweet spot for code" (r/openclaw). Not on Blockrun |
+
+### Workers
+
+| Model | Provider | $/M (in/out) | SWE-rebench | Best For |
+|-------|----------|-------------|-------------|----------|
+| **Kimi K2.5** | Both | $0.60/$3.00 | 37.9% | Default worker. ~3x cheaper than Opus per task. #1 most-used on OpenClaw (26.6B tokens). Ceiling is Sonnet 4.5 level |
+| **DeepSeek V3.2** | Both | $0.28/$0.42 | n/a | Cheapest real model. Simple queries, non-critical tasks |
+| **GPT-5.2 Codex** | Blockrun | $1.75/$14 | 45.0% | Implementation worker. Faster than base GPT-5.2 but shallower. Good for executing plans made by a brain |
+| **Gemini 3 Pro** | Blockrun | $2.00/$12 | 46.7% | Long-context reads (1M). Equivalent to Sonnet 4.6 on FoodTruck at 5.2x lower cost. NOT a brain - fails on autonomous loops |
+
+### Not Recommended as Brains
+
+| Model | Issue |
+|-------|-------|
+| **Sonnet 4.6** | Verbose: 3.4x more tokens than 4.5 on equivalent tasks. FoodTruck: costs 3x Opus/run, delivers 3x worse results. See detailed notes below |
+| **GPT-5.2 Codex** | Implementation worker, not planner. Shallow reasoning on complex tasks |
+| **Kimi K2.5** | Ceiling is Sonnet 4.5, not Opus. Uses 3x tokens as Opus on same tasks |
+| **Gemini (all)** | Fast readers, not autonomous thinkers. Gemini 3 Flash loops infinitely on FoodTruck (100% of runs) |
+| **MiniMax M2.5** | Structurally slow (mandatory thinking tokens + provider speed lottery 38-380 t/s). 10% on HumanEval+ when quantized |
+| **GLM-5** | FoodTruck: went bankrupt Day 28. Wrote 123 memory entries, acted on none. SWE-rebench 42.1% |
+
+## Benchmarks
+
+### SWE-rebench (decontaminated, Jan 2026 tasks)
+
+The most credible coding benchmark - uses continuously refreshed tasks from the prior month to prevent training contamination.
+
+| Model | Resolved | Pass@5 | Cost/Problem |
+|-------|----------|--------|-------------|
+| Claude Code (Opus 4.6) | **52.9%** | **70.8%** | $3.50 |
+| Claude Opus 4.6 | 51.7% | 58.3% | $0.93 |
+| GPT-5.2 xhigh | 51.7% | 58.3% | $1.28 |
+| GPT-5.2 medium | 51.0% | 60.4% | $0.76 |
+| Claude Sonnet 4.5 | 47.1% | 60.4% | $0.94 |
+| Gemini 3 Pro | 46.7% | 58.3% | $0.59 |
+| Gemini 3 Flash | 46.7% | 54.2% | $0.32 |
+| GPT-5.2 Codex | 45.0% | 54.2% | $0.46 |
+| Kimi K2 Thinking | 43.8% | 58.3% | $0.42 |
+| GLM-5 | 42.1% | 50.0% | $0.45 |
+| Qwen3-Coder-Next (3B active) | 40.0% | 64.6% | $0.49 |
+| MiniMax M2.5 | 39.6% | 56.3% | $0.09 |
+| Kimi K2.5 | 37.9% | 50.0% | $0.18 |
+
+Note: Sonnet 4.6, GPT-5.3 Codex, and Gemini 3.1 Pro are NOT yet evaluated on SWE-rebench.
+
+### FoodTruck Bench (agentic business simulation)
+
+Multi-step agentic benchmark over 30 simulated days. Tests demand forecasting, resource optimization, and long-horizon planning. 12 models tested, 8 went bankrupt.
+
+| Model | Revenue | API Cost/Run | Notes |
+|-------|---------|-------------|-------|
+| Claude Opus 4.6 | $49,519 | $26.50 | Clear #1. Observe-learn-adapt loop |
+| GPT-5.2 | $28,000 | - | Solid #2. Reliable |
+| Claude Sonnet 4.6 | $17,426 | $22.99 | 85% of Opus cost, 35% of Opus results |
+| Gemini 3 Pro | $17,236 | $4.38 | Same results as Sonnet 4.6 at 5.2x lower cost |
+| Claude Sonnet 4.5 | ~$1,400 | $7.75 | Barely survived |
+| GLM-5 | Bankrupt | - | Day 28. Zero adaptation despite self-awareness |
+| DeepSeek V3.2 | Bankrupt | - | Day 22 |
+
+### BridgeBench (vibe coding, Feb 2026)
+
+| Model | Score |
+|-------|-------|
+| Claude Opus 4.6 | 60.1 |
+| MiniMax M2.5 | 59.7 |
+| GPT-5.2 Codex | 58.3 |
+| Kimi K2.5 | 50.1 |
+| GLM-5 | 41.5 (only 57% task completion) |
 
-## Model Classification: Brains vs Workers
+### LM Arena Coding ELO (Feb 2026)
 
-The most important distinction for OpenClaw agentic use. "Brains" can independently orchestrate complex multi-tool workflows, take initiative, recover from errors, and chain tools correctly. "Workers" can execute well-scoped tasks but fall apart on complex multi-step chains.
-
-### Brains (can run autonomous agentic loops)
+| Rank | Model | ELO |
+|------|-------|-----|
+| 1 | Claude Opus 4.6 (thinking) | 1562 |
+| 2 | Claude Opus 4.6 | 1538 |
+| 3 | Claude Opus 4.5 (thinking) | 1537 |
+| 4 | Kimi K2.5 Instant | 1523 |
+| 5 | Gemini 3 Pro | 1518 |
 
-Only three models qualify based on sustained community validation:
+### SWE-bench Verified (contamination-prone, use with caution)
 
-| Model | Availability | Cost (in/out $/M) | Strengths | Weaknesses |
-|-------|-------------|-------------------|-----------|------------|
-| **Claude Opus 4.6** | Blockrun | $5/$25 | Undisputed #1. Leads every agentic benchmark (SWE-rebench 52.9%, FoodTruck $49K). Multi-layer bug tracing across 3+ abstraction layers. Best prompt-injection resistance | ~$5/ticket. Quality fluctuates at peak hours. "Confident wrong loops" (CSS !important spirals). Uncontrolled filesystem exploration burns limits despite CLAUDE.md constraints |
-| **Claude Sonnet 4.5** | **aimo.network only** (not on Blockrun) | $3/$15 | Best value brain. Reliable instruction following. Token-efficient. r/openclaw consensus "real sweet spot for code" | Not available on Blockrun. Older gen - may be deprecated |
-| **GPT-5.2 (base, xhigh)** | Blockrun | $1.75/$14 | "Bulletproof" - zero task redos reported. Best one-pass correctness. Handles 1.5M LoC legacy codebases. Most token-efficient (14-17 steps median) | Slow (5-10 min/task). Arrogant/adversarial personality in chat mode (doesn't affect agent use). Hallucinates when given file attachments in chat mode |
-
-### NOT Brains (despite marketing/hype)
-
-| Model | Why Not |
-|-------|---------|
-| **Claude Sonnet 4.6** | Verbose token furnace. Averages 22K output tokens/day in agentic sim where other models write ~1K. Costs nearly as much as Opus in practice due to verbosity. Instruction following regressed from 4.5 (documented: ignores explicit style constraints 4.5 obeyed). "Lazy search" pattern - skips web search and hallucinates instead. FoodTruck bench: only 10% cheaper than Opus per run but delivers 3x worse results ($17.4K vs $49.5K) |
-| **GPT-5.2 Codex** | Implementation worker, not a planner. "Hammer it in" fixes that break other things. "Incredibly lazy" on complex/domain-specific tasks - "does 1 out of 10 tasks then calls it a day". Good server-side compaction but shallow reasoning. Community workflow: plan with GPT-5.2 base, implement with Codex |
-| **Kimi K2.5** | Ceiling is Sonnet 4.5 level - "roughly on par with Sonnet 4.5... definitely not Opus level in terms of agentic function" (136 upvotes). Uses 3x the tokens as Opus for same tasks. On reasoning-heavy tasks can be 89% MORE expensive than Opus. Absent from FoodTruck agentic benchmark entirely. Good budget default, not a brain |
-| **Gemini (all variants)** | Fast readers, not autonomous thinkers. Gemini 3 Flash Thinking gets stuck in infinite decision loops (100% of runs in FoodTruck bench). Require heavy SOUL.md prompting to function. Tool integration rated below GLM-4.7 in direct comparison. Good for "look at large context" tasks, bad for "figure out what tools to chain" |
-| **MiniMax M2.5** | Slow due to mandatory interleaved thinking + provider speed lottery (38-380 t/s depending on upstream). Provider speed varies 10x. FP8 on AMD is broken (known vLLM bug). "Lacks systems understanding" for deep tasks |
-| **GLM-5** | Days old, zero sustained usage reports. Failed/refused to engage in FoodTruck agentic bench. NOT cheap - actually more expensive than Kimi K2.5 on OpenRouter. Z.AI had GPU starvation at launch |
-| **GLM-4.7-Flash** | Tool calling works via API, but daily driver users switched to Kimi K2.5 and found it "definitely better". Local inference plagued by hallucination/repetition |
-
-### The Brain Gap on Blockrun
-
-This is AgentBox's key constraint:
-
-| Brain | On Blockrun? | Notes |
-|-------|-------------|-------|
-| Claude Opus 4.6 | Yes | $5/$25 - expensive, burns USDC fast |
-| Claude Sonnet 4.5 | **No** | Only on aimo.network ($3/$15). Best value brain unavailable on our payment rail |
-| GPT-5.2 (xhigh) | Yes | $1.75/$14 - good price but slow (5-10 min/task) |
-
-Blockrun has Sonnet 4.6 ($3/$15) but the research shows it's a worse brain than Sonnet 4.5 due to verbosity and instruction-following regression. There is no good mid-price brain on Blockrun today.
-
-## Security Audit Tiers
-
-OpenClaw's `security audit` command (`src/security/audit-extra.sync.ts`) defines three hard boundaries for model safety:
+OpenAI officially stopped evaluating on SWE-bench Verified due to flawed tests (59.4% reject correct solutions). Numbers for reference only:
 
-| Severity | Check | Threshold | What Gets Flagged |
-|----------|-------|-----------|-------------------|
-| **CRITICAL** | `models.small_params` | <300B params + sandbox off or web tools on | Any model with extractable param count below 300B (e.g. `70b`, `120b`) without `sandbox.mode="all"` and web tools disabled |
-| **WARN** | `models.weak_tier` | Below GPT-5 or Claude 4.5, or any Haiku | GPT-4o, GPT-4.1, GPT-4 Turbo, Claude Sonnet 4, any `haiku` model |
-| **WARN** | `models.legacy` | Deprecated families | GPT-3.5, Claude 2, Claude Instant, legacy GPT-4 snapshots (0314/0613) |
+| Model | Score |
+|-------|-------|
+| Claude Opus 4.6 | 80.8% |
+| Gemini 3.1 Pro | 80.6% |
+| GPT-5.2 | 80.0% |
+| Claude Sonnet 4.6 | 79.6% |
+| Claude Sonnet 4.5 | 77.2% |
 
-### Concrete Code Checks
+## Sonnet 4.6 vs 4.5: Updated Assessment
 
-- `isGpt5OrHigher` - model ID must match `gpt-5` prefix or above
-- `isClaude45OrHigher` - model ID must match `claude-*-4-5` or higher (4.6, 5.x, etc.)
-- `SMALL_MODEL_PARAM_B_MAX = 300` - anything under 300B params is flagged
-- Haiku tier - any model matching `/\bhaiku\b/i` is explicitly flagged regardless of params
-- Legacy patterns: `/\bgpt-3\.5\b/i`, `/\bclaude-(instant|2)\b/i`, `/\bgpt-4-(0314|0613)\b/i`
-
-### Mitigation for Small Models
-
-Setting `sandbox.mode="all"` AND `tools.deny=["group:web","browser"]` downgrades `models.small_params` from CRITICAL to INFO. All other checks remain as WARN.
-
-## Blockrun Model Catalog (42 models)
+Sonnet 4.6 launched Feb 17, 2026. After two weeks of community use, the verdict is split:
 
-Full catalog from `blockrun.ai/models` and `BlockRunAI/ClawRouter` source. Prices are per 1M tokens. See `BLOCKRUN_PRICING.md` for actual x402 per-request costs.
+**Where 4.6 wins:**
+- SWE-bench Verified: 79.6% vs 77.2% (+2.4pp)
+- Hallucination rate: 29.7% vs 37.2% (improved, per @maksym_andr)
+- ARC-AGI: 58.3% vs 13.6% (4.3x jump - reasoning breakthrough)
+- FoodTruck: +771% ROI vs -31% (generational leap in agentic business reasoning)
+- Large refactoring: successfully redistributed 3,200 lines of Rust across 7 files
+- 1M context window (beta) vs 200K
 
-### OpenAI (15 models)
+**Where 4.6 loses:**
+- Token consumption: 3.4x more output tokens on equivalent tasks (685K vs 203K on FoodTruck)
+- Per-run cost: $22.99 vs $7.75 on FoodTruck (3x more expensive for same tasks)
+- Instruction following: documented regression (ignores explicit style constraints 4.5 obeyed, 200 upvotes)
+- Truncation: 4/5 FoodTruck runs hit max_tokens - spent 22K chars on internal deliberation with zero tool calls
+- Brownfield coding: "burned a shitton of tokens and produced objectively worse results" (r/ClaudeCode, 57 upvotes)
 
-| Model | ID | In $/M | Out $/M | Context | Reasoning | Vision | Agentic | Audit |
-|-------|----|--------|---------|---------|-----------|--------|---------|-------|
-| GPT-5.2 | `openai/gpt-5.2` | $1.75 | $14.00 | 400K | Yes | Yes | Yes | Clean |
-| GPT-5.2 Pro | `openai/gpt-5.2-pro` | $21.00 | $168.00 | 400K | Yes | - | - | Clean |
-| GPT-5.2 Codex | `openai/gpt-5.2-codex` | $1.75 | $14.00 | 128K | - | - | Yes | Clean |
-| GPT-5 Mini | `openai/gpt-5-mini` | $0.25 | $2.00 | 200K | - | - | - | Clean |
-| GPT-5 Nano | `openai/gpt-5-nano` | $0.05 | $0.40 | 128K | - | - | - | Clean |
-| GPT-4.1 | `openai/gpt-4.1` | $2.00 | $8.00 | 128K | - | Yes | - | **WARN** - below GPT-5 |
-| GPT-4.1 Mini | `openai/gpt-4.1-mini` | $0.40 | $1.60 | 128K | - | - | - | **WARN** - below GPT-5 |
-| GPT-4.1 Nano | `openai/gpt-4.1-nano` | $0.10 | $0.40 | 128K | - | - | - | **WARN** - below GPT-5 |
-| GPT-4o | `openai/gpt-4o` | $2.50 | $10.00 | 128K | - | Yes | Yes | **WARN** - below GPT-5 |
-| GPT-4o Mini | `openai/gpt-4o-mini` | $0.15 | $0.60 | 128K | - | - | - | **WARN** - below GPT-5 |
-| o1 | `openai/o1` | $15.00 | $60.00 | 200K | Yes | - | - | Clean |
-| o1-mini | `openai/o1-mini` | $1.10 | $4.40 | 128K | Yes | - | - | Clean |
-| o3 | `openai/o3` | $2.00 | $8.00 | 200K | Yes | - | - | Clean |
-| o3-mini | `openai/o3-mini` | $1.10 | $4.40 | 128K | Yes | - | - | Clean |
-| o4-mini | `openai/o4-mini` | $1.10 | $4.40 | 128K | Yes | - | - | Clean |
-
-### Anthropic (5 models)
-
-| Model | ID | In $/M | Out $/M | Context | Max Out | Reasoning | Agentic | Audit |
-|-------|----|--------|---------|---------|---------|-----------|---------|-------|
-| Claude Opus 4.6 | `anthropic/claude-opus-4.6` | $5.00 | $25.00 | 200K | 32K | Yes | Yes | Clean |
-| Claude Opus 4.5 | `anthropic/claude-opus-4.5` | $5.00 | $25.00 | 200K | 32K | Yes | Yes | Clean |
-| Claude Sonnet 4.6 | `anthropic/claude-sonnet-4.6` | $3.00 | $15.00 | 200K | 64K | Yes | Yes | Clean |
-| Claude Sonnet 4 | `anthropic/claude-sonnet-4` | $3.00 | $15.00 | 200K | 64K | - | Yes | **WARN** - below Claude 4.5 |
-| Claude Haiku 4.5 | `anthropic/claude-haiku-4.5` | $1.00 | $5.00 | 200K | 8K | - | Yes | **WARN** - Haiku tier |
-
-### Google (6 models)
-
-| Model | ID | In $/M | Out $/M | Context | Reasoning | Vision | Audit |
-|-------|----|--------|---------|---------|-----------|--------|-------|
-| Gemini 3.1 Pro | `google/gemini-3.1-pro-preview` | $2.00 | $12.00 | 1M+ | Yes | Yes | Clean |
-| Gemini 3 Pro | `google/gemini-3-pro-preview` | $2.00 | $12.00 | 1M+ | Yes | Yes | Clean |
-| Gemini 3 Flash | `google/gemini-3-flash-preview` | $0.50 | $3.00 | 1M | - | Yes | Clean |
-| Gemini 2.5 Pro | `google/gemini-2.5-pro` | $1.25 | $10.00 | 1M+ | Yes | Yes | Clean |
-| Gemini 2.5 Flash | `google/gemini-2.5-flash` | $0.30 | $2.50 | 1M | - | - | Clean |
-| Gemini 2.5 Flash Lite | `google/gemini-2.5-flash-lite` | $0.10 | $0.40 | 1M | - | - | Clean |
+**Our decision:** Sonnet 4.6 disabled in AgentBox. For agentic work at the same price point ($3/$15), it costs nearly as much as Opus per-run but delivers 3x worse results. Sonnet 4.5 on Aimo is the better value at that price tier.
 
-### xAI / Grok (9 models)
+## Provider Catalogs
 
-| Model | ID | In $/M | Out $/M | Context | Reasoning | Audit |
-|-------|----|--------|---------|---------|-----------|-------|
-| Grok 3 | `xai/grok-3` | $3.00 | $15.00 | 131K | Yes | Clean |
-| Grok 3 Mini | `xai/grok-3-mini` | $0.30 | $0.50 | 131K | - | Clean |
-| Grok 4.1 Fast (Reasoning) | `xai/grok-4-1-fast-reasoning` | $0.20 | $0.50 | 131K | Yes | Clean |
-| Grok 4.1 Fast | `xai/grok-4-1-fast-non-reasoning` | $0.20 | $0.50 | 131K | - | Clean |
-| Grok 4 Fast (Reasoning) | `xai/grok-4-fast-reasoning` | $0.20 | $0.50 | 131K | Yes | Clean |
-| Grok 4 Fast | `xai/grok-4-fast-non-reasoning` | $0.20 | $0.50 | 131K | - | Clean |
-| Grok Code Fast | `xai/grok-code-fast-1` | $0.20 | $1.50 | 131K | - | Clean |
-| Grok 4 (0709) | `xai/grok-4-0709` | $3.00 | $15.00 | 131K | Yes | Clean |
-| Grok 2 Vision | `xai/grok-2-vision` | $2.00 | $10.00 | 131K | - | Clean |
+### Blockrun (x402 on Solana + Base)
 
-### DeepSeek (2 models)
+30+ models. USDC pay-per-request, no API keys or accounts.
 
-| Model | ID | In $/M | Out $/M | Context | Reasoning | Audit |
-|-------|----|--------|---------|---------|-----------|-------|
-| DeepSeek V3.2 Chat | `deepseek/deepseek-chat` | $0.28 | $0.42 | 128K | - | Clean |
-| DeepSeek V3.2 Reasoner | `deepseek/deepseek-reasoner` | $0.28 | $0.42 | 128K | Yes | Clean |
+**Models we use:**
 
-### Moonshot (1 model)
+| Model | ID | $/M (in/out) | Context | Audit |
+|-------|----|-------------|---------|-------|
+| Claude Opus 4.6 | `anthropic/claude-opus-4.6` | $5/$25 | 200K | Clean |
+| GPT-5.2 | `openai/gpt-5.2` | $1.75/$14 | 400K | Clean |
+| GPT-5.2 Codex | `openai/gpt-5.2-codex` | $1.75/$14 | 128K | Clean |
+| Kimi K2.5 | `moonshot/kimi-k2.5` | $0.60/$3.00 | 262K | Clean |
+| DeepSeek V3.2 | `deepseek/deepseek-chat` | $0.28/$0.42 | 128K | Clean |
+| Gemini 3 Pro | `google/gemini-3-pro-preview` | $2.00/$12 | 1M | Clean |
 
-| Model | ID | In $/M | Out $/M | Context | Reasoning | Vision | Agentic | Audit |
-|-------|----|--------|---------|---------|-----------|--------|---------|-------|
-| Kimi K2.5 | `moonshot/kimi-k2.5` | $0.60 | $3.00 | 262K | Yes | Yes | Yes | Clean |
+**Available but not enabled:**
 
-### MiniMax (1 model)
+| Model | ID | $/M (in/out) | Why Not |
+|-------|----|-------------|---------|
+| Sonnet 4.6 | `anthropic/claude-sonnet-4.6` | $3/$15 | Verbose, worse value than Sonnet 4.5 on Aimo |
+| Opus 4.5 | `anthropic/claude-opus-4.5` | $5/$25 | Superseded by 4.6 at same price |
+| Sonnet 4 | `anthropic/claude-sonnet-4` | $3/$15 | WARN audit (below Claude 4.5) |
+| Haiku 4.5 | `anthropic/claude-haiku-4.5` | $1/$5 | WARN audit (Haiku tier) |
+| GPT-OSS 120B | `nvidia/gpt-oss-120b` | FREE | CRITICAL audit (120B params), wrong tool schemas |
+| MiniMax M2.5 | `minimax/minimax-m2.5` | $0.30/$1.20 | Structurally slow, 10% coding when quantized |
 
-| Model | ID | In $/M | Out $/M | Context | Reasoning | Agentic | Audit |
-|-------|----|--------|---------|---------|-----------|---------|-------|
-| MiniMax M2.5 | `minimax/minimax-m2.5` | $0.30 | $1.20 | 205K | Yes | Yes | Clean |
+### Aimo (x402 on Solana)
 
-### NVIDIA-Hosted (2 models)
+161 models via beta.aimo.network. Providers: red-pill, novita-ai, atlas-cloud.
 
-| Model | ID | In $/M | Out $/M | Context | Audit |
-|-------|----|--------|---------|---------|-------|
-| GPT-OSS 120B (free) | `nvidia/gpt-oss-120b` | FREE | FREE | 128K | **CRITICAL** - 120B params |
-| Kimi K2.5 (NVIDIA) | `nvidia/kimi-k2.5` | $0.55 | $2.50 | 262K | Clean |
+**Key differentiators from Blockrun:**
 
-## AgentBox Baked-In Model Selection
+| Model | Blockrun | Aimo | Notes |
+|-------|---------|------|-------|
+| Claude Sonnet 4.5 | Not available | $3/$15 | **Aimo exclusive** - fills the mid-price brain gap |
+| Claude Opus 4.6 | $5/$25 | $10/$37.50 | Blockrun 2x cheaper |
+| Claude Sonnet 4.6 | $3/$15 | $2.40/$12 | Aimo 20% cheaper |
+| DeepSeek V3.2 | $0.28/$0.42 | $0.23/$0.34 | Aimo ~19% cheaper |
+| GLM-5 | Not available | $1.02/$2.98 | Aimo exclusive. SWE-rebench 42.1%. Unproven |
+| GLM-4.7 Flash | Not available | $0.09/$0.37 | Aimo exclusive. Budget tool-calling worker |
 
-### Current (problematic)
+Pattern: Aimo gives 20% discounts on mid-tier models but charges 2x premiums on high-end (Opus 4.6, Gemini Pro). The critical differentiator is **Sonnet 4.5 availability**.
 
-| Model | ID | Default? | Audit |
-|-------|----|----------|-------|
-| GPT-OSS 120B | `nvidia/gpt-oss-120b` | **YES** | **CRITICAL** |
-| Claude Sonnet 4.6 | `anthropic/claude-sonnet-4.6` | - | Clean |
-| Claude Haiku 4.5 | `anthropic/claude-haiku-4.5` | - | **WARN** - Haiku |
-| MiniMax M2.5 | `minimax/minimax-m2.5` | - | Clean |
-| DeepSeek V3.2 | `deepseek/deepseek-chat` | - | Clean |
-| Gemini 2.5 Flash | `google/gemini-2.5-flash` | - | Stale (3.x available) |
-| GPT-4.1 Mini | `openai/gpt-4.1-mini` | - | **WARN** - below GPT-5 |
+## OpenClaw Security Audit
 
-3 of 7 models trigger audit warnings/criticals. Default is the worst offender.
+From `src/security/audit-extra.sync.ts` - three model checks:
 
-### Recommended (0 audit flags, BS-filtered)
+| Severity | Check | Rule | Flagged Models |
+|----------|-------|------|----------------|
+| **CRITICAL** | `models.small_params` | <300B params + sandbox off or web tools on | GPT-OSS 120B, GPT-OSS 20B, any `Nb` model where N<300 |
+| **WARN** | `models.weak_tier` | Below GPT-5 or below Claude 4.5, or Haiku | GPT-4.x, GPT-4o, Claude Sonnet 4, Claude Haiku 4.5 |
+| **WARN** | `models.legacy` | Deprecated families | GPT-3.5, Claude 2/Instant, GPT-4-0314/0613 |
 
-| Model | ID on Blockrun | Cost (in/out $/M) | Role | Why |
-|-------|----------------|-------------------|------|-----|
-| **Kimi K2.5** | `nvidia/kimi-k2.5` | $0.55/$2.50 | **Default** (worker) | Sonnet 4.5-level ceiling. Honest 3x savings over Opus (not 10x). Good enough for most routine tasks. NVIDIA variant cheaper than Moonshot |
-| DeepSeek V3.2 | `deepseek/deepseek-chat` | $0.28/$0.42 | Ultra-cheap worker | Cheapest real model. Good for simple queries |
-| Gemini 3 Flash | `google/gemini-3-flash-preview` | $0.50/$3.00 | Fast reader + long context | 1M context. Good for "look at this and answer". NOT a brain - don't use for autonomous loops |
-| **Claude Opus 4.6** | `anthropic/claude-opus-4.6` | $5/$25 | **Brain** (best available on Blockrun) | Undisputed #1 for complex multi-tool chaining. Only use for tasks that justify the cost |
-| **GPT-5.2** | `openai/gpt-5.2` | $1.75/$14 | **Brain** (budget alternative) | Bulletproof one-pass correctness. Slow but reliable. Best for large/legacy codebases |
-| Claude Sonnet 4.6 | `anthropic/claude-sonnet-4.6` | $3/$15 | Fallback (use with caution) | Available but NOT recommended as primary brain. Verbose token furnace, worse instruction following than 4.5. Include only because Sonnet 4.5 is not on Blockrun |
+**Code checks:**
+- `isGpt5OrHigher`: `/\bgpt-5(?:\b|[.-])/i`
+- `isClaude45OrHigher`: `/\bclaude-[^\s/]*?(?:-4-?(?:[5-9]|[1-9]\d)\b|4\.(?:[5-9]|[1-9]\d)\b|-[5-9](?:\b|[.-]))/i`
+- `SMALL_MODEL_PARAM_B_MAX = 300`
+- Haiku: `/\bhaiku\b/i` (flagged regardless of params)
 
-### Changes from Current
+**Mitigation for small models:** `sandbox.mode="all"` AND `tools.deny=["group:web","browser"]` downgrades `models.small_params` from CRITICAL to INFO.
 
-| Action | Model | Reason |
-|--------|-------|--------|
-| Remove | `nvidia/gpt-oss-120b` | CRITICAL audit, community reports wrong tool schemas |
-| Remove | `anthropic/claude-haiku-4.5` | WARN audit, Haiku tier explicitly flagged |
-| Remove | `openai/gpt-4.1-mini` | WARN audit, below GPT-5 threshold |
-| Remove | `google/gemini-2.5-flash` | Stale gen, replaced by 3 Flash |
-| Remove | `minimax/minimax-m2.5` | Slow - mandatory reasoning overhead + provider speed lottery (38-380 t/s). FP8 on AMD broken (vLLM bug). "Lacks systems understanding" |
-| Add | `nvidia/kimi-k2.5` | New default worker - honest Sonnet 4.5-level capability at budget price |
-| Add | `anthropic/claude-opus-4.6` | Brain tier - best available on Blockrun |
-| Add | `openai/gpt-5.2` | Brain tier - bulletproof, slow but correct |
-| Add | `google/gemini-3-flash-preview` | Replaces 2.5 Flash for long-context reads |
-| Default | `gpt-oss-120b` -> `kimi-k2.5` | Free-but-broken -> cheap-but-works |
+**Current AgentBox lineup: 0 audit flags.** All models in constants.ts pass all three checks.
 
-### Missing: The Sonnet 4.5 Gap
+## Operational Notes
 
-Claude Sonnet 4.5 is the best value brain - reliable instruction following, token-efficient, community-validated as "the real sweet spot for code." It is NOT on Blockrun. It IS on beta.aimo.network at $3/$15 (actually $2.40/$12 via atlas-cloud provider). Aimo uses a different payment model (not x402/Solana), so integrating it would require a second payment rail.
+### ClawRouter Routing Bug (Mar 4, 2026)
 
-Until Blockrun adds Sonnet 4.5 or aimo integration is built, AgentBox users have a brain gap: Opus 4.6 ($5/$25, expensive) or GPT-5.2 ($1.75/$14, slow). No mid-price brain.
+If users install ClawRouter (`blockrun/auto`), simple prompts get routed to cheap models that can't handle OpenClaw's always-agentic tool calling. A file creation request like "create memory.md" gets classified as SIMPLE and routed to a model that refuses to use tools. Fix is in progress (force agentic tiers when API request contains tools). Workaround: `/model anthropic/claude-opus-4.6` to lock to a specific model.
 
-## Reddit Reality Check (Feb 2026)
+### Known Model Issues
 
-### OpenRouter Rankings - What They Actually Mean
+| Model | Issue |
+|-------|-------|
+| Opus 4.6 | ~$5/complex-ticket. Peak-hour quality degradation (elevated errors observed Mar 4). CSS !important spiral loops. Uncontrolled filesystem exploration burns context |
+| GPT-5.2 | Slow (5-10 min/task on xhigh). Arrogant personality in chat mode (not relevant for agent use) |
+| Kimi K2.5 | Tool calling unreliable when routed through ClawRouter. Works fine when used directly |
+| Sonnet 4.5 | Only on Aimo - if Aimo has downtime, no fallback for this model |
+| GLM-5 | Performance varies by time of day on cloud API. Zero sustained agentic usage reports |
+| DeepSeek V3.2 | Went bankrupt Day 22 on FoodTruck. Don't use for autonomous multi-step tasks |
 
-The "most used on OpenRouter" rankings reflect price and free-tier availability, NOT quality:
+### Dropout Pattern (r/openclaw, 97 upvotes)
 
-> "No surprise, OpenRouter users are more likely to lean into Free and/or cheap models." - r/LocalLLaMA, 47 upvotes
+The #1 reason for OpenClaw user dropout is cost spiraling from leaving Opus as default. Recommended: use a cheap default (Kimi K2.5) and escalate to Opus only for complex tasks. This is how AgentBox is currently configured.
 
-> "This reminds me of when Elon was touting how Grok Code-fast-1 was the top coding model by tokens and entirely ignoring that they were giving it away 100% for free." - r/LocalLLaMA
-
-Rankings are a volume metric driven by economics, not a quality signal.
-
-### Sonnet 4.5 vs 4.6: The Research
-
-Sonnet 4.6 launched Feb 17, 2026. After one week of community use:
-
-**Token efficiency:** 4.6 is dramatically more verbose. FoodTruck agentic bench: 4.6 averages 22K output tokens/day where other models write ~1K. Users report 1-2 features before hitting session limits vs 4-5 features with 4.5.
-
-**Instruction following:** Documented regression. In a controlled test: 4.5 followed "no em-dashes" instruction, 4.6 ignores it (200 upvotes, 83% ratio). Multiple OpenClaw users confirm CLAUDE.md/SOUL.md compliance is worse in 4.6.
-
-**Hallucination:** 4.6 fabricated a CLI flag then retracted it. "Lazy search" pattern documented: skips web search and hallucinates instead of spending tokens on a search call. "The hallucination rate is so much worse than 4.5" (r/ClaudeAI).
-
-**Cost reality:** FoodTruck bench - 4.6 costs only 10% less than Opus per agentic run ($23 vs $26.50) due to verbosity, but delivers 3x worse results ($17.4K vs $49.5K).
-
-**Where 4.6 genuinely wins:** Breadth-first code review (found more issues than Opus in one benchmark). Browser automation at 5.5x lower cost than Opus. "Sticks to the script" better than Opus for well-defined agent roles.
-
-**Community verdict:** r/openclaw $254-in-16-days user anchors on Sonnet 4.5 as "the real sweet spot for code." r/ClaudeCode: "4.6 burned a shitton of tokens and produced objectively worse results... I switched back to 4.5 now" (57 upvotes).
-
-### Kimi K2.5: Deflating the Hype
-
-Top comment on the #1-on-OpenRouter hype post (372 upvotes): "If I had a nickel for every time someone claimed the newest OSS SOTA model was similar to Claude, I could generate a few prompts."
-
-**Token reality:** Uses 3x the tokens as Opus for same tasks. On reasoning-heavy tasks: 89% MORE expensive than Opus ($0.87 vs $0.46 per chess game).
-
-**Capability ceiling:** "Roughly on par with Sonnet 4.5... definitely not Opus level in terms of agentic function" (136 upvotes). Best positive sustained report: 150M tokens across 3 projects in a week with no issues - but from a single user.
-
-**Honest value:** ~3x cheaper than Opus in real task cost (not 10x as marketed). Good default worker, not a brain.
-
-### MiniMax M2.5: The Speed Problem
-
-Slow responses are not perception - they're structural:
-
-1. **Mandatory interleaved thinking:** Every response generates invisible reasoning tokens first. No non-thinking variant exists. Structural latency floor.
-2. **Provider speed lottery:** 10x spread between fastest (SambaNova 380 t/s) and slowest (Parasail 38 t/s). No visibility into which upstream Blockrun uses.
-3. **FP8 on AMD broken:** Known vLLM bug (Issue #31475, still open). FP8 is 20-50% slower than BF16 on AMD MI300X. MiniMax weights ship in FP8 by default.
-4. **"37% faster" is misleading:** Refers to fewer agentic steps per task, not tokens per second.
-
-### GLM-5: Not Ready
-
-- Days old, zero sustained usage reports
-- SWE-rebench: 42.1% (behind Kimi K2 Thinking at 43.8%, well behind Opus at 52.9%)
-- Failed/refused to engage in FoodTruck agentic bench
-- NOT cheap - more expensive than Kimi K2.5 on OpenRouter
-- OpenRouter rankings for GLM family reflect cheaper prior-gen models, not GLM-5 itself
-- Z.AI had GPU starvation at launch, pulled access from Pro subscribers
-
-### GPT-5.2: The Quiet Powerhouse
-
-- "Bulletproof" - users report zero task redos with xhigh reasoning effort
-- Handles 1.5M LoC legacy codebases where "any model that is not Regular 5.2 xHigh struggles"
-- Most token-efficient: 14-17 steps median vs much more for Claude/Gemini
-- Slow (5-10 min/task) but correct
-- GPT-5.2 Codex is a worker variant - faster but shallower, "hammer it in" fixes. Community workflow: plan with 5.2 base, implement with Codex, review with 5.2 base
-
-### Claude Opus 4.6: The Real #1
-
-- Leads every agentic benchmark: SWE-rebench 52.9%, FoodTruck $49K (GPT-5.2 made $28K, 8/12 models went bankrupt)
-- Multi-layer bug tracing across 3+ abstraction layers - no other model does this
-- Known issues: ~$5/ticket, peak-hour quality degradation, permission system bypass (found workarounds when denied), CSS !important loops, uncontrolled filesystem exploration
-- "Codex always beats Claude on benchmarks... Somehow, when it comes down to my day to day, it always ends up being Claude" (43 upvotes, r/ClaudeAI)
-
-## Alternative Provider: aimo.network
-
-> beta.aimo.network - 161 models, providers: red-pill, novita-ai, atlas-cloud. NOT x402/Solana - different payment model.
-
-### Price Comparison (Overlapping Models)
-
-Most models are identically priced. Key differences on the models we care about:
-
-| Model | Blockrun (in/out $/M) | Aimo (in/out $/M) | Delta |
-|-------|----------------------|-------------------|-------|
-| Claude Sonnet 4.6 | $3.00/$15.00 | $2.40/$12.00 | **Aimo -20%** |
-| Claude Sonnet 4.5 | **Not available** | $3.00/$15.00 | **Aimo exclusive** |
-| Claude Opus 4.6 | $5.00/$25.00 | $10.00/$37.50 | **Blockrun 2x cheaper** |
-| DeepSeek V3.2 | $0.28/$0.42 | $0.23/$0.34 | **Aimo -19%** |
-| Kimi K2.5 | $0.60/$3.00 | $0.60/$3.00 | Same |
-| Gemini 3 Pro | $2.00/$12.00 | $4.00/$18.00 | **Blockrun 2x cheaper** |
-| GPT-5.2 | $1.75/$14.00 | $1.75/$14.00 | Same |
-
-Pattern: aimo gives ~20% discount on some mid-tier models but charges heavy premiums on high-end (Opus 4.6 at 2x, Gemini Pro at 2x). The critical differentiator is **Sonnet 4.5 availability** - aimo has it, Blockrun doesn't.
-
-### Aimo-Exclusive Models Worth Considering
-
-| Model | Cost (in/out $/M) | Context | Why |
-|-------|-------------------|---------|-----|
-| `anthropic/claude-sonnet-4.5` | $3.00/$15.00 | 1M | **Best value brain.** The missing middle-price brain for AgentBox. Reliable instruction following, token-efficient, community-validated |
-| `zai-org/glm-5` | $1.02/$2.98 | 203K | #3 on OpenRouter by volume (price-driven, not quality). SWE-rebench 42.1%. Unproven for sustained agentic use |
-| `zai-org/glm-4.7-flash` | $0.09/$0.37 | 203K | Cheapest model with reliable tool calling via API. Budget worker option. Previous daily drivers switched to Kimi K2.5 |
-
-Sonnet 4.5 is the only aimo-exclusive model that fills a real gap in our lineup. The GLM models are interesting but not validated enough to recommend.
-
-## Models to Avoid for OpenClaw
+## Models to Avoid
 
 | Model | Why |
 |-------|-----|
-| Any Haiku | Explicitly flagged by audit, smaller model tier |
-| GPT-4.x family | Below GPT-5 audit threshold |
-| GPT-3.5 | Legacy, obsolete |
-| Claude 2 / Instant | Legacy, obsolete |
-| Models <300B params (unsandboxed) | CRITICAL audit finding |
-| Qwen 2.5 Coder | Doesn't call tools at all in OpenClaw (returns JSON as text) |
-| 7B/13B local models | Can't orchestrate more than 1-3 agents |
-| Claude Sonnet 4.6 as primary brain | Verbose token furnace, worse instruction following than 4.5, costs nearly as much as Opus in practice |
-| MiniMax M2.5 | Structurally slow, provider speed lottery, FP8/AMD bug |
+| GPT-OSS 120B | CRITICAL audit (120B params). Wrong tool schemas in OpenClaw |
+| Any Haiku | WARN audit. Explicitly flagged regardless of params |
+| GPT-4.x family | WARN audit (below GPT-5) |
+| GPT-3.5 / Claude 2 / Instant | Legacy, obsolete |
+| Qwen 2.5 Coder | Returns tool calls as JSON text, doesn't actually call tools in OpenClaw |
+| 7B/13B local models | Can't orchestrate multi-agent workflows |
+| Sonnet 4.6 as primary brain | Verbose (3.4x tokens), near-Opus cost/run, 3x worse agentic results |
+| MiniMax M2.5 | Structurally slow, 10% coding accuracy when quantized, provider speed lottery |
 
-## Security Notes
+## What to Consider Next
 
-From OpenClaw's `SECURITY.md`: "The model/agent is **not** a trusted principal. Assume prompt/content injection can manipulate behavior." This means model quality (resistance to prompt injection) directly affects security. Larger, instruction-hardened models from major providers are inherently more resistant.
+### High-value additions
 
-ZeroLeaks audit data (Twitter):
-- Default OpenClaw setup: scored 2/100 (84% extraction rate, 91% injection success)
-- With Kimi K2.5: scored 5/100 (100% extraction rate, 70% injection success)
-- Security depends on both model AND system prompt/skills configuration
+| Model | Provider | $/M (in/out) | Why |
+|-------|----------|-------------|-----|
+| **GPT-5.3 Codex** | Blockrun (if available) | TBD | Purpose-built for agentic coding. 77.3% Terminal-Bench (#1). 25% faster than GPT-5.2 Codex. GA rollout paused for reliability - monitor |
+| **Gemini 3 Pro** | Blockrun | $2/$12 | Already available. Same FoodTruck results as Sonnet 4.6 at 5.2x lower cost. 1M context. Good for long-context reads. Would replace the Gemini gap in our lineup |
+| **Gemini 3.1 Pro** | Blockrun (if available) | $2/$12 | 80.6% SWE-bench Verified. 7.5x cheaper input than Opus. Monitor availability |
+
+### Key insight: scaffolding > model
+
+Meta/Harvard research (SWE-Bench Pro, Feb 2026): Sonnet 4.5 with good scaffolding (52.7%) outperformed Opus 4.5 under worse scaffolding (52%). Agent framework quality matters as much as raw model capability. Invest in better prompts, tool configs, and agent workflows before upgrading models.
+
+### Pricing disruption: Alibaba Coding Plan
+
+Alibaba Cloud launched a $3/month coding plan with 18,000 requests bundling Qwen 3.5+, Kimi K2.5, GLM-5, and MiniMax M2.5 (2,840 likes on announcement). Not directly usable via x402 but signals downward price pressure on open-source model APIs.

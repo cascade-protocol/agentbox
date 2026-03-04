@@ -165,7 +165,7 @@ function formatTxLine(r: HistoryRecord, full: boolean): string {
     case "inference": {
       const model = r.m ? (full ? r.m : (r.m.split("/").pop() ?? r.m)) : "unknown";
       const cost = r.c != null ? `$${r.c.toFixed(3)} USDC` : "";
-      return `\`${time}\` ${model}${fail}\n${txLink(cost)}`;
+      return `\`${time}\` ${model}${fail} ${txLink(cost)}`;
     }
     case "x402": {
       let host = r.u ?? "unknown";
@@ -175,18 +175,18 @@ function formatTxLine(r: HistoryRecord, full: boolean): string {
         // keep raw value
       }
       const cost = r.c != null ? `$${r.c.toFixed(3)} USDC` : `HTTP ${r.s ?? "?"}`;
-      return `\`${time}\` \`x402\` ${host}${fail}\n${txLink(cost)}`;
+      return `\`${time}\` \`x402\` ${host}${fail} ${txLink(cost)}`;
     }
     case "send": {
       const dest = r.to ? `\`${r.to.slice(0, 4)}...${r.to.slice(-4)}\`` : "unknown";
       const amount = r.amt != null ? `$${r.amt.toFixed(2)} USDC` : "";
-      return `\`${time}\` send ${dest}${fail}\n${txLink(amount)}`;
+      return `\`${time}\` send ${dest}${fail} ${txLink(amount)}`;
     }
     case "trade": {
       const action = r.act ?? "trade";
       const tokenShort = r.token ? r.token.slice(0, 8) : "token";
       const amount = r.sol != null ? `${r.sol} SOL` : "";
-      return `\`${time}\` ${action} ${tokenShort} - pump.fun${fail}\n${txLink(amount)}`;
+      return `\`${time}\` ${action} ${tokenShort} - pump.fun${fail} ${txLink(amount)}`;
     }
     default:
       return `\`${time}\` unknown tx`;
@@ -488,7 +488,8 @@ export function register(api: OpenClawPluginApi): void {
         "/x_balance 2 - Page 2 of transactions",
         "/x_balance full - Show full model provider paths",
         "/x_send <amount|all> <address> - Send USDC",
-        "/x_models - Available AI models and pricing",
+        "/x_models - Models and pricing",
+        "/model - Browse and switch AI models",
         "/x_help - This help",
         "",
         "**Agent Tools** (used by your AI agent)",
@@ -502,6 +503,9 @@ export function register(api: OpenClawPluginApi): void {
         "Your agent pays per LLM call via x402 (USDC on Solana).",
         `$${INFERENCE_RESERVE.toFixed(2)} USDC is reserved for inference and can't be spent by tools.`,
         "Top up by sending USDC or SOL to your wallet address.",
+        "",
+        "To update the x402 plugin, copy and send this to your agent:",
+        "```Run 'openclaw plugins install openclaw-x402@latest' and restart the gateway```",
       ].join("\n"),
     }),
   });
@@ -527,10 +531,12 @@ export function register(api: OpenClawPluginApi): void {
           const inp = m.cost.input < 1 ? `$${m.cost.input}` : `$${m.cost.input.toFixed(0)}`;
           const out = m.cost.output < 1 ? `$${m.cost.output}` : `$${m.cost.output.toFixed(0)}`;
           const ctx = `${(m.contextWindow / 1000).toFixed(0)}K`;
-          lines.push(`• **${m.name}** - ${inp}/${out} per 1M | ${ctx} ctx`);
+          lines.push(
+            `• **${m.name}** - ${inp}/${out} per 1M | ${ctx} ctx`,
+            `\`/model ${prov}/${m.id}\``,
+          );
         }
       }
-      lines.push("", "Switch: `/model <provider>/<model-id>`");
       return { text: lines.join("\n") };
     },
   });

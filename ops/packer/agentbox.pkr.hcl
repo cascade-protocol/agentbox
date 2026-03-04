@@ -25,7 +25,7 @@ variable "server_type" {
 
 variable "image_version" {
   type    = string
-  default = "50"
+  default = "54"
 }
 
 source "hcloud" "agentbox" {

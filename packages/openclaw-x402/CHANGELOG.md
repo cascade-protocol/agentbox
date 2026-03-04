@@ -2,6 +2,14 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.8.1] - 2026-03-04
+
+### Changed
+
+- Transaction records in `/x_balance` now display inline (single line) instead of two lines
+- `/x_models` shows copyable `/model provider/id` code blocks per model for tap-to-copy in Telegram
+- `/x_help` includes `/model` reference and copyable agent prompt for plugin updates
+
 ## [0.8.0] - 2026-03-04
 
 ### Added
