@@ -1,5 +1,5 @@
 /** Hetzner snapshot ID for VM provisioning. Update after `just build-image`. */
-export const HETZNER_SNAPSHOT_ID = "363638447";
+export const HETZNER_SNAPSHOT_ID = "363679269";
 
 /**
  * Full OpenClaw config served to VMs at boot via /instances/config.
