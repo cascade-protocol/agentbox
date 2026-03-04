@@ -180,8 +180,10 @@ echo "Using preloaded OpenClaw $(openclaw --version)"
 # --- Create wallet keypairs (before gateway - x402 plugin reads them on start) ---
 
 echo "Creating wallet keypairs..."
-SOLANA_WALLET_ADDRESS=$(su - openclaw -c "openclaw x402 generate --output /home/openclaw/.openclaw/agentbox" 2>/dev/null | tail -1)
-su - openclaw -c "solana config set --keypair /home/openclaw/.openclaw/agentbox/wallet-sol.json" 2>&1
+WALLET_DIR=/home/openclaw/.openclaw/agentbox
+SOLANA_WALLET_ADDRESS=$(openclaw-x402 generate --output "$WALLET_DIR")
+chown -R openclaw:openclaw "$WALLET_DIR"
+su - openclaw -c "solana config set --keypair $WALLET_DIR/wallet-sol.json" 2>&1
 report_step "wallet_created"
 
 echo "Solana wallet: $SOLANA_WALLET_ADDRESS"

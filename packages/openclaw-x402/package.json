@@ -1,10 +1,13 @@
 {
   "name": "openclaw-x402",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "OpenClaw plugin for x402 payments and pump.fun trading on Solana",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
+  "bin": {
+    "openclaw-x402": "./dist/bin/cli.js"
+  },
   "exports": {
     ".": "./dist/index.js",
     "./package.json": "./package.json"

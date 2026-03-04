@@ -2,6 +2,13 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.8.2] - 2026-03-04
+
+### Added
+
+- Standalone CLI binary (`openclaw-x402 generate --output <dir>`) for wallet generation without OpenClaw runtime
+- Decouples wallet creation from OpenClaw config validation - VM boot no longer fails if config has issues
+
 ## [0.8.1] - 2026-03-04
 
 ### Changed

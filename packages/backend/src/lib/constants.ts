@@ -188,7 +188,7 @@ export const OPENCLAW_BASE_CONFIG = {
           providers: X402_PROVIDERS,
         },
       },
-      telegram: { enabled: true, linkPreview: false },
+      telegram: { enabled: true },
     },
   },
   agents: {

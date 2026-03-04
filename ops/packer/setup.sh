@@ -143,7 +143,10 @@ echo ""
 echo "==> Installing x402 payment plugin"
 chown -R openclaw:openclaw /home/openclaw/.openclaw
 su - openclaw -c "openclaw plugins install openclaw-x402@latest"
-echo "    x402 plugin installed"
+# Symlink the standalone CLI for wallet generation at boot time.
+# This bypasses OpenClaw config validation - just Node.js + crypto deps.
+ln -sf /home/openclaw/.openclaw/extensions/openclaw-x402/dist/bin/cli.js /usr/local/bin/openclaw-x402
+echo "    x402 plugin installed (CLI linked to /usr/local/bin/openclaw-x402)"
 
 # --- Install AgentBox skills (managed skills via npx) ---
 #
