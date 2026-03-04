@@ -69,7 +69,7 @@ curl -s https://api.agentbox.fyi/provision/INSTANCE_ID \
 
 Poll every 15 seconds. Boot takes 2-4 minutes.
 
-Status progression: `provisioning` -> `minting` -> `running`
+Status progression: `provisioning` -> `running`. The response also includes a `provisioningStep` field with granular sub-states (`vm_created`, `configuring`, `wallet_created`, `openclaw_ready`, `services_starting`). Most polls will return the same status - this is normal.
 
 When `status` is `"running"`, the response includes the real `gatewayToken`:
 
@@ -96,6 +96,21 @@ curl -s https://NAME.agentbox.fyi/v1/chat/completions \
 ```
 
 Replace `NAME` with the instance name and `GATEWAY_TOKEN` with `gatewayToken` from the poll response. Returns standard OpenAI chat completions JSON (non-streaming).
+
+Each request is stateless. For multi-turn conversations, include the full message history:
+
+```bash
+curl -s https://NAME.agentbox.fyi/v1/chat/completions \
+  -H "Authorization: Bearer GATEWAY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [
+    {"role": "user", "content": "What is 2+2?"},
+    {"role": "assistant", "content": "4"},
+    {"role": "user", "content": "Multiply that by 10"}
+  ]}'
+```
+
+The response also includes additional fields beyond those shown in examples (`ownerWallet`, `ip`, `vmWallet`, `nftMint`, `terminalToken`, `provisioningStep`, `createdAt`). These can be safely ignored or stored as needed.
 
 `terminalUrl` from the poll response opens a web terminal with shell access to the VM.
 
@@ -131,7 +146,7 @@ const res = await fetch(
 );
 ```
 
-Returns `{ instances: [...] }`. Timestamp must be within 5 minutes of server time.
+Returns `{ instances: [...] }` including `gatewayToken` and `terminalToken` for running instances (authenticated by wallet signature - only the wallet owner can list their own instances). Timestamp must be within 5 minutes of server time.
 
 ## Errors
 
