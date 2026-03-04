@@ -1,8 +1,8 @@
 {
   "id": "openclaw-x402",
   "name": "x402 Payment Plugin",
-  "description": "x402 USDC payments on Solana - LLM inference, external API payments, and service discovery",
-  "version": "0.4.3",
+  "description": "x402 USDC payments and pump.fun trading on Solana - LLM inference, token trading, service discovery, and wallet generation",
+  "version": "0.7.0",
   "configSchema": {
     "type": "object",
     "properties": {
@@ -16,11 +16,11 @@
       },
       "providerName": {
         "type": "string",
-        "description": "Provider ID for OpenClaw registration (default: aimo)"
+        "description": "Provider ID for OpenClaw registration (default: blockrun)"
       },
       "rpcUrl": {
         "type": "string",
-        "description": "Optional Solana RPC URL"
+        "description": "Solana RPC URL"
       }
     },
     "required": ["providerUrl"]

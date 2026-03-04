@@ -2,6 +2,28 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.7.0] - 2026-03-04
+
+### Added
+
+- `x_trade` tool - buy/sell pump.fun tokens via PumpPortal Local Transaction API
+- `x_token_info` tool - look up token price, market cap, volume, liquidity via DexScreener (with pump.fun fallback for pre-graduation tokens)
+- SOL balance display in `x_balance` command and tool (alongside USDC)
+- SOL balance pre-check before pump.fun buy trades
+- CLI wallet generation: `openclaw x402 generate --output <dir>` generates a single BIP-39 mnemonic and derives both Solana and EVM keypairs from it
+- Solana key: SLIP-10 Ed25519 at m/44'/501'/0'/0' (Phantom-compatible), saved as `wallet-sol.json`
+- EVM key: BIP-32 secp256k1 at m/44'/60'/0'/0/0, saved as `wallet-evm.key`
+- Mnemonic saved as `mnemonic` (24 words) - the single root secret for both chains
+
+### Changed
+
+- Renamed all commands and tools from `x402_` prefix to `x_` prefix (`x_balance`, `x_send`, `x_payment`, `x_discover`)
+- Refactored Solana operations into dedicated `solana.ts` module
+
+### Removed
+
+- `models` plugin config field - model catalog comes from `models.providers` in openclaw.json, not plugin config
+
 ## [0.5.0] - 2026-02-24
 
 ### Added

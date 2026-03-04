@@ -11,4 +11,4 @@ PLAN.md
 playwright-report/
 test-results/
 tmp/
-
+*.tgz

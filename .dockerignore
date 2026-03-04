@@ -35,3 +35,4 @@ scripts/
 *.pem
 *.key
 *.crt
+*.tgz
