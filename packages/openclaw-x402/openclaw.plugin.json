@@ -23,6 +23,6 @@
         "description": "Solana RPC URL"
       }
     },
-    "required": ["providerUrl"]
+    "required": []
   }
 }

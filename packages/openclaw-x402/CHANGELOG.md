@@ -2,6 +2,12 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.7.1] - 2026-03-04
+
+### Fixed
+
+- Remove `providerUrl` from configSchema `required` - prevents `openclaw plugins install` from failing when providerUrl is not yet configured (set at boot time by init script)
+
 ## [0.7.0] - 2026-03-04
 
 ### Added
