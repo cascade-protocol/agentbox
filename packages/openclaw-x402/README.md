@@ -17,8 +17,10 @@ OpenClaw plugin for x402 USDC payments and pump.fun trading on Solana. Handles L
 - `x_token_info` - look up token price, market cap, volume, liquidity
 
 **User commands (slash commands):**
-- `/x_balance` - show wallet address and balances
+- `/x_balance` - wallet dashboard with balance, token holdings, recent transactions (paginated)
 - `/x_send` - send USDC to a Solana address
+- `/x_models` - available AI models with pricing
+- `/x_help` - command and tool cheat sheet
 
 ## Installation
 
@@ -34,8 +36,21 @@ Add to your OpenClaw plugin config:
     {
       "package": "openclaw-x402",
       "config": {
-        "providerUrl": "https://your-x402-provider.example.com",
-        "keypairPath": "/path/to/solana/id.json"
+        "keypairPath": "/path/to/solana/id.json",
+        "providers": {
+          "blockrun": {
+            "baseUrl": "https://sol.blockrun.ai/api/v1",
+            "models": [
+              {
+                "id": "moonshot/kimi-k2.5",
+                "name": "Kimi K2.5",
+                "maxTokens": 4096,
+                "cost": { "input": 0.6, "output": 3, "cacheRead": 0.3, "cacheWrite": 0.6 },
+                "contextWindow": 262144
+              }
+            ]
+          }
+        }
       }
     }
   ]
@@ -46,10 +61,12 @@ Add to your OpenClaw plugin config:
 
 | Field | Required | Default | Description |
 |---|---|---|---|
-| `providerUrl` | Yes | - | Base URL of the x402-enabled provider to intercept |
+| `providers` | Yes | - | Provider catalog object keyed by provider name, each with `baseUrl` and `models` array |
 | `keypairPath` | No | `~/.openclaw/agentbox/wallet-sol.json` | Path to Solana keypair JSON |
-| `providerName` | No | `blockrun` | Provider ID for OpenClaw registration |
 | `rpcUrl` | No | `https://api.mainnet-beta.solana.com` | Solana RPC endpoint |
+| `dashboardUrl` | No | - | URL to link from `/x_balance` wallet dashboard |
+
+Each model in `providers.*.models` supports: `id`, `name`, `maxTokens`, `cost` (per 1M tokens: `input`, `output`, `cacheRead`, `cacheWrite`), `contextWindow`, `reasoning`, `input` (modalities).
 
 ## Pump.fun trading
 
@@ -59,7 +76,7 @@ The `x_trade` tool lets agents buy and sell tokens on pump.fun via PumpPortal's 
 - **Sell**: specify percentage of holdings to sell (e.g. 50 for half, 100 for all)
 - Default slippage: 25%, configurable per trade
 - PumpPortal fee: 0.5%
-- Transactions are signed locally and submitted without confirmation wait
+- Transactions are signed locally and confirmed via WebSocket (15s timeout)
 
 Use `x_token_info` to look up token data before trading. It checks DexScreener first, then falls back to pump.fun's API for pre-graduation tokens still on the bonding curve.
 
@@ -82,6 +99,12 @@ Solana uses SLIP-10 Ed25519 at `m/44'/501'/0'/0'` (Phantom/Backpack compatible).
 
 $0.30 USDC is reserved for LLM inference and cannot be spent by agent tools. This prevents the agent from spending all funds on external APIs and losing the ability to respond.
 
+## Transaction history
+
+All transactions are logged to `history.jsonl` alongside the wallet keypair (append-only JSONL, auto-rotates at 1000 entries). Logged types: inference (LLM calls), x402 service payments, USDC sends, pump.fun trades. Failed transactions are logged with `ok: false`.
+
+The `/x_balance` command shows recent transactions with clickable Solscan links and a "Spent today" summary. Use `/x_balance 2` for pagination and `/x_balance full` to show full model provider paths.
+
 ## Funding the wallet
 
 1. Run `/x_balance` to get your wallet address
@@ -90,7 +113,7 @@ $0.30 USDC is reserved for LLM inference and cannot be spent by agent tools. Thi
 
 ## How it works
 
-On startup the plugin loads the keypair, creates an x402 client with `ExactSvmScheme` for Solana mainnet, and replaces `globalThis.fetch` with a wrapper. Any request to `providerUrl` goes through x402 payment handling. All other requests pass through unmodified. Agent tools use the same x402 fetch wrapper to pay for external endpoints. Trading uses PumpPortal's Local Transaction API - the plugin receives raw transaction bytes, signs them locally, and submits to the Solana network.
+On startup the plugin loads the keypair, creates an x402 client with `ExactSvmScheme` for Solana mainnet, and replaces `globalThis.fetch` with a wrapper. Requests to any configured provider URL go through x402 payment handling. All other requests pass through unmodified. Agent tools use the same x402 fetch wrapper to pay for external endpoints. Trading uses PumpPortal's Local Transaction API - the plugin receives raw transaction bytes, signs them locally, and confirms via WebSocket.
 
 ## License
 

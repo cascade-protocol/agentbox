@@ -3,15 +3,19 @@ import {
   address,
   appendTransactionMessageInstructions,
   assertIsSendableTransaction,
+  assertIsTransactionWithBlockhashLifetime,
   createSolanaRpc,
+  createSolanaRpcSubscriptions,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
+  getCompiledTransactionMessageDecoder,
   getSignatureFromTransaction,
   getTransactionDecoder,
+  getTransactionLifetimeConstraintFromCompiledTransactionMessage,
   type KeyPairSigner,
   partiallySignTransactionMessageWithSigners,
   pipe,
-  sendTransactionWithoutConfirmingFactory,
+  sendAndConfirmTransactionFactory,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
   signTransaction,
@@ -22,6 +26,28 @@ const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const TOKEN_PROGRAM: Address = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
 export type UsdcBalance = { raw: bigint; ui: string };
+export type TokenHolding = { mint: string; amount: string; decimals: number };
+
+export async function getTokenAccounts(rpcUrl: string, owner: string): Promise<TokenHolding[]> {
+  const rpc = createSolanaRpc(rpcUrl);
+  const { value } = await rpc
+    .getTokenAccountsByOwner(
+      address(owner),
+      { programId: TOKEN_PROGRAM },
+      { encoding: "jsonParsed" },
+    )
+    .send();
+  return value
+    .map((v) => {
+      const info = v.account.data.parsed.info;
+      return {
+        mint: info.mint as string,
+        amount: info.tokenAmount.uiAmountString as string,
+        decimals: info.tokenAmount.decimals as number,
+      };
+    })
+    .filter((t) => t.mint !== USDC_MINT && t.amount !== "0");
+}
 
 export async function getUsdcBalance(rpcUrl: string, owner: string): Promise<UsdcBalance> {
   const rpc = createSolanaRpc(rpcUrl);
@@ -105,7 +131,11 @@ export async function transferUsdc(
 }
 
 /**
- * Sign and submit a PumpPortal trade transaction.
+ * Sign and submit a PumpPortal trade transaction, waiting for confirmation.
+ *
+ * Uses @solana/kit's sendAndConfirmTransactionFactory (WebSocket + block height)
+ * for proper confirmation. Extracts lifetime constraint from the compiled message
+ * since decoded external transactions don't carry it (see anza-xyz/kit#918).
  *
  * Trust assumption: PumpPortal's API constructs the transaction and we sign
  * whatever bytes it returns. If their API is compromised, the agent wallet
@@ -125,16 +155,32 @@ export async function signAndSendPumpPortalTx(
     const text = await response.text();
     throw new Error(`PumpPortal error ${response.status}: ${text}`);
   }
+
   const txBytes = new Uint8Array(await response.arrayBuffer());
   const decoded = getTransactionDecoder().decode(txBytes);
+  const compiledMsg = getCompiledTransactionMessageDecoder().decode(decoded.messageBytes);
+  const lifetimeConstraint =
+    getTransactionLifetimeConstraintFromCompiledTransactionMessage(compiledMsg);
   const signed = await signTransaction([signer.keyPair], decoded);
   assertIsSendableTransaction(signed);
-  const signature = getSignatureFromTransaction(signed);
+  Object.assign(signed, { lifetimeConstraint });
+  assertIsTransactionWithBlockhashLifetime(signed);
+
   const rpc = createSolanaRpc(rpcUrl);
-  const sendTx = sendTransactionWithoutConfirmingFactory({ rpc });
-  // skipPreflight: skip simulation for time-sensitive PumpPortal txs.
-  // commitment only affects preflight simulation level (unused with skipPreflight)
-  // but @solana/kit requires it in the type.
-  await sendTx(signed, { commitment: "confirmed", skipPreflight: true });
-  return signature;
+  const wsUrl = rpcUrl.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
+  const rpcSubscriptions = createSolanaRpcSubscriptions(wsUrl);
+  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
+
+  try {
+    await sendAndConfirm(signed, {
+      commitment: "confirmed",
+      skipPreflight: true,
+      abortSignal: AbortSignal.timeout(15_000),
+    });
+  } catch (e) {
+    // Timeout/abort: tx was already submitted, confirmation didn't arrive in time.
+    // Re-throw everything else (send failure, on-chain error).
+    if (!(e instanceof DOMException)) throw e;
+  }
+  return getSignatureFromTransaction(signed);
 }

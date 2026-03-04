@@ -2,6 +2,34 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.8.0] - 2026-03-04
+
+### Added
+
+- Transaction history logging to `history.jsonl` (JSONL, append-only, auto-rotation at 1000 entries)
+- Logs all transaction types: inference (LLM calls), x402 service payments, USDC sends, pump.fun trades
+- Failed transactions logged with `ok: false` for debugging
+- `/x_help` command with wallet commands and agent tools cheat sheet
+- `/x_models` command showing available models with pricing and context window
+- Token holdings display in `/x_balance` - shows SPL tokens with resolved symbols via DexScreener
+- "Spent today" summary line in wallet balance
+- Tx signature extraction from x402 `PAYMENT-RESPONSE` header (Solscan links)
+- Dashboard URL support in plugin config (linked from `/x_balance`)
+
+### Changed
+
+- Redesigned `/x_balance` command: wallet dashboard with balance, tokens, recent txs, and pagination
+- `/x_balance` now accepts args: page number (`/x_balance 2`) and `full` flag for verbose model paths
+- Enhanced `x_balance` agent tool with spend summary and token holdings
+- Spend amounts in recent txs are clickable Solscan links
+- Multi-provider support: plugin config now takes a `providers` object with full model metadata (cost, reasoning, contextWindow) instead of single `providerUrl`/`providerName`
+- Model catalog read from config providers instead of hardcoded `CURATED_MODELS` array
+- PumpPortal trades now wait for on-chain confirmation via WebSocket (15s timeout) instead of fire-and-forget
+
+### Removed
+
+- `providerUrl`, `providerName` plugin config fields (replaced by `providers` object)
+
 ## [0.7.1] - 2026-03-04
 
 ### Fixed
