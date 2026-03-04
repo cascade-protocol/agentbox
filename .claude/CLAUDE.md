@@ -15,6 +15,9 @@
 - Run `pnpm check` (root) after each set of changes - runs biome + type-check via Turborepo
 - Fix all errors before moving on
 
+## Package Manager
+- Always use `pnpm`, never `npm` or `yarn` - this is a pnpm workspaces monorepo
+
 ## Code Style
 - No classes, use plain functions
 - Define Zod schemas once in `packages/backend/src/lib/schemas.ts`, derive types with `z.infer<>`
