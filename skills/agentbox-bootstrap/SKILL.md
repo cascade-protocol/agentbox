@@ -26,7 +26,7 @@ Caddy routes HTTPS traffic to the gateway and terminal. Do NOT modify Caddy or s
 | OpenClaw config | `~/.openclaw/openclaw.json` |
 | Solana wallet | `~/.openclaw/agentbox/wallet-sol.json` |
 | Workspace | `~/.openclaw/workspace/` |
-| Skills (git repo) | `~/agentbox/skills/` |
+| Skills (managed) | `~/.openclaw/skills/` |
 | x402 plugin | `~/.openclaw/extensions/openclaw-x402/` |
 | Gateway logs | `~/.openclaw/logs/` |
 
@@ -87,17 +87,17 @@ openclaw status
 
 To get the latest AgentBox skills:
 ```bash
-git -C ~/agentbox pull
+npx skills add -g cascade-protocol/agentbox
 ```
 
-Skills are loaded from `~/agentbox/skills/` via `skills.load.extraDirs`. Changes take effect on the next new session.
+Skills are installed to `~/.openclaw/skills/` (OpenClaw's managed skills path, auto-discovered). Changes take effect on the next new session.
 
 ## Troubleshooting
 
 - **Gateway won't start**: Check `openclaw status` and gateway logs at `~/.openclaw/logs/`
 - **x402 payments failing**: Check USDC balance (see above). Wallet needs USDC on Solana mainnet.
 - **Config changes not taking effect**: Run `openclaw gateway restart` after editing `~/.openclaw/openclaw.json`
-- **Skills not showing**: Check `ls ~/agentbox/skills/`. Run `git -C ~/agentbox pull` to refresh.
+- **Skills not showing**: Check `ls ~/.openclaw/skills/`. Run `npx skills add -g cascade-protocol/agentbox` to refresh.
 - **"Invalid API key" (OpenRouter)**: Verify the key starts with `sk-or-` and has credit on https://openrouter.ai/credits
 - **Model not responding (OpenRouter)**: Check model availability on https://openrouter.ai/models
 - **Config broken after edit**: Check JSON syntax with `cat ~/.openclaw/openclaw.json | jq .`

@@ -28,10 +28,11 @@
 
 ## Baked-in Constants
 - Values that are source-of-truth in the codebase (not env-overridable) live in `packages/backend/src/lib/constants.ts`. Import from there, never add these to env.ts or .env files.
-- Current constants: `HETZNER_SNAPSHOT_ID`, `LLM_PROVIDER_URL`, `LLM_PROVIDER_NAME`, `LLM_DEFAULT_MODEL`, `LLM_MODELS`, `OPENCLAW_BASE_CONFIG`
+- Current constants: `HETZNER_SNAPSHOT_ID`, `LLM_PROVIDER_URL`, `LLM_PROVIDER_NAME`, `LLM_DEFAULT_MODEL`, `LLM_MODELS`, `OPENCLAW_BASE_CONFIG`, `HETZNER_SSH_KEY_IDS`
 - After `just build-image`, update `HETZNER_SNAPSHOT_ID` in `constants.ts` (not env.ts)
 - LLM provider/model changes (URL, name, default model, model catalog) are ONLY `constants.ts` changes - no image rebuild needed. The backend serves these dynamically to VMs via the config endpoint.
 - OpenClaw config changes (gateway settings, tools profile, agent defaults, compaction, context pruning) are ONLY `OPENCLAW_BASE_CONFIG` in `constants.ts` - no image rebuild needed. Served to VMs at boot via `/instances/config`.
+- Skills are installed on VMs via `npx skills add -g` into `~/.openclaw/skills/` (auto-discovered managed skills path, no `extraDirs` needed)
 
 ## Logging (Backend)
 - Use the Winston logger from `packages/backend/src/logger.ts` for all backend logging. Never use `console.log`/`console.error` directly.
@@ -71,6 +72,7 @@
 - Base: `ubuntu-24.04`, built on cpx42 (fast compile), snapshotted for cx33 (80GB disk)
 - Pre-installed: Node.js 24, OpenClaw (npm global + native modules), Caddy, ttyd, Solana CLI, create-sati-agent, openclaw-x402 plugin, build-essential/cmake/python3 (for node-gyp)
 - Plugin install: `openclaw-x402` is extracted via `npm pack` + `tar` into `~/.openclaw/extensions/openclaw-x402/` (auto-discovered, no `plugins.load.paths` needed)
+- Skills: installed at build time via `npx skills add -g cascade-protocol/agentbox` into `~/.openclaw/skills/` (managed skills, auto-discovered)
 - Boot flow: cloud-init writes `/etc/agentbox/callback.env` -> runs `agentbox-init.sh` -> fetches config from backend, creates wallet/SATI identity, starts services, callbacks to API
 - Services on VM: `openclaw-gateway` (:18789), `ttyd` (:7681), `caddy` (HTTPS :443)
 
@@ -102,6 +104,18 @@
 - `just tunnel` starts a Cloudflare tunnel exposing the local backend at the URL configured in `API_BASE_URL` (.env)
 - Full end-to-end VM testing works locally: `pnpm dev` + `just tunnel` + `just build-image` + provision a VM
 - The VM calls back to the local backend through the tunnel - no need to deploy to test provisioning flow
+
+### Pre-push e2e verification (MANDATORY)
+Before committing/pushing changes that affect VM provisioning, boot flow, or the provision API (ops/packer/*, backend provisioning routes, constants affecting VMs), run a full e2e test locally:
+
+1. User starts `pnpm dev` and `just tunnel` (exposes local backend at `dev-api.agentbox.fyi`)
+2. If image changes: `just build-image`, update `HETZNER_SNAPSHOT_ID` in `constants.ts`
+3. Run: `node ops/e2e/provision.mjs /path/to/wallet.json`
+   - Provisions a real VM via x402 payment against local backend through tunnel
+   - Polls until running (~2-4 min)
+   - Tests `/v1/chat/completions` with the gateway token
+   - Optional second arg overrides API URL (defaults to `https://dev-api.agentbox.fyi`)
+4. All 3 steps must pass (provision 201, poll to running, chat completions 200) before pushing
 
 ## Release & Deploy
 

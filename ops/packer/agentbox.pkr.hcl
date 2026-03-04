@@ -64,7 +64,7 @@ build {
   }
 
   # Upload workspace seed file (AGENTS.md) for the OpenClaw workspace.
-  # Skills are loaded from the agentbox git repo cloned at build time.
+  # Skills are installed via `npx skills add -g` at build time into ~/.openclaw/skills/.
   provisioner "file" {
     source      = "workspace/AGENTS.md"
     destination = "/tmp/agentbox-AGENTS.md"

@@ -152,17 +152,17 @@ su - openclaw -c "
 "
 echo "    x402 plugin installed"
 
-# --- Clone agentbox repo (skills source) ---
+# --- Install AgentBox skills (managed skills via npx) ---
 #
-# Skills live in the public agentbox repo under skills/.
-# OpenClaw loads them via skills.load.extraDirs in openclaw.json.
-# Users can update skills on a running instance with: git -C ~/agentbox pull
+# Skills are installed globally via `npx skills add -g` into ~/.openclaw/skills/,
+# which is OpenClaw's standard managed skills path (auto-discovered, no extraDirs needed).
+# Users update skills on a running instance with: npx skills add -g cascade-protocol/agentbox
+# INSTALL_INTERNAL_SKILLS=1 includes skills marked metadata.internal (e.g. agentbox-bootstrap).
 
 echo ""
-echo "==> Cloning agentbox repo for skills"
-AGENTBOX_REPO=/home/openclaw/agentbox
-su - openclaw -c "git clone --depth 1 https://github.com/cascade-protocol/agentbox.git $AGENTBOX_REPO"
-echo "    Skills cloned to $AGENTBOX_REPO/skills"
+echo "==> Installing AgentBox skills"
+su - openclaw -c "INSTALL_INTERNAL_SKILLS=1 npx -y skills add -g --yes cascade-protocol/agentbox"
+echo "    AgentBox skills installed to ~/.openclaw/skills/"
 
 # --- Seed workspace ---
 #

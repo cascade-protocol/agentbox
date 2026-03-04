@@ -68,7 +68,6 @@ export const OPENCLAW_BASE_CONFIG = {
     controlUi: { dangerouslyDisableDeviceAuth: true },
     http: { endpoints: { chatCompletions: { enabled: true } } },
   },
-  skills: { load: { extraDirs: ["/home/openclaw/agentbox/skills"] } },
   update: { auto: { enabled: false }, checkOnStart: false },
   logging: { maxFileBytes: 104857600 },
   tools: { profile: "full" },
