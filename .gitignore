@@ -10,3 +10,5 @@ PLAN.md
 .pnpm-store
 playwright-report/
 test-results/
+tmp/
+

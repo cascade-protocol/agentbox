@@ -14,6 +14,7 @@ import {
   LLM_MODELS,
   LLM_PROVIDER_NAME,
   LLM_PROVIDER_URL,
+  OPENCLAW_BASE_CONFIG,
 } from "../lib/constants";
 import { decrypt, encrypt } from "../lib/crypto";
 import { env } from "../lib/env";
@@ -547,6 +548,7 @@ instanceRoutes.get("/instances/config", async (c) => {
     hostname,
     terminalToken: row.terminalToken,
     telegramBotToken,
+    openclawConfig: OPENCLAW_BASE_CONFIG,
     provider: {
       name: LLM_PROVIDER_NAME,
       url: LLM_PROVIDER_URL,

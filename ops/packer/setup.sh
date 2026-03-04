@@ -120,55 +120,18 @@ su - openclaw -c "npm install -g openclaw@latest"
 ln -sf /home/openclaw/.npm-global/bin/openclaw /usr/local/bin/openclaw
 echo "    OpenClaw $(openclaw --version) at $(which openclaw)"
 
-# --- Pre-configure OpenClaw gateway ---
+# --- Pre-configure OpenClaw (minimal bootstrap) ---
 #
-# Write config at build time so boot skips `openclaw onboard` entirely.
-# The gateway resolves OPENCLAW_GATEWAY_TOKEN from the environment at startup
-# (set via systemd drop-in written by agentbox-init.sh).
-# dangerouslyDisableDeviceAuth disables device pairing for Control UI - the
-# gateway token is the sole auth boundary on these single-tenant VMs.
+# Minimal config to prevent `openclaw onboard` during image build.
+# The full config is fetched from the backend at boot time via /instances/config
+# and written by agentbox-init.sh before the gateway starts.
 
 echo ""
-echo "==> Pre-configuring OpenClaw gateway"
+echo "==> Pre-configuring OpenClaw (minimal bootstrap)"
 mkdir -p /home/openclaw/.openclaw/devices
 cat > /home/openclaw/.openclaw/openclaw.json << 'OCEOF'
 {
-  "gateway": {
-    "mode": "local",
-    "port": 18789,
-    "bind": "loopback",
-    "auth": { "mode": "token" },
-    "controlUi": { "dangerouslyDisableDeviceAuth": true }
-  },
-  "skills": {
-    "load": {
-      "extraDirs": ["/home/openclaw/agentbox/skills"]
-    }
-  },
-  "update": {
-    "auto": { "enabled": false },
-    "checkOnStart": false
-  },
-  "logging": {
-    "maxFileBytes": 104857600
-  },
-  "agents": {
-    "defaults": {
-      "skipBootstrap": true,
-      "timeoutSeconds": 120,
-      "compaction": {
-        "mode": "default",
-        "reserveTokensFloor": 20000,
-        "memoryFlush": { "enabled": true }
-      },
-      "contextPruning": {
-        "mode": "cache-ttl",
-        "ttl": "10m",
-        "keepLastAssistants": 3,
-        "minPrunableToolChars": 20000
-      }
-    }
-  }
+  "update": { "auto": { "enabled": false }, "checkOnStart": false }
 }
 OCEOF
 

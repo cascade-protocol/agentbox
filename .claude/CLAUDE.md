@@ -28,9 +28,10 @@
 
 ## Baked-in Constants
 - Values that are source-of-truth in the codebase (not env-overridable) live in `packages/backend/src/lib/constants.ts`. Import from there, never add these to env.ts or .env files.
-- Current constants: `HETZNER_SNAPSHOT_ID`, `LLM_PROVIDER_URL`, `LLM_PROVIDER_NAME`, `LLM_DEFAULT_MODEL`, `LLM_MODELS`
+- Current constants: `HETZNER_SNAPSHOT_ID`, `LLM_PROVIDER_URL`, `LLM_PROVIDER_NAME`, `LLM_DEFAULT_MODEL`, `LLM_MODELS`, `OPENCLAW_BASE_CONFIG`
 - After `just build-image`, update `HETZNER_SNAPSHOT_ID` in `constants.ts` (not env.ts)
 - LLM provider/model changes (URL, name, default model, model catalog) are ONLY `constants.ts` changes - no image rebuild needed. The backend serves these dynamically to VMs via the config endpoint.
+- OpenClaw config changes (gateway settings, tools profile, agent defaults, compaction, context pruning) are ONLY `OPENCLAW_BASE_CONFIG` in `constants.ts` - no image rebuild needed. Served to VMs at boot via `/instances/config`.
 
 ## Logging (Backend)
 - Use the Winston logger from `packages/backend/src/logger.ts` for all backend logging. Never use `console.log`/`console.error` directly.
@@ -70,7 +71,7 @@
 - Base: `ubuntu-24.04`, built on cpx42 (fast compile), snapshotted for cx33 (80GB disk)
 - Pre-installed: Node.js 24, OpenClaw (npm global + native modules), Caddy, ttyd, Solana CLI, create-sati-agent, openclaw-x402 plugin, build-essential/cmake/python3 (for node-gyp)
 - Plugin install: `openclaw-x402` is extracted via `npm pack` + `tar` into `~/.openclaw/extensions/openclaw-x402/` (auto-discovered, no `plugins.load.paths` needed)
-- Boot flow: cloud-init writes `/etc/agentbox/callback.env` -> runs `agentbox-init.sh` -> onboards OpenClaw, creates wallet/SATI identity, starts services, callbacks to API
+- Boot flow: cloud-init writes `/etc/agentbox/callback.env` -> runs `agentbox-init.sh` -> fetches config from backend, creates wallet/SATI identity, starts services, callbacks to API
 - Services on VM: `openclaw-gateway` (:18789), `ttyd` (:7681), `caddy` (HTTPS :443)
 
 ## Backend Provisioning
@@ -114,6 +115,7 @@
 
 **NO image rebuild needed** for:
 - LLM provider/model changes (URL, name, default model, model catalog) - just edit `constants.ts`, these are served dynamically to VMs via the config endpoint
+- OpenClaw config changes (gateway, tools profile, agent defaults) - edit `OPENCLAW_BASE_CONFIG` in `constants.ts`, served to VMs at boot
 - Backend/frontend code changes - just commit + deploy
 - Environment variable changes
 

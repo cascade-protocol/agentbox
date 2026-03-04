@@ -1,5 +1,5 @@
 /** Hetzner snapshot ID for VM provisioning. Update after `just build-image`. */
-export const HETZNER_SNAPSHOT_ID = "361861733";
+export const HETZNER_SNAPSHOT_ID = "363538256";
 
 /** LLM provider defaults - baked into codebase, not env-overridable. */
 export const LLM_PROVIDER_URL = "https://sol.blockrun.ai";
@@ -54,6 +54,42 @@ export const LLM_MODELS = [
     maxTokens: 4096,
   },
 ];
+
+/**
+ * Base OpenClaw config served to VMs at boot via /instances/config.
+ * Change here to update OpenClaw settings without an image rebuild.
+ */
+export const OPENCLAW_BASE_CONFIG = {
+  gateway: {
+    mode: "local",
+    port: 18789,
+    bind: "loopback",
+    auth: { mode: "token" },
+    controlUi: { dangerouslyDisableDeviceAuth: true },
+    http: { endpoints: { chatCompletions: { enabled: true } } },
+  },
+  skills: { load: { extraDirs: ["/home/openclaw/agentbox/skills"] } },
+  update: { auto: { enabled: false }, checkOnStart: false },
+  logging: { maxFileBytes: 104857600 },
+  tools: { profile: "full" },
+  agents: {
+    defaults: {
+      skipBootstrap: true,
+      timeoutSeconds: 120,
+      compaction: {
+        mode: "default",
+        reserveTokensFloor: 20000,
+        memoryFlush: { enabled: true },
+      },
+      contextPruning: {
+        mode: "cache-ttl",
+        ttl: "10m",
+        keepLastAssistants: 3,
+        minPrunableToolChars: 20000,
+      },
+    },
+  },
+};
 
 /** Hetzner SSH key IDs to inject into provisioned VMs. */
 export const HETZNER_SSH_KEY_IDS = [107690222, 108071540];

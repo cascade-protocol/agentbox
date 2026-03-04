@@ -134,7 +134,15 @@ else
   echo "WARNING: INSTANCE_HOSTNAME not set, skipping Caddy setup"
 fi
 
-# --- Merge dynamic provider config into baked openclaw.json ---
+# --- Write base OpenClaw config from backend ---
+#
+# The full base config (gateway settings, tools profile, agent defaults, etc.)
+# is served by the backend so config changes don't require an image rebuild.
+echo "$CONFIG_JSON" | jq '.openclawConfig' > /home/openclaw/.openclaw/openclaw.json
+chown openclaw:openclaw /home/openclaw/.openclaw/openclaw.json
+echo "Base OpenClaw config written from backend"
+
+# --- Merge dynamic provider config into openclaw.json ---
 
 PROVIDER_NAME=$(echo "$CONFIG_JSON" | jq -r '.provider.name // "aimo"')
 PROVIDER_URL=$(echo "$CONFIG_JSON" | jq -r '.provider.url // "https://beta.aimo.network"')
