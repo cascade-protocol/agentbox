@@ -25,6 +25,8 @@ Caddy routes HTTPS traffic to the gateway and terminal. Do NOT modify Caddy or s
 |------|------|
 | OpenClaw config | `~/.openclaw/openclaw.json` |
 | Solana wallet | `~/.openclaw/agentbox/wallet-sol.json` |
+| EVM wallet | `~/.openclaw/agentbox/wallet-evm.key` |
+| Mnemonic (root secret) | `~/.openclaw/agentbox/mnemonic` |
 | Workspace | `~/.openclaw/workspace/` |
 | Skills (managed) | `~/.openclaw/skills/` |
 | x402 plugin | `~/.openclaw/extensions/openclaw-x402/` |
@@ -34,10 +36,23 @@ Caddy routes HTTPS traffic to the gateway and terminal. Do NOT modify Caddy or s
 
 The `openclaw-x402` plugin patches `globalThis.fetch` to handle HTTP 402 Payment Required responses automatically. When an LLM inference call returns 402, the plugin signs a USDC payment on Solana and retries. This is transparent - you don't need to do anything special.
 
-The wallet at `~/.openclaw/agentbox/wallet-sol.json` must have USDC balance for payments to work. Check balance with:
+The wallet at `~/.openclaw/agentbox/wallet-sol.json` must have USDC balance for payments to work. Check balance with `/x_balance` or:
 ```bash
 spl-token balance --owner $(solana address) EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
 ```
+
+## Trading
+
+The plugin includes tools for pump.fun token trading:
+
+- `/x_balance` - show wallet SOL and USDC balances
+- `/x_send <amount|all> <address>` - send USDC to a Solana address
+- `x_trade` (agent tool) - buy/sell pump.fun tokens via PumpPortal
+- `x_token_info` (agent tool) - look up token price, market cap, volume, liquidity
+- `x_payment` (agent tool) - call any x402-enabled paid API
+- `x_discover` (agent tool) - search for x402 paid services
+
+Buy trades spend SOL, sell trades specify a percentage of held tokens. Default slippage: 25%.
 
 ## Default model provider
 
@@ -106,4 +121,4 @@ Skills are installed to `~/.openclaw/skills/` (OpenClaw's managed skills path, a
 
 - Always use `openclaw gateway restart` to restart the gateway. Never use systemctl directly for the gateway.
 - When editing `~/.openclaw/openclaw.json`, read the current file first, modify it, write it back. Don't write partial configs.
-- The Solana wallet private key is at `~/.openclaw/agentbox/wallet-sol.json`. Never share it or display it to users.
+- The wallet keys are at `~/.openclaw/agentbox/` (wallet-sol.json, wallet-evm.key, mnemonic). Never share them or display them to users.

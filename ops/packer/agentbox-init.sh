@@ -134,82 +134,36 @@ else
   echo "WARNING: INSTANCE_HOSTNAME not set, skipping Caddy setup"
 fi
 
-# --- Write base OpenClaw config from backend ---
+# --- Write OpenClaw config and merge per-instance values ---
 #
-# The full base config (gateway settings, tools profile, agent defaults, etc.)
-# is served by the backend so config changes don't require an image rebuild.
-echo "$CONFIG_JSON" | jq '.openclawConfig' > /home/openclaw/.openclaw/openclaw.json
-chown openclaw:openclaw /home/openclaw/.openclaw/openclaw.json
-echo "Base OpenClaw config written from backend"
+# The backend serves the full config (gateway, models, providers, plugins, agent
+# defaults) so changes don't require an image rebuild. The init script only
+# merges per-instance runtime values: rpcUrl (env), telegram bot token (optional).
 
-# --- Merge dynamic provider config into openclaw.json ---
-
-PROVIDER_NAME=$(echo "$CONFIG_JSON" | jq -r '.provider.name // "aimo"')
-PROVIDER_URL=$(echo "$CONFIG_JSON" | jq -r '.provider.url // "https://beta.aimo.network"')
-DEFAULT_MODEL=$(echo "$CONFIG_JSON" | jq -r '.provider.defaultModel // "anthropic/claude-sonnet-4.5"')
-SOLANA_RPC=$(echo "$CONFIG_JSON" | jq -r '.provider.rpcUrl // empty')
+SOLANA_RPC=$(echo "$CONFIG_JSON" | jq -r '.rpcUrl // empty')
 TELEGRAM_BOT_TOKEN=$(echo "$CONFIG_JSON" | jq -r '.telegramBotToken // empty')
 
-# Models come from backend config; empty array triggers plugin fallback
-MODELS_JSON=$(echo "$CONFIG_JSON" | jq -c '.provider.models // []')
-
-PLUGIN_CONFIG=$(jq -n \
-  --arg providerUrl "$PROVIDER_URL" \
-  --arg providerName "$PROVIDER_NAME" \
+echo "$CONFIG_JSON" | jq \
   --arg rpcUrl "${SOLANA_RPC:-}" \
-  --argjson models "$MODELS_JSON" \
-  '{
-    providerUrl: $providerUrl,
-    providerName: $providerName,
-    keypairPath: "/home/openclaw/.openclaw/agentbox/wallet-sol.json",
-    models: $models
-  } + (if $rpcUrl != "" then {rpcUrl: $rpcUrl} else {} end)')
-
-# OpenClaw's registerProvider() (plugin API) only handles auth metadata -
-# models must also be in models.providers for the model resolution system.
-# apiKey is a dummy value: the x402 fetch patch strips Authorization headers
-# and handles payment automatically.
-PROVIDER_DEF=$(echo "$MODELS_JSON" | jq \
-  --arg baseUrl "${PROVIDER_URL%/}/api/v1" \
-  '{
-    baseUrl: $baseUrl,
-    apiKey: "x402-payment",
-    api: "openai-completions",
-    models: [.[] | {id: .id, name: .name, maxTokens: .maxTokens}]
-  }')
-
-jq --argjson pluginConfig "$PLUGIN_CONFIG" \
-   --argjson providerDef "$PROVIDER_DEF" \
-   --arg providerName "$PROVIDER_NAME" \
-   --arg defaultModel "$DEFAULT_MODEL" \
-   --arg telegramBotToken "${TELEGRAM_BOT_TOKEN:-}" \
-   '
-   .plugins.entries."openclaw-x402" = {
-     enabled: true,
-     config: $pluginConfig
-   }
-   | .plugins.entries.telegram.enabled = true
-   | .agents.defaults.model.primary = ($providerName + "/" + $defaultModel)
-   | .models.providers[$providerName] = $providerDef
-   | if $telegramBotToken != "" then
-       .channels.telegram = {
-         enabled: true,
-         botToken: $telegramBotToken,
-         dmPolicy: "open",
-         allowFrom: ["*"],
-         groups: { "*": { requireMention: true } },
-         ackReaction: "\uD83D\uDC4B"
-       }
-     else . end
-   # NOTE: streaming config (agents.defaults.models[].streaming and .params.streaming)
-   # is dead code in OpenClaw - pi-ai hardcodes stream:true in buildParams().
-   # The openclaw-x402 plugin handles this in the fetch interceptor by forcing
-   # stream:false in the request body and wrapping the JSON response as SSE.
-   ' /home/openclaw/.openclaw/openclaw.json > /tmp/openclaw.json.tmp
-
-mv /tmp/openclaw.json.tmp /home/openclaw/.openclaw/openclaw.json
+  --arg telegramBotToken "${TELEGRAM_BOT_TOKEN:-}" \
+  '
+  .openclawConfig
+  | if $rpcUrl != "" then
+      .plugins.entries."openclaw-x402".config.rpcUrl = $rpcUrl
+    else . end
+  | if $telegramBotToken != "" then
+      .channels.telegram = {
+        enabled: true,
+        botToken: $telegramBotToken,
+        dmPolicy: "open",
+        allowFrom: ["*"],
+        groups: { "*": { requireMention: true } },
+        ackReaction: "\uD83D\uDC4B"
+      }
+    else . end
+  ' > /home/openclaw/.openclaw/openclaw.json
 chown openclaw:openclaw /home/openclaw/.openclaw/openclaw.json
-echo "Provider config merged: $PROVIDER_NAME (default model: $DEFAULT_MODEL)"
+echo "OpenClaw config written from backend"
 
 # --- Verify preloaded OpenClaw ---
 
@@ -219,13 +173,11 @@ if ! command -v openclaw >/dev/null 2>&1; then
 fi
 echo "Using preloaded OpenClaw $(openclaw --version)"
 
-# --- Create Solana keypair (before gateway - x402 plugin reads it on start) ---
+# --- Create wallet keypairs (before gateway - x402 plugin reads them on start) ---
 
-echo "Creating Solana keypair..."
-su - openclaw -c "mkdir -p /home/openclaw/.openclaw/agentbox"
-su - openclaw -c "solana-keygen new --no-bip39-passphrase --force -o /home/openclaw/.openclaw/agentbox/wallet-sol.json" 2>&1
+echo "Creating wallet keypairs..."
+SOLANA_WALLET_ADDRESS=$(su - openclaw -c "openclaw x402 generate --output /home/openclaw/.openclaw/agentbox" 2>/dev/null | tail -1)
 su - openclaw -c "solana config set --keypair /home/openclaw/.openclaw/agentbox/wallet-sol.json" 2>&1
-SOLANA_WALLET_ADDRESS=$(su - openclaw -c "solana address")
 report_step "wallet_created"
 
 echo "Solana wallet: $SOLANA_WALLET_ADDRESS"

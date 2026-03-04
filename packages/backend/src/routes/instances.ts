@@ -8,14 +8,7 @@ import { jwtVerify, SignJWT } from "jose";
 import { db } from "../db/connection";
 import { instances } from "../db/schema";
 import * as cloudflare from "../lib/cloudflare";
-import {
-  HETZNER_SNAPSHOT_ID,
-  LLM_DEFAULT_MODEL,
-  LLM_MODELS,
-  LLM_PROVIDER_NAME,
-  LLM_PROVIDER_URL,
-  OPENCLAW_BASE_CONFIG,
-} from "../lib/constants";
+import { HETZNER_SNAPSHOT_ID, OPENCLAW_BASE_CONFIG } from "../lib/constants";
 import { decrypt, encrypt } from "../lib/crypto";
 import { env } from "../lib/env";
 import { recordEvent } from "../lib/events";
@@ -549,13 +542,7 @@ instanceRoutes.get("/instances/config", async (c) => {
     terminalToken: row.terminalToken,
     telegramBotToken,
     openclawConfig: OPENCLAW_BASE_CONFIG,
-    provider: {
-      name: LLM_PROVIDER_NAME,
-      url: LLM_PROVIDER_URL,
-      defaultModel: LLM_DEFAULT_MODEL,
-      models: LLM_MODELS,
-      rpcUrl: env.SOLANA_RPC_URL || null,
-    },
+    rpcUrl: env.SOLANA_RPC_URL || null,
   });
 });
 

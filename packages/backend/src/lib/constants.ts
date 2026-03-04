@@ -1,63 +1,20 @@
 /** Hetzner snapshot ID for VM provisioning. Update after `just build-image`. */
 export const HETZNER_SNAPSHOT_ID = "363638447";
 
-/** LLM provider defaults - baked into codebase, not env-overridable. */
-export const LLM_PROVIDER_URL = "https://sol.blockrun.ai";
-export const LLM_PROVIDER_NAME = "blockrun";
-export const LLM_DEFAULT_MODEL = "moonshot/kimi-k2.5";
-
-/** Model catalog served to VMs. Change here to add/remove models without image rebuild. */
-export const LLM_MODELS = [
-  {
-    id: "anthropic/claude-sonnet-4.6",
-    name: "Claude Sonnet 4.6",
-    reasoning: true,
-    input: ["text", "image"],
-    cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-    contextWindow: 200000,
-    maxTokens: 2048,
-  },
-  {
-    id: "anthropic/claude-opus-4.6",
-    name: "Claude Opus 4.6",
-    reasoning: true,
-    input: ["text", "image"],
-    cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-    contextWindow: 200000,
-    maxTokens: 2048,
-  },
-  {
-    id: "openai/gpt-5.2",
-    name: "GPT-5.2",
-    reasoning: true,
-    input: ["text", "image"],
-    cost: { input: 1.75, output: 14, cacheRead: 0.44, cacheWrite: 1.75 },
-    contextWindow: 400000,
-    maxTokens: 2048,
-  },
-  {
-    id: "moonshot/kimi-k2.5",
-    name: "Kimi K2.5",
-    reasoning: false,
-    input: ["text", "image"],
-    cost: { input: 0.6, output: 3, cacheRead: 0.3, cacheWrite: 0.6 },
-    contextWindow: 262144,
-    maxTokens: 4096,
-  },
-  {
-    id: "deepseek/deepseek-v3.2",
-    name: "DeepSeek V3.2",
-    reasoning: false,
-    input: ["text"],
-    cost: { input: 0.23, output: 0.34, cacheRead: 0.12, cacheWrite: 0.23 },
-    contextWindow: 163840,
-    maxTokens: 4096,
-  },
-];
-
 /**
- * Base OpenClaw config served to VMs at boot via /instances/config.
+ * Full OpenClaw config served to VMs at boot via /instances/config.
  * Change here to update OpenClaw settings without an image rebuild.
+ *
+ * Provider/model architecture:
+ * - `models.mode: "replace"` hides all 700+ built-in provider models.
+ *   Only providers listed in `models.providers` appear in `/models`.
+ * - `models.providers` is the ONLY way to populate the model catalog.
+ *   The plugin's `registerProvider()` API is for auth flows only (OAuth,
+ *   API key, device code) - it does NOT add models to the resolution system.
+ *   Do not pass models through plugin config expecting them to show up.
+ * - Plugin config (`plugins.entries.openclaw-x402.config`) only needs
+ *   `providerUrl`, `providerName`, and `keypairPath`. The `rpcUrl` field
+ *   is merged at boot time from the env var (per-instance).
  */
 export const OPENCLAW_BASE_CONFIG = {
   gateway: {
@@ -71,8 +28,39 @@ export const OPENCLAW_BASE_CONFIG = {
   update: { auto: { enabled: false }, checkOnStart: false },
   logging: { maxFileBytes: 104857600 },
   tools: { profile: "full" },
+  models: {
+    mode: "replace",
+    providers: {
+      blockrun: {
+        baseUrl: "https://sol.blockrun.ai/api/v1",
+        apiKey: "x402-payment",
+        api: "openai-completions",
+        models: [
+          { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", maxTokens: 2048 },
+          { id: "anthropic/claude-opus-4.6", name: "Claude Opus 4.6", maxTokens: 2048 },
+          { id: "openai/gpt-5.2", name: "GPT-5.2", maxTokens: 2048 },
+          { id: "moonshot/kimi-k2.5", name: "Kimi K2.5", maxTokens: 4096 },
+          { id: "deepseek/deepseek-v3.2", name: "DeepSeek V3.2", maxTokens: 4096 },
+        ],
+      },
+    },
+  },
+  plugins: {
+    entries: {
+      "openclaw-x402": {
+        enabled: true,
+        config: {
+          providerUrl: "https://sol.blockrun.ai",
+          providerName: "blockrun",
+          keypairPath: "/home/openclaw/.openclaw/agentbox/wallet-sol.json",
+        },
+      },
+      telegram: { enabled: true },
+    },
+  },
   agents: {
     defaults: {
+      model: { primary: "blockrun/moonshot/kimi-k2.5" },
       skipBootstrap: true,
       timeoutSeconds: 120,
       compaction: {

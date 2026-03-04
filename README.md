@@ -13,6 +13,8 @@ AgentBox is an operator dashboard and backend for provisioning and managing Open
 
 - `packages/backend` - API server, auth, provisioning, callback handling
 - `packages/frontend` - dashboard UI
+- `packages/openclaw-x402` - OpenClaw plugin for x402 payments and pump.fun trading
+- `skills/` - OpenClaw skills (provisioning, bootstrap)
 - `ops/packer` - golden image build and initialization scripts
 - `compose.yml` - production-like local orchestration
 
@@ -34,7 +36,6 @@ Main variables:
 - `HETZNER_API_TOKEN`
 - `API_BASE_URL`
 - `OPERATOR_TOKEN`
-- `CALLBACK_SECRET`
 - `JWT_SECRET`
 - `PAY_TO_ADDRESS`
 - `FACILITATOR_URL`

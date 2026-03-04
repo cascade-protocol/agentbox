@@ -31,10 +31,10 @@
 
 ## Baked-in Constants
 - Values that are source-of-truth in the codebase (not env-overridable) live in `packages/backend/src/lib/constants.ts`. Import from there, never add these to env.ts or .env files.
-- Current constants: `HETZNER_SNAPSHOT_ID`, `LLM_PROVIDER_URL`, `LLM_PROVIDER_NAME`, `LLM_DEFAULT_MODEL`, `LLM_MODELS`, `OPENCLAW_BASE_CONFIG`, `HETZNER_SSH_KEY_IDS`
+- Current constants: `HETZNER_SNAPSHOT_ID`, `OPENCLAW_BASE_CONFIG`, `HETZNER_SSH_KEY_IDS`
 - After `just build-image`, update `HETZNER_SNAPSHOT_ID` in `constants.ts` (not env.ts)
-- LLM provider/model changes (URL, name, default model, model catalog) are ONLY `constants.ts` changes - no image rebuild needed. The backend serves these dynamically to VMs via the config endpoint.
-- OpenClaw config changes (gateway settings, tools profile, agent defaults, compaction, context pruning) are ONLY `OPENCLAW_BASE_CONFIG` in `constants.ts` - no image rebuild needed. Served to VMs at boot via `/instances/config`.
+- All OpenClaw config (gateway, models/providers, plugins, agent defaults, compaction, context pruning) is in `OPENCLAW_BASE_CONFIG` in `constants.ts` - no image rebuild needed. Served to VMs at boot via `/instances/config`.
+- `models.mode: "replace"` hides built-in providers; only `models.providers` entries appear in `/models`. Plugin `registerProvider()` is auth-only - does NOT populate the model catalog.
 - Skills are installed on VMs via `npx skills add -g` into `~/.openclaw/skills/` (auto-discovered managed skills path, no `extraDirs` needed)
 
 ## Logging (Backend)

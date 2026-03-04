@@ -137,19 +137,12 @@ OCEOF
 
 # --- x402 payment plugin ---
 # Patches globalThis.fetch to handle x402 USDC payments on Solana for LLM inference.
-# Published as `openclaw-x402` on npm. Installed directly into the extensions directory
-# where OpenClaw auto-discovers plugins (no load.paths config needed).
+# Published as `openclaw-x402` on npm. Installed via OpenClaw's plugin manager which
+# handles placement in ~/.openclaw/extensions/ (auto-discovered, no load.paths needed).
 echo ""
 echo "==> Installing x402 payment plugin"
 chown -R openclaw:openclaw /home/openclaw/.openclaw
-PLUGIN_DIR=/home/openclaw/.openclaw/extensions/openclaw-x402
-su - openclaw -c "
-  mkdir -p $PLUGIN_DIR
-  cd /tmp && npm pack openclaw-x402@latest 2>/dev/null
-  tar xzf /tmp/openclaw-x402-*.tgz -C $PLUGIN_DIR --strip-components=1
-  rm -f /tmp/openclaw-x402-*.tgz
-  cd $PLUGIN_DIR && npm install --omit=dev
-"
+su - openclaw -c "openclaw plugins install openclaw-x402@latest"
 echo "    x402 plugin installed"
 
 # --- Install AgentBox skills (managed skills via npx) ---

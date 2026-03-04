@@ -74,7 +74,7 @@ const { gatewayToken } = instance;
 const chatApiUrl = `https://${name}.agentbox.fyi/v1/chat/completions`;
 
 console.log(`URL: ${chatApiUrl}`);
-console.log(`Token: ${gatewayToken ? gatewayToken.slice(0, 16) + "..." : "MISSING"}`);
+console.log(`Token: ${gatewayToken ? `${gatewayToken.slice(0, 16)}...` : "MISSING"}`);
 
 const chatRes = await fetch(chatApiUrl, {
   method: "POST",
