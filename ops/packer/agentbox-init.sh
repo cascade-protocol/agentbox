@@ -143,11 +143,15 @@ fi
 SOLANA_RPC=$(echo "$CONFIG_JSON" | jq -r '.rpcUrl // empty')
 TELEGRAM_BOT_TOKEN=$(echo "$CONFIG_JSON" | jq -r '.telegramBotToken // empty')
 
+DASHBOARD_URL="https://agentbox.fyi/instances/${SERVER_ID}"
+
 echo "$CONFIG_JSON" | jq \
   --arg rpcUrl "${SOLANA_RPC:-}" \
   --arg telegramBotToken "${TELEGRAM_BOT_TOKEN:-}" \
+  --arg dashboardUrl "${DASHBOARD_URL}" \
   '
   .openclawConfig
+  | .plugins.entries."openclaw-x402".config.dashboardUrl = $dashboardUrl
   | if $rpcUrl != "" then
       .plugins.entries."openclaw-x402".config.rpcUrl = $rpcUrl
     else . end

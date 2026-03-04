@@ -1,13 +1,12 @@
 ---
 name: agentbox-twitter
-description: "Twitter/X research via paid API: search tweets with 50+ operators, fetch tweets with threads/replies/quotes, get user profiles with tweets/followers/following. Uses x402_payment tool for automatic USDC micropayments ($0.003/call). Use when: (1) searching tweets by keyword, user, or advanced operators, (2) fetching specific tweets by ID/URL with context, (3) looking up user profiles and their activity."
+description: "Twitter/X research via paid API: search tweets with 50+ operators, fetch tweets with threads/replies/quotes, get user profiles with tweets/followers/following. Uses x_payment tool for automatic USDC micropayments ($0.003/call). Use when: (1) searching tweets by keyword, user, or advanced operators, (2) fetching specific tweets by ID/URL with context, (3) looking up user profiles and their activity."
 metadata: {"openclaw": {"emoji": "🐦", "requires": {"bins": ["openclaw"]}}}
-allowed-tools: ["x402_payment"]
 ---
 
 # Twitter Research
 
-Paid Twitter/X data API at `https://twitter.x402.agentbox.fyi`. Costs $0.003 USDC per call via x402 on Solana. Use the `x402_payment` tool for all requests.
+Paid Twitter/X data API at `https://twitter.x402.agentbox.fyi`. Costs $0.003 USDC per call via x402 on Solana. Use the `x_payment` tool for all requests.
 
 ## Endpoints
 
@@ -16,7 +15,7 @@ Paid Twitter/X data API at `https://twitter.x402.agentbox.fyi`. Costs $0.003 USD
 Find tweets matching a query with 50+ advanced operators.
 
 ```
-x402_payment({
+x_payment({
   "url": "https://twitter.x402.agentbox.fyi/search",
   "method": "GET",
   "params": "{\"q\": \"from:elonmusk AI\", \"type\": \"Latest\", \"limit\": 20}"
@@ -66,7 +65,7 @@ The `summary` object includes: `totalLikes`, `totalRetweets`, `totalReplies`, `a
 Get tweet(s) by ID or URL with optional thread, replies, and quotes.
 
 ```
-x402_payment({
+x_payment({
   "url": "https://twitter.x402.agentbox.fyi/tweet/1585841080431321088",
   "method": "GET",
   "params": "{\"include\": \"thread,replies\", \"limit\": 50}"
@@ -98,7 +97,7 @@ If the fetched tweet is a reply, `parent` is auto-included with the replied-to t
 Get user profile(s) with optional tweets, followers, or following.
 
 ```
-x402_payment({
+x_payment({
   "url": "https://twitter.x402.agentbox.fyi/user/elonmusk",
   "method": "GET",
   "params": "{\"include\": \"tweets\", \"limit\": 20}"
@@ -126,7 +125,7 @@ x402_payment({
 ### Monitor a topic
 
 ```
-x402_payment({
+x_payment({
   "url": "https://twitter.x402.agentbox.fyi/search",
   "method": "GET",
   "params": "{\"q\": \"x402 OR \\\"402 payment\\\" min_faves:5 within_time:24h\", \"type\": \"Latest\"}"
@@ -136,7 +135,7 @@ x402_payment({
 ### Get a tweet with full context
 
 ```
-x402_payment({
+x_payment({
   "url": "https://twitter.x402.agentbox.fyi/tweet/1585841080431321088",
   "method": "GET",
   "params": "{\"include\": \"thread,replies,quotes\", \"limit\": 20}"
@@ -146,7 +145,7 @@ x402_payment({
 ### Research a user
 
 ```
-x402_payment({
+x_payment({
   "url": "https://twitter.x402.agentbox.fyi/user/CoinbaseDev",
   "method": "GET",
   "params": "{\"include\": \"tweets\", \"limit\": 50}"
@@ -158,7 +157,7 @@ x402_payment({
 Use `nextCursor` from a previous response:
 
 ```
-x402_payment({
+x_payment({
   "url": "https://twitter.x402.agentbox.fyi/search",
   "method": "GET",
   "params": "{\"q\": \"from:elonmusk\", \"cursor\": \"DAABCgAB...\"}"
@@ -174,6 +173,6 @@ Every call costs $0.003 USDC on Solana mainnet. Each paginated request is a sepa
 | HTTP | Meaning |
 |------|---------|
 | 400 | Invalid parameters (check query syntax) |
-| 402 | Payment required (handled automatically by x402_payment) |
+| 402 | Payment required (handled automatically by x_payment) |
 | 404 | Tweet or user not found |
 | 502 | Upstream API error |

@@ -1,6 +1,7 @@
 ---
 name: agentbox
 description: "Provision dedicated AI agents on AgentBox via x402 payment ($5 USDC on Solana). Use when creating cloud instances running OpenClaw AI gateways with HTTPS and web terminal. Requires Node.js and a Solana wallet.json with USDC funds. Covers: provisioning new instances, polling status, interacting via OpenAI-compatible chat completions, extending, and listing instances."
+metadata: {"openclaw": {"emoji": "📦", "requires": {"anyBins": ["node", "npx"]}}}
 ---
 
 # AgentBox
@@ -62,14 +63,27 @@ Save `id`, `name`, and `accessToken`.
 
 ## 2. Poll until running
 
-```bash
-curl -s https://api.agentbox.fyi/provision/INSTANCE_ID \
-  -H "Authorization: Bearer ACCESS_TOKEN"
+```javascript
+const { id, name, accessToken } = await res.json();
+
+let instance;
+for (let elapsed = 0; elapsed < 600; elapsed += 15) {
+  await new Promise((r) => setTimeout(r, 15000));
+  const poll = await fetch(`https://api.agentbox.fyi/provision/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  instance = await poll.json();
+  console.log(`[${elapsed}s] status=${instance.status} step=${instance.provisioningStep || "-"}`);
+  if (instance.status === "running") break;
+  if (instance.status === "error" || instance.status === "deleted") {
+    throw new Error(`Provisioning failed: ${instance.status}`);
+  }
+}
 ```
 
-Poll every 15 seconds. Boot takes 2-4 minutes.
+Poll every 15 seconds. Boot takes 2-4 minutes, timeout after 10 minutes.
 
-Status progression: `provisioning` -> `running`. The response also includes a `provisioningStep` field with granular sub-states (`vm_created`, `configuring`, `wallet_created`, `openclaw_ready`, `services_starting`). Most polls will return the same status - this is normal.
+Status progression: `provisioning` -> `minting` -> `running`. The `minting` state is brief (SATI NFT minting). The response also includes a `provisioningStep` field with granular sub-states (`vm_created`, `configuring`, `wallet_created`, `openclaw_ready`, `services_starting`).
 
 When `status` is `"running"`, the response includes the real `gatewayToken`:
 
@@ -132,8 +146,10 @@ Returns updated instance with new `expiresAt` and `accessToken`. Maximum lifetim
 List all instances owned by your wallet via Ed25519 signature:
 
 ```javascript
+import { readFileSync } from "node:fs";
 import { createKeyPairFromBytes, signBytes, getAddressFromPublicKey } from "@solana/kit";
 
+const keypairBytes = new Uint8Array(JSON.parse(readFileSync("/path/to/wallet.json", "utf8")));
 const keyPair = await createKeyPairFromBytes(keypairBytes);
 const address = await getAddressFromPublicKey(keyPair.publicKey);
 const timestamp = Date.now();

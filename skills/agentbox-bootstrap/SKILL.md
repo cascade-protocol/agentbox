@@ -1,7 +1,7 @@
 ---
 name: agentbox-bootstrap
 description: "AgentBox agent operating instructions and provider configuration. Services, config, x402 payments, skill updates, OpenRouter setup, troubleshooting. Loads automatically on every AgentBox session."
-metadata: {"internal": true, "openclaw": {"always": true}}
+metadata: {"internal": true, "openclaw": {"always": true, "emoji": "🤖"}}
 user-invocable: true
 ---
 
