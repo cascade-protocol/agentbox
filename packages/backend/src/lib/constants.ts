@@ -1,5 +1,5 @@
 /** Hetzner snapshot ID for VM provisioning. Update after `just build-image`. */
-export const HETZNER_SNAPSHOT_ID = "363702079";
+export const HETZNER_SNAPSHOT_ID = "363724013";
 
 /**
  * x402 provider catalog - single source of truth for model metadata.
