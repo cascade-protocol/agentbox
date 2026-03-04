@@ -80,7 +80,7 @@ function isOwner(row: typeof instances.$inferSelect, wallet: string): boolean {
   return isAdmin(wallet) || row.ownerWallet === wallet;
 }
 
-function toInstanceResponse(row: typeof instances.$inferSelect) {
+export function toInstanceResponse(row: typeof instances.$inferSelect) {
   return {
     id: row.id,
     name: row.name,
@@ -99,7 +99,7 @@ function toInstanceResponse(row: typeof instances.$inferSelect) {
   };
 }
 
-function buildUserData(opts: {
+export function buildUserData(opts: {
   apiBaseUrl: string;
   callbackToken: string;
   terminalToken: string;
@@ -134,7 +134,7 @@ function buildUserData(opts: {
   return lines.join("\n");
 }
 
-async function mintAndFinalize(row: typeof instances.$inferSelect): Promise<void> {
+export async function mintAndFinalize(row: typeof instances.$inferSelect): Promise<void> {
   const entity = { type: "instance", id: String(row.id) };
   const system = { type: "system", id: "backend" };
 

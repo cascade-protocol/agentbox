@@ -17,9 +17,11 @@ import { env } from "./lib/env";
 import { recordEvent } from "./lib/events";
 import * as hetzner from "./lib/hetzner";
 import { httpRequestDuration, refreshChainGauges, refreshDbGauges, register } from "./lib/metrics";
+import { payerStore } from "./lib/payer-store";
 import { logger } from "./logger";
 import { healthRoutes } from "./routes/health";
 import { instanceRoutes } from "./routes/instances";
+import { provisionRoutes } from "./routes/provision";
 
 const SOLANA_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
@@ -91,7 +93,13 @@ const resourceServer = new x402ResourceServer([facilitator])
     logger.info("x402 after verify", {
       isValid: ctx.result.isValid,
       invalidReason: ctx.result.invalidReason,
+      payer: ctx.result.payer,
     });
+    // Bridge payer wallet to provision route handlers via AsyncLocalStorage
+    const store = payerStore.getStore();
+    if (store && ctx.result.payer) {
+      store.payer = ctx.result.payer;
+    }
   })
   .onAfterSettle(async (ctx) => {
     logger.info(`Payment settled via ${env.FACILITATOR_URL}`, {
@@ -128,6 +136,30 @@ const x402Payment = paymentMiddleware(
       description: "Extend AgentBox VM (7 days)",
       mimeType: "application/json",
     },
+    "POST /provision": {
+      accepts: [
+        {
+          scheme: "exact",
+          network: SOLANA_MAINNET,
+          price: "$5",
+          payTo: env.PAY_TO_ADDRESS,
+        },
+      ],
+      description: "Provision AgentBox VM (7 days)",
+      mimeType: "application/json",
+    },
+    "POST /provision/[id]/extend": {
+      accepts: [
+        {
+          scheme: "exact",
+          network: SOLANA_MAINNET,
+          price: "$5",
+          payTo: env.PAY_TO_ADDRESS,
+        },
+      ],
+      description: "Extend AgentBox VM (7 days)",
+      mimeType: "application/json",
+    },
   },
   resourceServer,
 );
@@ -148,6 +180,25 @@ app.use("/instances/*", async (c, next) => {
   return x402Payment(c, next);
 });
 
+// Provision routes: AsyncLocalStorage context + preflight + x402
+app.use("/provision/*", async (c, next) => {
+  return payerStore.run({ payer: undefined }, async () => {
+    if (c.req.method === "POST") {
+      const preflightError = getProvisioningPreflightError();
+      if (preflightError) {
+        return c.json({ error: preflightError }, 503);
+      }
+    }
+
+    // GET endpoints (poll, list) don't need x402 payment
+    if (c.req.method === "GET") {
+      return next();
+    }
+
+    return x402Payment(c, next);
+  });
+});
+
 app.onError((err, c) => {
   logger.error(`Unhandled API error: ${String(err)}`);
   const isProd = process.env.NODE_ENV === "production";
@@ -156,6 +207,7 @@ app.onError((err, c) => {
 
 app.route("/", healthRoutes);
 app.route("/", instanceRoutes);
+app.route("/", provisionRoutes);
 
 // DB-backed gauges - refresh every 60s
 void refreshDbGauges();

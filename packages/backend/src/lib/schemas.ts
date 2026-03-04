@@ -92,6 +92,16 @@ export const instanceAccessSchema = instanceSchema.extend({
   terminalUrl: z.string(),
 });
 
+export const provisionInputSchema = z.object({
+  name: instanceNameSchema.optional(),
+});
+
+export const provisionListQuerySchema = z.object({
+  wallet: z.string().min(32).max(44),
+  signature: z.string().min(1).max(256),
+  timestamp: z.number(),
+});
+
 export type InstanceStatus = z.infer<typeof instanceStatusSchema>;
 export type Instance = z.infer<typeof instanceSchema>;
 export type InstanceAccess = z.infer<typeof instanceAccessSchema>;
