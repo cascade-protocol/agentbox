@@ -1122,6 +1122,10 @@ instanceRoutes.post("/instances/:id/pairing", auth, async (c) => {
         code: exitCode,
       } = await vm.exec(`sudo -u openclaw openclaw pairing approve telegram ${code} --notify`);
       if (exitCode !== 0) {
+        const combined = `${stdout}\n${stderr}`;
+        if (combined.includes("No pending pairing request")) {
+          throw new Error("No pending pairing request found for this code");
+        }
         throw new Error(stderr.trim() || `Pairing approval failed with exit code ${exitCode}`);
       }
       return { stdout: stdout.trim() };
@@ -1140,9 +1144,11 @@ instanceRoutes.post("/instances/:id/pairing", auth, async (c) => {
 
     return c.json({ ok: true });
   } catch (err) {
-    logger.error(`Pairing approval failed for instance ${id}`, {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return c.json({ error: err instanceof Error ? err.message : "Pairing approval failed" }, 500);
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("No pending pairing request")) {
+      return c.json({ error: msg }, 400);
+    }
+    logger.error(`Pairing approval failed for instance ${id}`, { error: msg });
+    return c.json({ error: "Pairing approval failed" }, 500);
   }
 });
