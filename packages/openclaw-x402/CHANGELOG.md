@@ -2,6 +2,12 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.9.1] - 2026-03-05
+
+### Fixed
+
+- Republish with correct build artifacts (0.9.0 was published from stale build)
+
 ## [0.9.0] - 2026-03-05
 
 ### Added
