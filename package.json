@@ -18,7 +18,7 @@
     "@biomejs/biome": "^2.4.2",
     "@typescript/native-preview": "7.0.0-dev.20260305.1",
     "@vitest/coverage-v8": "^4.0.18",
-    "turbo": "^2.8.0",
+    "turbo": "^2.8.13",
     "typescript": "^5.7.0",
     "vitest": "^4.0.18"
   },
