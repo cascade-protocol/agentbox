@@ -37,7 +37,7 @@ import { deriveEvmKeypair, deriveSolanaKeypair } from "./wallet.js";
 
 const INFERENCE_RESERVE = 0.3;
 const MAX_RESPONSE_CHARS = 50_000;
-const PLUGIN_VERSION = "0.9.1";
+const PLUGIN_VERSION = "0.9.2";
 
 // --- Types ---
 

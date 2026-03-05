@@ -2,6 +2,15 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.9.2] - 2026-03-05
+
+### Changed
+
+- x_status shows only agentbox + blockrun models as tappable `/model provider/id` codeblocks
+- Inference costs fetched from on-chain transaction (real USDC delta) instead of token-based estimates
+- Adaptive USDC precision in history display (0.003 no longer rounds to 0.000)
+- Init script merges telegram config preserving `linkPreview: false` from base config
+
 ## [0.9.1] - 2026-03-05
 
 ### Fixed
