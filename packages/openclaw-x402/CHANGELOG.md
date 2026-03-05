@@ -2,6 +2,13 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.9.3] - 2026-03-05
+
+### Fixed
+
+- x_update: delete + reinstall plugin instead of broken `openclaw plugins update` (install records wiped by init config write)
+- x_update: use process.exit for restart (systemd Restart=always) instead of broken systemctl --user (no DBUS in gateway env)
+
 ## [0.9.2] - 2026-03-05
 
 ### Changed

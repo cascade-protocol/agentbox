@@ -1,4 +1,4 @@
-import { execSync, spawn } from "node:child_process";
+import { execSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -37,7 +37,7 @@ import { deriveEvmKeypair, deriveSolanaKeypair } from "./wallet.js";
 
 const INFERENCE_RESERVE = 0.3;
 const MAX_RESPONSE_CHARS = 50_000;
-const PLUGIN_VERSION = "0.9.2";
+const PLUGIN_VERSION = "0.9.3";
 
 // --- Types ---
 
@@ -351,8 +351,10 @@ export function register(api: OpenClawPluginApi): void {
 
       const lines = [`Updating x402 v${PLUGIN_VERSION} -> v${latestVersion}`, ""];
 
+      const extDir = join(homedir(), ".openclaw/extensions/openclaw-x402");
       try {
-        execSync("openclaw plugins update openclaw-x402", {
+        execSync(`rm -rf ${extDir}`, { timeout: 5_000, stdio: "pipe" });
+        execSync("openclaw plugins install openclaw-x402@latest", {
           timeout: 60_000,
           stdio: "pipe",
         });
@@ -374,25 +376,8 @@ export function register(api: OpenClawPluginApi): void {
 
       lines.push("", "Restarting gateway...");
 
-      // Schedule restart after response is sent
-      setTimeout(() => {
-        try {
-          spawn("systemctl", ["--user", "restart", "openclaw-gateway"], {
-            detached: true,
-            stdio: "ignore",
-          }).unref();
-        } catch {
-          // Fallback: try system-level restart
-          try {
-            spawn("systemctl", ["restart", "openclaw-gateway"], {
-              detached: true,
-              stdio: "ignore",
-            }).unref();
-          } catch {
-            // Cannot restart - user will need to restart manually
-          }
-        }
-      }, 2000);
+      // Exit after response is sent - systemd Restart=always handles the restart
+      setTimeout(() => process.exit(0), 2000);
 
       return { text: lines.join("\n") };
     },
