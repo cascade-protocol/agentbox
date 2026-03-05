@@ -12,7 +12,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { createKeyPairSignerFromBytes } from "@solana/kit";
+import { createKeyPairSignerFromBytes, createSolanaRpc, signature } from "@solana/kit";
 import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import { ExactSvmScheme } from "@x402/svm/exact/client";
 
@@ -56,6 +56,12 @@ interface CallResult {
   flatCost?: number | null;
   usdc?: number | null;
   cost?: number | null;
+}
+
+interface ChatResponse {
+  model?: string;
+  choices?: Array<{ finish_reason?: string }>;
+  usage?: { prompt_tokens?: number; completion_tokens?: number; reasoning_tokens?: number };
 }
 
 const WALLET_PATH = process.argv[2] || process.env.WALLET_PATH;
@@ -314,13 +320,13 @@ async function runCall(target: Target, scenario: Scenario): Promise<CallResult> 
       };
     }
 
-    const data = await res.json();
-    const u = data.usage || {};
-    const inTok = u.prompt_tokens || 0;
-    const outTok = u.completion_tokens || 0;
-    const rsnTok = u.reasoning_tokens || 0;
-    const finish = data.choices?.[0]?.finish_reason || "?";
-    const returnedModel = data.model || "?";
+    const data = (await res.json()) as ChatResponse;
+    const u = data.usage ?? {};
+    const inTok = u.prompt_tokens ?? 0;
+    const outTok = u.completion_tokens ?? 0;
+    const rsnTok = u.reasoning_tokens ?? 0;
+    const finish = data.choices?.[0]?.finish_reason ?? "?";
+    const returnedModel = data.model ?? "?";
 
     let calcCost: number | null = null;
     const pricing = OR_PRICING[target.modelId];
@@ -372,27 +378,28 @@ async function runCall(target: Target, scenario: Scenario): Promise<CallResult> 
 
 // -- On-chain lookup ---------------------------------------------------------
 
+const rpc = createSolanaRpc("https://api.mainnet-beta.solana.com");
+
 async function lookupUsdc(sig: string): Promise<number | null> {
-  const res = await fetch("https://api.mainnet-beta.solana.com", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "getTransaction",
-      params: [
-        sig,
-        { encoding: "jsonParsed", maxSupportedTransactionVersion: 0, commitment: "confirmed" },
-      ],
-    }),
-  });
-  const { result: tx } = await res.json();
+  const tx = await rpc
+    .getTransaction(signature(sig), {
+      encoding: "jsonParsed",
+      maxSupportedTransactionVersion: 0,
+      commitment: "confirmed",
+    })
+    .send();
   if (!tx) return null;
-  const ixs = [...(tx.transaction?.message?.instructions || [])];
-  for (const g of tx.meta?.innerInstructions || []) ixs.push(...g.instructions);
+  const ixs = [...tx.transaction.message.instructions];
+  for (const g of tx.meta?.innerInstructions ?? []) ixs.push(...g.instructions);
   for (const ix of ixs) {
-    if (ix.parsed?.type === "transferChecked" && ix.parsed.info.mint === USDC_MINT)
-      return parseFloat(ix.parsed.info.tokenAmount.uiAmountString);
+    if ("parsed" in ix && typeof ix.parsed === "object" && ix.parsed !== null) {
+      const p = ix.parsed as {
+        type?: string;
+        info?: { mint?: string; tokenAmount?: { uiAmountString?: string } };
+      };
+      if (p.type === "transferChecked" && p.info?.mint === USDC_MINT)
+        return parseFloat(p.info.tokenAmount?.uiAmountString ?? "0");
+    }
   }
   return null;
 }
@@ -534,6 +541,36 @@ for (const s of SCENARIOS) {
           : "same";
     console.log(
       `    ${m.padEnd(16)} x402=$${x4.cost.toFixed(6)}  OR=$${or.cost.toFixed(6)}  -> ${label}`,
+    );
+  }
+}
+
+// -- Latency comparison ------------------------------------------------------
+
+console.log(`\n${SEP}`);
+console.log("LATENCY: median ms per provider/model");
+console.log(SEP);
+
+for (const m of allModels) {
+  const mr = results.filter((r) => r.model === m && !r.error);
+  if (!mr.length) continue;
+  const byProvider = allProviders
+    .map((p) => {
+      const pr = mr.filter((r) => r.provider === p);
+      if (!pr.length) return null;
+      const sorted = pr.map((r) => r.ms).sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)];
+      return { provider: p, median };
+    })
+    .filter(Boolean) as Array<{ provider: string; median: number }>;
+  if (!byProvider.length) continue;
+  const fastest = Math.min(...byProvider.map((b) => b.median));
+  console.log(`\n  ${m}:`);
+  for (const b of byProvider) {
+    const ratio = b.median / fastest;
+    const bar = ratio > 1 ? ` (${ratio.toFixed(1)}x slower)` : " (fastest)";
+    console.log(
+      `    ${b.provider.padEnd(16)} ${`${(b.median / 1000).toFixed(1)}s`.padStart(8)}${bar}`,
     );
   }
 }

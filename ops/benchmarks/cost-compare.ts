@@ -10,7 +10,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { createKeyPairSignerFromBytes } from "@solana/kit";
+import { createKeyPairSignerFromBytes, createSolanaRpc, signature } from "@solana/kit";
 import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import { ExactSvmScheme } from "@x402/svm/exact/client";
 
@@ -51,8 +51,15 @@ interface CallResult {
   finish?: string;
   returnedModel?: string;
   calcCost?: number | null;
+  flatCost?: number | null;
   usdc?: number | null;
   cost?: number | null;
+}
+
+interface ChatResponse {
+  model?: string;
+  choices?: Array<{ finish_reason?: string }>;
+  usage?: { prompt_tokens?: number; completion_tokens?: number; reasoning_tokens?: number };
 }
 
 const WALLET_PATH = process.argv[2] || process.env.WALLET_PATH;
@@ -70,6 +77,12 @@ if (!OR_KEY) {
   process.exit(1);
 }
 
+// x402 inference flat pricing (per call)
+const X402_FLAT: Record<string, number> = {
+  "minimax/minimax-m2.5": 0.002,
+  "moonshotai/kimi-k2.5": 0.003,
+};
+
 // OpenRouter per-1M-token pricing
 const OR_PRICING: Record<string, { input: number; output: number }> = {
   "deepseek/deepseek-v3.2": { input: 0.25, output: 0.4 },
@@ -77,6 +90,8 @@ const OR_PRICING: Record<string, { input: number; output: number }> = {
   "minimax/minimax-m2.5": { input: 0.295, output: 1.2 },
   "anthropic/claude-sonnet-4.5": { input: 3.0, output: 15.0 },
 };
+
+const X402_INF_BASE = "https://inference.x402.agentbox.fyi/v1";
 
 // -- Scenarios ---------------------------------------------------------------
 
@@ -213,6 +228,22 @@ const TARGETS: Target[] = [
     scenarios: ["short", "long"],
   },
 
+  // x402-inference (our endpoint)
+  {
+    provider: "x402-inference",
+    type: "x402",
+    baseUrl: X402_INF_BASE,
+    modelId: "minimax/minimax-m2.5",
+    model: "MiniMax M2.5",
+  },
+  {
+    provider: "x402-inference",
+    type: "x402",
+    baseUrl: X402_INF_BASE,
+    modelId: "moonshotai/kimi-k2.5",
+    model: "Kimi K2.5",
+  },
+
   // OpenRouter (API key)
   {
     provider: "OpenRouter",
@@ -328,17 +359,21 @@ async function runCall(target: Target, scenario: Scenario): Promise<CallResult> 
       };
     }
 
-    const data = await res.json();
-    const u = data.usage || {};
-    const inTok = u.prompt_tokens || 0;
-    const outTok = u.completion_tokens || 0;
-    const rsnTok = u.reasoning_tokens || 0;
-    const finish = data.choices?.[0]?.finish_reason || "?";
-    const returnedModel = data.model || "?";
+    const data = (await res.json()) as ChatResponse;
+    const u = data.usage ?? {};
+    const inTok = u.prompt_tokens ?? 0;
+    const outTok = u.completion_tokens ?? 0;
+    const rsnTok = u.reasoning_tokens ?? 0;
+    const finish = data.choices?.[0]?.finish_reason ?? "?";
+    const returnedModel = data.model ?? "?";
 
     let calcCost: number | null = null;
     const pricing = OR_PRICING[target.modelId];
     if (pricing) calcCost = (inTok * pricing.input + outTok * pricing.output) / 1_000_000;
+
+    let flatCost: number | null = null;
+    const flat = X402_FLAT[target.modelId];
+    if (flat != null) flatCost = flat;
 
     console.log(
       `  [${tag}] ${inTok}in/${outTok}out${rsnTok ? `/${rsnTok}rsn` : ""} finish=${finish} (${ms}ms)`,
@@ -359,6 +394,7 @@ async function runCall(target: Target, scenario: Scenario): Promise<CallResult> 
       finish,
       returnedModel,
       calcCost,
+      flatCost,
     };
   } catch (err) {
     const ms = Date.now() - start;
@@ -381,27 +417,28 @@ async function runCall(target: Target, scenario: Scenario): Promise<CallResult> 
 
 // -- On-chain lookup ---------------------------------------------------------
 
+const rpc = createSolanaRpc("https://api.mainnet-beta.solana.com");
+
 async function lookupUsdc(sig: string): Promise<number | null> {
-  const res = await fetch("https://api.mainnet-beta.solana.com", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "getTransaction",
-      params: [
-        sig,
-        { encoding: "jsonParsed", maxSupportedTransactionVersion: 0, commitment: "confirmed" },
-      ],
-    }),
-  });
-  const { result: tx } = await res.json();
+  const tx = await rpc
+    .getTransaction(signature(sig), {
+      encoding: "jsonParsed",
+      maxSupportedTransactionVersion: 0,
+      commitment: "confirmed",
+    })
+    .send();
   if (!tx) return null;
-  const ixs = [...(tx.transaction?.message?.instructions || [])];
-  for (const g of tx.meta?.innerInstructions || []) ixs.push(...g.instructions);
+  const ixs = [...tx.transaction.message.instructions];
+  for (const g of tx.meta?.innerInstructions ?? []) ixs.push(...g.instructions);
   for (const ix of ixs) {
-    if (ix.parsed?.type === "transferChecked" && ix.parsed.info.mint === USDC_MINT)
-      return parseFloat(ix.parsed.info.tokenAmount.uiAmountString);
+    if ("parsed" in ix && typeof ix.parsed === "object" && ix.parsed !== null) {
+      const p = ix.parsed as {
+        type?: string;
+        info?: { mint?: string; tokenAmount?: { uiAmountString?: string } };
+      };
+      if (p.type === "transferChecked" && p.info?.mint === USDC_MINT)
+        return parseFloat(p.info.tokenAmount?.uiAmountString ?? "0");
+    }
   }
   return null;
 }
@@ -434,9 +471,10 @@ for (const [i, r] of results.entries()) {
   r.usdc = usdcAmounts[i];
 }
 
-// Unified cost: on-chain for x402, calculated for apikey
+// Unified cost: on-chain for x402, flat for x402-inference, calculated for apikey
 for (const r of results) {
   if (r.usdc != null) r.cost = r.usdc;
+  else if (r.flatCost != null) r.cost = r.flatCost;
   else if (r.calcCost != null) r.cost = r.calcCost;
 }
 
@@ -488,7 +526,7 @@ for (const r of results) {
 
 // -- Pivot -------------------------------------------------------------------
 
-const allProviders = ["BlockRun", "AIMO", "OpenRouter"];
+const allProviders = ["BlockRun", "AIMO", "x402-inference", "OpenRouter"];
 const allModels = [...new Set(TARGETS.map((t) => t.model))];
 
 const fmtCell = (r: CallResult | undefined) => {
@@ -512,6 +550,36 @@ for (const s of SCENARIOS) {
     const cells = allProviders.map((p) => fmtCell(get(m, p)));
     if (cells.every((c) => c.trim() === "-")) continue;
     console.log(`  ${m}`.padEnd(16) + cells.join(""));
+  }
+}
+
+// -- Latency comparison ------------------------------------------------------
+
+console.log(`\n${SEP}`);
+console.log("LATENCY: median ms per provider/model");
+console.log(SEP);
+
+for (const m of allModels) {
+  const mr = results.filter((r) => r.model === m && !r.error);
+  if (!mr.length) continue;
+  const byProvider = allProviders
+    .map((p) => {
+      const pr = mr.filter((r) => r.provider === p);
+      if (!pr.length) return null;
+      const sorted = pr.map((r) => r.ms).sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)];
+      return { provider: p, median };
+    })
+    .filter(Boolean) as Array<{ provider: string; median: number }>;
+  if (!byProvider.length) continue;
+  const fastest = Math.min(...byProvider.map((b) => b.median));
+  console.log(`\n  ${m}:`);
+  for (const b of byProvider) {
+    const ratio = b.median / fastest;
+    const bar = ratio > 1 ? ` (${ratio.toFixed(1)}x slower)` : " (fastest)";
+    console.log(
+      `    ${b.provider.padEnd(16)} ${`${(b.median / 1000).toFixed(1)}s`.padStart(8)}${bar}`,
+    );
   }
 }
 

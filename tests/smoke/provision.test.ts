@@ -90,8 +90,10 @@ describe.skipIf(!WALLET_PATH)("provision e2e", () => {
     });
 
     expect(chatRes.status).toBe(200);
-    const chatData = await chatRes.json();
+    const chatData = (await chatRes.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
     expect(chatData.choices?.[0]?.message?.content).toBeTruthy();
-    console.log(`Agent says: ${chatData.choices[0].message.content}`);
+    console.log(`Agent says: ${chatData.choices?.[0]?.message?.content}`);
   });
 });

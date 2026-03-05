@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "type-check": "tsc --noEmit",
     "cost-compare": "tsx cost-compare.ts",
     "inference-compare": "tsx inference-compare.ts"
   },
@@ -12,6 +13,7 @@
     "@x402/svm": "^2.5.0"
   },
   "devDependencies": {
+    "@types/node": "^25.3.3",
     "tsx": "^4.19.0"
   }
 }
