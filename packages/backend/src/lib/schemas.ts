@@ -88,6 +88,14 @@ export const withdrawInputSchema = z.object({
   amount: z.string().regex(/^(\d+\.?\d*|ALL)$/, "Must be a number or ALL"),
 });
 
+export const pairingApproveInputSchema = z.object({
+  code: z
+    .string()
+    .min(4)
+    .max(32)
+    .regex(/^[A-Z0-9]+$/, "Must be uppercase alphanumeric"),
+});
+
 export const instanceAccessSchema = instanceSchema.extend({
   chatUrl: z.string(),
   terminalUrl: z.string(),

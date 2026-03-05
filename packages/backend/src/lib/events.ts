@@ -44,6 +44,7 @@ const eventMetaSchemas = {
   "instance.mint_retried": empty,
   "instance.restarted": empty,
   "instance.telegram_configured": empty,
+  "instance.pairing_approved": empty,
   "instance.withdrawal": z.object({
     token: z.string(),
     amount: z.string(),

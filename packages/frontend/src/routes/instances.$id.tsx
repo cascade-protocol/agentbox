@@ -408,6 +408,70 @@ function GettingStartedCard({ telegramBotUsername }: { telegramBotUsername?: str
   );
 }
 
+function PairingCard({ instanceId }: { instanceId: number }) {
+  const [code, setCode] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [approved, setApproved] = useState(false);
+
+  async function handleApprove() {
+    const trimmed = code.trim();
+    if (!trimmed) return;
+    setSubmitting(true);
+    try {
+      await api.instances.pairing(instanceId, trimmed);
+      toast.success("Pairing approved - your Telegram bot is connected");
+      setApproved(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Pairing approval failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (approved) return null;
+
+  return (
+    <Card className="border-primary/30 shadow-sm">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Send className="size-4" />
+          Telegram Pairing
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Message your Telegram bot to get a pairing code, then paste it here to connect.
+        </p>
+        <div className="flex gap-2">
+          <input
+            className="w-full max-w-xs rounded-md border border-input bg-muted px-3 py-2 font-mono text-sm uppercase tracking-widest outline-none focus:ring-1 focus:ring-ring"
+            placeholder="ENTER CODE"
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+            maxLength={32}
+            disabled={submitting}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void handleApprove();
+            }}
+          />
+          <Button
+            size="sm"
+            onClick={() => void handleApprove()}
+            disabled={submitting || code.trim().length < 4}
+          >
+            {submitting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Check className="size-4" />
+            )}
+            {submitting ? "Approving..." : "Approve"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -1091,6 +1155,10 @@ function InstanceDetail() {
             <AccessRow label="Terminal" value={instance.terminalUrl} />
           </CardContent>
         </Card>
+
+        {instance.status === "running" && instance.telegramBotUsername && (
+          <PairingCard instanceId={instance.id} />
+        )}
 
         {instance.status === "running" && instance.vmWallet && (
           <WalletBalanceCard

@@ -208,5 +208,10 @@ export const api = {
         method: "POST",
         body: JSON.stringify(data),
       }),
+    pairing: (id: number, code: string) =>
+      request<{ ok: boolean }>(`/instances/${id}/pairing`, {
+        method: "POST",
+        body: JSON.stringify({ code }),
+      }),
   },
 };

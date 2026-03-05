@@ -31,6 +31,7 @@ import {
   callbackInputSchema,
   createInstanceInputSchema,
   instanceConfigQuerySchema,
+  pairingApproveInputSchema,
   provisioningUpdateInputSchema,
   telegramSetupInputSchema,
   updateAgentMetadataInputSchema,
@@ -1085,5 +1086,63 @@ instanceRoutes.post("/instances/:id/withdraw", auth, async (c) => {
       error: err instanceof Error ? err.message : String(err),
     });
     return c.json({ error: err instanceof Error ? err.message : "Withdrawal failed" }, 500);
+  }
+});
+
+// POST /instances/:id/pairing - Approve Telegram pairing code via SSH
+instanceRoutes.post("/instances/:id/pairing", auth, async (c) => {
+  if (!env.SSH_PRIVATE_KEY) {
+    return c.json({ error: "SSH access is not configured" }, 503);
+  }
+
+  const id = Number(c.req.param("id"));
+  const body = await c.req.json();
+  const input = pairingApproveInputSchema.safeParse(body);
+  if (!input.success) {
+    return c.json({ error: "Invalid input", details: input.error.issues }, 400);
+  }
+
+  const [row] = await db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+  if (!row) return c.json({ error: "Instance not found" }, 404);
+  if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
+  if (row.status !== "running") {
+    return c.json({ error: "Instance is not running" }, 409);
+  }
+
+  const code = input.data.code;
+
+  try {
+    const result = await withVM(row.ip, async (vm) => {
+      const {
+        stdout,
+        stderr,
+        code: exitCode,
+      } = await vm.exec(`sudo -u openclaw openclaw pairing approve telegram ${code} --notify`);
+      if (exitCode !== 0) {
+        throw new Error(stderr.trim() || `Pairing approval failed with exit code ${exitCode}`);
+      }
+      return { stdout: stdout.trim() };
+    });
+
+    if (!result.stdout.includes("Approved")) {
+      return c.json({ error: "Pairing code not found or already used" }, 400);
+    }
+
+    recordEvent(
+      "instance.pairing_approved",
+      { type: "wallet", id: c.get("walletAddress") },
+      { type: "instance", id: String(id) },
+      {},
+    );
+
+    return c.json({ ok: true });
+  } catch (err) {
+    logger.error(`Pairing approval failed for instance ${id}`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return c.json({ error: err instanceof Error ? err.message : "Pairing approval failed" }, 500);
   }
 });
