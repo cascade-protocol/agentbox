@@ -10,6 +10,38 @@ export const HETZNER_SNAPSHOT_ID = "363724013";
  * but consumed by the plugin for cost estimation and /x_models display.
  */
 const X402_PROVIDERS = {
+  agentbox: {
+    baseUrl: "https://inference.x402.agentbox.fyi/v1",
+    models: [
+      {
+        id: "x-ai/grok-4.1-fast",
+        name: "Grok 4.1 Fast",
+        maxTokens: 4096,
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0.05, output: 0.1, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 131072,
+      },
+      {
+        id: "minimax/minimax-m2.5",
+        name: "MiniMax M2.5",
+        maxTokens: 4096,
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 131072,
+      },
+      {
+        id: "moonshotai/kimi-k2.5",
+        name: "Kimi K2.5",
+        maxTokens: 4096,
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0.15, output: 0.3, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 262144,
+      },
+    ],
+  },
   blockrun: {
     baseUrl: "https://sol.blockrun.ai/api/v1",
     models: [
@@ -167,6 +199,11 @@ export const OPENCLAW_BASE_CONFIG = {
   models: {
     mode: "replace",
     providers: {
+      agentbox: {
+        ...X402_PROVIDERS.agentbox,
+        apiKey: "x402-payment",
+        api: "openai-completions",
+      },
       blockrun: {
         ...X402_PROVIDERS.blockrun,
         apiKey: "x402-payment",
@@ -193,7 +230,7 @@ export const OPENCLAW_BASE_CONFIG = {
   },
   agents: {
     defaults: {
-      model: { primary: "blockrun/moonshot/kimi-k2.5" },
+      model: { primary: "agentbox/x-ai/grok-4.1-fast" },
       skipBootstrap: true,
       timeoutSeconds: 120,
       compaction: {
