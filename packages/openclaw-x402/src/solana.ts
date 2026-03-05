@@ -74,6 +74,60 @@ export async function getSolBalance(rpcUrl: string, owner: string): Promise<stri
   return (Number(value) / 1e9).toFixed(4);
 }
 
+/**
+ * Look up the actual USDC cost of an x402 payment from the on-chain transaction.
+ * Compares pre/post token balances for the wallet to find the USDC delta.
+ */
+export async function getTransactionUsdcCost(
+  rpcUrl: string,
+  txSignature: string,
+  wallet: string,
+): Promise<number | null> {
+  try {
+    const res = await globalThis.fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "getTransaction",
+        params: [txSignature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }],
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = (await res.json()) as {
+      result?: {
+        meta?: {
+          preTokenBalances?: Array<{
+            mint: string;
+            owner: string;
+            uiTokenAmount: { uiAmountString: string };
+          }>;
+          postTokenBalances?: Array<{
+            mint: string;
+            owner: string;
+            uiTokenAmount: { uiAmountString: string };
+          }>;
+        };
+      };
+    };
+    const meta = data.result?.meta;
+    if (!meta?.preTokenBalances || !meta?.postTokenBalances) return null;
+
+    for (const pre of meta.preTokenBalances) {
+      if (pre.mint !== USDC_MINT || pre.owner !== wallet) continue;
+      const post = meta.postTokenBalances.find((p) => p.mint === USDC_MINT && p.owner === wallet);
+      if (!post) continue;
+      const preAmt = Number.parseFloat(pre.uiTokenAmount.uiAmountString);
+      const postAmt = Number.parseFloat(post.uiTokenAmount.uiAmountString);
+      if (preAmt > postAmt) return preAmt - postAmt;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function checkAtaExists(rpcUrl: string, owner: string): Promise<boolean> {
   const [ata] = await findAssociatedTokenPda({
     mint: address(USDC_MINT),

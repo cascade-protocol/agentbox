@@ -83,6 +83,14 @@ export function calcSpend(records: HistoryRecord[]): {
 
 // --- Transaction line formatting ---
 
+function formatUsdc(amount: number): string {
+  // Show enough precision: 0.003 -> "0.003", 0.15 -> "0.15", 0.0004 -> "0.0004"
+  if (amount >= 0.01) return `${amount.toFixed(2)} USDC`;
+  if (amount >= 0.001) return `${amount.toFixed(3)} USDC`;
+  if (amount >= 0.0001) return `${amount.toFixed(4)} USDC`;
+  return `${amount.toFixed(6)} USDC`;
+}
+
 function getTxParts(r: HistoryRecord): { action: string; detail: string; amount: string } {
   switch (r.k) {
     case "inference": {
@@ -90,7 +98,7 @@ function getTxParts(r: HistoryRecord): { action: string; detail: string; amount:
       return {
         action: "inference",
         detail: model,
-        amount: r.c != null ? `${r.c.toFixed(3)} USDC` : "",
+        amount: r.c != null ? formatUsdc(r.c) : "",
       };
     }
     case "x402": {
@@ -103,7 +111,7 @@ function getTxParts(r: HistoryRecord): { action: string; detail: string; amount:
       return {
         action: "x402",
         detail: host,
-        amount: r.c != null ? `${r.c.toFixed(3)} USDC` : "",
+        amount: r.c != null ? formatUsdc(r.c) : "",
       };
     }
     case "send": {

@@ -156,7 +156,7 @@ echo "$CONFIG_JSON" | jq \
       .plugins.entries."openclaw-x402".config.rpcUrl = $rpcUrl
     else . end
   | if $telegramBotToken != "" then
-      .channels.telegram = {
+      .channels.telegram = (.channels.telegram // {}) * {
         enabled: true,
         botToken: $telegramBotToken,
         dmPolicy: "open",

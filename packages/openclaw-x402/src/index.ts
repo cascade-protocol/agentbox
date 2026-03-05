@@ -28,6 +28,7 @@ import {
   checkAtaExists,
   getSolBalance,
   getTokenAccounts,
+  getTransactionUsdcCost,
   getUsdcBalance,
   signAndSendPumpPortalTx,
   transferUsdc,
@@ -36,7 +37,7 @@ import { deriveEvmKeypair, deriveSolanaKeypair } from "./wallet.js";
 
 const INFERENCE_RESERVE = 0.3;
 const MAX_RESPONSE_CHARS = 50_000;
-const PLUGIN_VERSION = "0.9.0";
+const PLUGIN_VERSION = "0.9.1";
 
 // --- Types ---
 
@@ -281,23 +282,14 @@ export function register(api: OpenClawPluginApi): void {
         lines.push("", `**Model** · ${defaultModel.name} (${defaultModel.provider})`);
       }
 
-      // Models pricing
-      const byProvider = new Map<string, ModelEntry[]>();
-      for (const m of allModels) {
-        let list = byProvider.get(m.provider);
-        if (!list) {
-          list = [];
-          byProvider.set(m.provider, list);
-        }
-        list.push(m);
-      }
-      lines.push("", "**Models**");
-      for (const [, models] of byProvider) {
-        for (const m of models) {
-          const inp = m.cost.input < 1 ? `${m.cost.input}` : `${m.cost.input.toFixed(0)}`;
-          const out = m.cost.output < 1 ? `${m.cost.output}` : `${m.cost.output.toFixed(0)}`;
-          const ctx = `${(m.contextWindow / 1000).toFixed(0)}K`;
-          lines.push(`  ${m.name} · ${inp}/${out} per 1M · ${ctx}`);
+      // Models by provider (only show agentbox + blockrun)
+      const showProviders = ["agentbox", "blockrun"];
+      for (const provName of showProviders) {
+        const provModels = allModels.filter((m) => m.provider === provName);
+        if (provModels.length === 0) continue;
+        lines.push("", `**${provName}**`);
+        for (const m of provModels) {
+          lines.push(`\`/model ${provName}/${m.id}\``);
         }
       }
 
@@ -1006,21 +998,43 @@ export function register(api: OpenClawPluginApi): void {
                   }
                 }
 
-                // Log inference transaction
+                // Log inference transaction with on-chain cost lookup
                 const inTok = body.usage?.prompt_tokens ?? 0;
                 const outTok = body.usage?.completion_tokens ?? 0;
                 const model = body.model ?? "";
-                appendHistory(historyPath, {
-                  t: Date.now(),
-                  k: "inference",
-                  ok: true,
-                  m: model,
-                  in: inTok,
-                  out: outTok,
-                  c: estimateCost(allModels, model, inTok, outTok),
-                  ms: Date.now() - startMs,
-                  tx: extractTxSignature(response),
-                });
+                const txSig = extractTxSignature(response);
+                const durationMs = Date.now() - startMs;
+                const recordTime = Date.now();
+
+                // Deferred: look up real USDC cost from on-chain tx, then write history
+                const writeHistory = (cost: number) => {
+                  appendHistory(historyPath, {
+                    t: recordTime,
+                    k: "inference",
+                    ok: true,
+                    m: model,
+                    in: inTok,
+                    out: outTok,
+                    c: cost,
+                    ms: durationMs,
+                    tx: txSig,
+                  });
+                };
+
+                if (txSig && walletAddress) {
+                  // Wait briefly for tx confirmation, then look up real cost
+                  const sig = txSig;
+                  const wallet = walletAddress;
+                  setTimeout(() => {
+                    getTransactionUsdcCost(rpcUrl, sig, wallet).then(
+                      (realCost) =>
+                        writeHistory(realCost ?? estimateCost(allModels, model, inTok, outTok)),
+                      () => writeHistory(estimateCost(allModels, model, inTok, outTok)),
+                    );
+                  }, 2000);
+                } else {
+                  writeHistory(estimateCost(allModels, model, inTok, outTok));
+                }
 
                 ctx.logger.info("x402: wrapped JSON response as SSE");
                 const sse = `data: ${JSON.stringify(body)}\n\ndata: [DONE]\n\n`;
