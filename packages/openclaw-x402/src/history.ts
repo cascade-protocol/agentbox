@@ -6,32 +6,40 @@ export const HISTORY_PAGE_SIZE = 5;
 export const STATUS_HISTORY_COUNT = 3;
 export const INLINE_HISTORY_TOKEN_THRESHOLD = 3;
 
-export type HistoryRecord = {
-  t: number; // epoch ms
-  k: "inference" | "x402" | "send" | "trade";
+// --- Record type ---
+
+export type TxRecord = {
+  t: number;
   ok: boolean;
-  tx?: string; // solana signature
-  ms?: number; // duration
-  m?: string; // model (inference)
-  in?: number; // input tokens
-  out?: number; // output tokens
-  c?: number; // estimated cost USD
-  u?: string; // url (x402)
-  s?: number; // http status
-  to?: string; // recipient (send)
-  amt?: number; // amount
-  cur?: string; // currency
-  act?: string; // buy/sell/create (trade)
-  token?: string; // mint (trade)
-  sol?: number; // SOL amount (trade)
+  kind: "x402_inference" | "x402_payment" | "transfer" | "buy" | "sell" | "mint";
+  net: string;
+  from: string;
+  to?: string;
+  tx?: string;
+  amount?: number;
+  token?: string;
+  label?: string;
+  ms?: number;
+  error?: string;
+  provider?: string;
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  thinking?: string;
+  meta?: Record<string, string | number>;
 };
 
-export function appendHistory(historyPath: string, record: HistoryRecord): void {
+// --- File operations ---
+
+export function appendHistory(historyPath: string, record: TxRecord): void {
   try {
     appendFileSync(historyPath, `${JSON.stringify(record)}\n`);
     if (existsSync(historyPath)) {
       const stat = statSync(historyPath);
-      if (stat.size > HISTORY_MAX_LINES * 120) {
+      if (stat.size > HISTORY_MAX_LINES * 200) {
         const lines = readFileSync(historyPath, "utf-8").trimEnd().split("\n");
         if (lines.length > HISTORY_MAX_LINES) {
           writeFileSync(historyPath, `${lines.slice(-HISTORY_KEEP_LINES).join("\n")}\n`);
@@ -43,14 +51,16 @@ export function appendHistory(historyPath: string, record: HistoryRecord): void 
   }
 }
 
-export function readHistory(historyPath: string): HistoryRecord[] {
+export function readHistory(historyPath: string): TxRecord[] {
   try {
     if (!existsSync(historyPath)) return [];
     const content = readFileSync(historyPath, "utf-8").trimEnd();
     if (!content) return [];
     return content.split("\n").flatMap((line) => {
       try {
-        return [JSON.parse(line) as HistoryRecord];
+        const parsed = JSON.parse(line);
+        if (typeof parsed.t !== "number" || typeof parsed.kind !== "string") return [];
+        return [parsed as TxRecord];
       } catch {
         return [];
       }
@@ -60,7 +70,9 @@ export function readHistory(historyPath: string): HistoryRecord[] {
   }
 }
 
-export function calcSpend(records: HistoryRecord[]): {
+// --- Spend aggregation ---
+
+export function calcSpend(records: TxRecord[]): {
   today: number;
   total: number;
   count: number;
@@ -72,79 +84,64 @@ export function calcSpend(records: HistoryRecord[]): {
   let total = 0;
   let count = 0;
   for (const r of records) {
-    if (!r.ok) continue;
-    const cost = r.c ?? 0;
-    total += cost;
+    if (!r.ok || r.amount == null) continue;
+    if (r.token !== "USDC") continue;
+    total += r.amount;
     count++;
-    if (r.t >= todayMs) today += cost;
+    if (r.t >= todayMs) today += r.amount;
   }
   return { today, total, count };
 }
 
-// --- Transaction line formatting ---
+// --- Formatting ---
 
-function formatUsdc(amount: number): string {
-  // Show enough precision: 0.003 -> "0.003", 0.15 -> "0.15", 0.0004 -> "0.0004"
-  if (amount >= 0.01) return `${amount.toFixed(2)} USDC`;
-  if (amount >= 0.001) return `${amount.toFixed(3)} USDC`;
-  if (amount >= 0.0001) return `${amount.toFixed(4)} USDC`;
-  return `${amount.toFixed(6)} USDC`;
-}
-
-function getTxParts(r: HistoryRecord): { action: string; detail: string; amount: string } {
-  switch (r.k) {
-    case "inference": {
-      const model = r.m ? (r.m.split("/").pop() ?? r.m) : "unknown";
-      return {
-        action: "inference",
-        detail: model,
-        amount: r.c != null ? formatUsdc(r.c) : "",
-      };
-    }
-    case "x402": {
-      let host = r.u ?? "unknown";
-      try {
-        if (r.u) host = new URL(r.u).hostname;
-      } catch {
-        // keep raw value
-      }
-      return {
-        action: "x402",
-        detail: host,
-        amount: r.c != null ? formatUsdc(r.c) : "",
-      };
-    }
-    case "send": {
-      const dest = r.to ? `${r.to.slice(0, 4)}...${r.to.slice(-4)}` : "unknown";
-      return {
-        action: "send",
-        detail: dest,
-        amount: r.amt != null ? `${r.amt.toFixed(2)} USDC` : "",
-      };
-    }
-    case "trade": {
-      const tokenShort = r.token ? r.token.slice(0, 8) : "token";
-      return {
-        action: r.act ?? "trade",
-        detail: tokenShort,
-        amount: r.sol != null ? `${r.sol} SOL` : "",
-      };
-    }
-    default:
-      return { action: "unknown", detail: "", amount: "" };
+function formatAmount(amount: number, token: string): string {
+  if (token === "USDC") {
+    if (amount >= 0.01) return `${amount.toFixed(2)} USDC`;
+    if (amount >= 0.001) return `${amount.toFixed(3)} USDC`;
+    if (amount >= 0.0001) return `${amount.toFixed(4)} USDC`;
+    return `${amount.toFixed(6)} USDC`;
   }
+  if (token === "SOL") return `${amount} SOL`;
+  return `${amount} ${token}`;
 }
 
-export function formatTxLine(r: HistoryRecord): string {
+const KIND_LABELS: Record<TxRecord["kind"], string> = {
+  x402_inference: "inference",
+  x402_payment: "payment",
+  transfer: "transfer",
+  buy: "buy",
+  sell: "sell",
+  mint: "mint",
+};
+
+export function explorerUrl(net: string, tx: string): string {
+  if (net.startsWith("eip155:")) {
+    const chainId = net.split(":")[1];
+    if (chainId === "8453") return `https://basescan.org/tx/${tx}`;
+    if (chainId === "84532") return `https://sepolia.basescan.org/tx/${tx}`;
+    if (chainId === "1") return `https://etherscan.io/tx/${tx}`;
+    return `https://basescan.org/tx/${tx}`;
+  }
+  return `https://solscan.io/tx/${tx}`;
+}
+
+export function formatTxLine(r: TxRecord): string {
   const time = new Date(r.t).toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
     timeZone: "UTC",
   });
-  const timeStr = r.tx ? `[${time}](https://solscan.io/tx/${r.tx})` : time;
-  const { action, detail, amount } = getTxParts(r);
-  const parts = [action, detail, ...(r.ok ? [amount] : [])].filter(Boolean);
+  const timeStr = r.tx ? `[${time}](${explorerUrl(r.net, r.tx)})` : time;
+  const action = KIND_LABELS[r.kind] ?? r.kind;
+  const parts = [action];
+  if (r.label) parts.push(r.label);
+  if (r.ok && r.amount != null && r.token) {
+    parts.push(formatAmount(r.amount, r.token));
+  } else if (r.ok && r.kind === "sell" && r.meta?.pct != null) {
+    parts.push(`${r.meta.pct}%`);
+  }
   const prefix = r.ok ? "" : "✗ ";
   return `  ${timeStr} ${prefix}${parts.join(" · ")}`;
 }

@@ -2,6 +2,27 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.9.4] - 2026-03-05
+
+### Added
+
+- Transaction audit log: unified `TxRecord` format with CAIP-2 network IDs, `from`/`to` addresses, multi-chain explorer links
+- Inference records now capture `provider`, `cacheRead`, `cacheWrite`, `reasoningTokens`, `thinking` mode
+- Payment amount captured from x402 client hooks (no RPC lookup needed)
+- Sell trades display percentage in history instead of misleading SOL amount
+- Transfer records show shortened destination address in history
+
+### Fixed
+
+- Payment queue leak: failed x402 payments (402, upstream error, fetch throw) now drain the hook queue, preventing wrong amounts on subsequent payments
+- x_update: skills refresh runs unconditionally (was skipped when plugin version matched)
+- Command references use backtick code spans instead of escaped underscores
+
+### Removed
+
+- Dead `getTransactionUsdcCostWithRetry` function (superseded by x402 client hooks)
+- `/model` reference from x_status footer (built-in command, not ours)
+
 ## [0.9.3] - 2026-03-05
 
 ### Fixed

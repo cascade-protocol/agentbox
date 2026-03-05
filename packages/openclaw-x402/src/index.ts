@@ -28,7 +28,6 @@ import {
   checkAtaExists,
   getSolBalance,
   getTokenAccounts,
-  getTransactionUsdcCost,
   getUsdcBalance,
   signAndSendPumpPortalTx,
   transferUsdc,
@@ -37,7 +36,8 @@ import { deriveEvmKeypair, deriveSolanaKeypair } from "./wallet.js";
 
 const INFERENCE_RESERVE = 0.3;
 const MAX_RESPONSE_CHARS = 50_000;
-const PLUGIN_VERSION = "0.9.3";
+const PLUGIN_VERSION = "0.9.4";
+const SOL_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
 // --- Types ---
 
@@ -73,19 +73,6 @@ function parseProviders(config: Record<string, unknown>): {
     }
   }
   return { models, x402Urls };
-}
-
-function estimateCost(
-  allModels: ModelEntry[],
-  modelId: string,
-  inputTokens: number,
-  outputTokens: number,
-): number {
-  const model = allModels.find(
-    (m) => modelId.endsWith(m.id) || modelId === m.id || modelId === `${m.provider}/${m.id}`,
-  );
-  if (!model) return 0;
-  return (inputTokens * model.cost.input + outputTokens * model.cost.output) / 1_000_000;
 }
 
 function extractTxSignature(response: Response): string | undefined {
@@ -163,6 +150,12 @@ export function register(api: OpenClawPluginApi): void {
   let x402FetchRef:
     | ((input: string | URL | Request, init?: RequestInit) => Promise<Response>)
     | null = null;
+
+  // Per-payment capture via queue. Hook pushes during createPaymentPayload,
+  // caller shifts after wrapFetchWithPayment returns. Order is guaranteed
+  // because the hook fires within the same async flow before the wrapper returns.
+  type PaymentInfo = { amount: number | undefined; payTo: string | undefined };
+  const paymentQueue: PaymentInfo[] = [];
 
   // Shared balance + token + spend snapshot
   async function getWalletSnapshot(wallet: string) {
@@ -249,7 +242,7 @@ export function register(api: OpenClawPluginApi): void {
 
         // Footer
         const footer: string[] = [];
-        footer.push("History: /x\\_wallet history");
+        footer.push("History: `/x_wallet history`");
         footer.push(`[Solscan](https://solscan.io/account/${walletAddress})`);
         if (dashboardUrl) {
           footer.push(`[Dashboard](${dashboardUrl})`);
@@ -318,10 +311,9 @@ export function register(api: OpenClawPluginApi): void {
       // Commands
       lines.push(
         "",
-        "/x\\_wallet · full balance and send",
-        "/x\\_wallet history · transaction history",
-        "/x\\_update · update plugin + skills",
-        "/model · switch AI model",
+        "`/x_wallet` · full balance and send",
+        "`/x_wallet history` · transaction history",
+        "`/x_update` · update plugin + skills",
       );
 
       return { text: lines.join("\n") };
@@ -334,36 +326,11 @@ export function register(api: OpenClawPluginApi): void {
     acceptsArgs: false,
     handler: async () => {
       const latestVersion = await checkNpmLatestVersion("openclaw-x402");
+      const hasPluginUpdate = latestVersion && latestVersion !== PLUGIN_VERSION;
+      const lines: string[] = [];
+      let needsRestart = false;
 
-      if (!latestVersion) {
-        return { text: "Could not check npm registry. Try again later." };
-      }
-
-      if (latestVersion === PLUGIN_VERSION) {
-        const lines = [
-          `Everything up to date · plugin v${PLUGIN_VERSION}`,
-          "",
-          "/x\\_status · system overview",
-          "/x\\_wallet · balance and send",
-        ];
-        return { text: lines.join("\n") };
-      }
-
-      const lines = [`Updating x402 v${PLUGIN_VERSION} -> v${latestVersion}`, ""];
-
-      const extDir = join(homedir(), ".openclaw/extensions/openclaw-x402");
-      try {
-        execSync(`rm -rf ${extDir}`, { timeout: 5_000, stdio: "pipe" });
-        execSync("openclaw plugins install openclaw-x402@latest", {
-          timeout: 60_000,
-          stdio: "pipe",
-        });
-        lines.push("Plugin   updated");
-      } catch (err) {
-        lines.push(`Plugin   failed: ${String(err)}`);
-        return { text: lines.join("\n") };
-      }
-
+      // Always refresh skills regardless of plugin version
       try {
         execSync("npx skills add -g cascade-protocol/agentbox", {
           timeout: 30_000,
@@ -374,10 +341,29 @@ export function register(api: OpenClawPluginApi): void {
         lines.push("Skills   skipped (could not reach GitHub)");
       }
 
-      lines.push("", "Restarting gateway...");
+      // Update plugin only if a new version exists
+      if (hasPluginUpdate) {
+        const extDir = join(homedir(), ".openclaw/extensions/openclaw-x402");
+        try {
+          execSync(`rm -rf ${extDir}`, { timeout: 5_000, stdio: "pipe" });
+          execSync("openclaw plugins install openclaw-x402@latest", {
+            timeout: 60_000,
+            stdio: "pipe",
+          });
+          lines.push(`Plugin   v${PLUGIN_VERSION} -> v${latestVersion}`);
+          needsRestart = true;
+        } catch (err) {
+          lines.push(`Plugin   update failed: ${String(err)}`);
+        }
+      } else {
+        lines.push(`Plugin   v${PLUGIN_VERSION} (up to date)`);
+      }
 
-      // Exit after response is sent - systemd Restart=always handles the restart
-      setTimeout(() => process.exit(0), 2000);
+      if (needsRestart) {
+        lines.push("", "Restarting gateway...");
+        // Exit after response is sent - systemd Restart=always handles the restart
+        setTimeout(() => process.exit(0), 2000);
+      }
 
       return { text: lines.join("\n") };
     },
@@ -491,27 +477,35 @@ export function register(api: OpenClawPluginApi): void {
         const body = await response.text();
 
         if (response.status === 402) {
+          paymentQueue.shift();
           appendHistory(historyPath, {
             t: Date.now(),
-            k: "x402",
             ok: false,
-            u: url,
-            s: 402,
+            kind: "x402_payment",
+            net: SOL_MAINNET,
+            from: walletAddress ?? "",
+            label: url,
             ms: Date.now() - toolStartMs,
+            error: "payment_required",
           });
           return toolResult(
             `Payment failed (402): ${body.substring(0, 500)}. Wallet: ${walletAddress}`,
           );
         }
 
+        const payment = paymentQueue.shift();
         appendHistory(historyPath, {
           t: Date.now(),
-          k: "x402",
           ok: true,
-          u: url,
-          s: response.status,
-          ms: Date.now() - toolStartMs,
+          kind: "x402_payment",
+          net: SOL_MAINNET,
+          from: walletAddress ?? "",
+          to: payment?.payTo,
           tx: extractTxSignature(response),
+          amount: payment?.amount,
+          token: "USDC",
+          label: url,
+          ms: Date.now() - toolStartMs,
         });
 
         const truncated =
@@ -521,11 +515,15 @@ export function register(api: OpenClawPluginApi): void {
 
         return toolResult(`HTTP ${response.status}\n\n${truncated}`);
       } catch (err) {
+        paymentQueue.shift();
         appendHistory(historyPath, {
           t: Date.now(),
-          k: "x402",
           ok: false,
-          u: params.url,
+          kind: "x402_payment",
+          net: SOL_MAINNET,
+          from: walletAddress ?? "",
+          label: params.url,
+          error: String(err).substring(0, 200),
         });
         const msg = String(err);
         const text =
@@ -647,19 +645,28 @@ export function register(api: OpenClawPluginApi): void {
 
           appendHistory(historyPath, {
             t: Date.now(),
-            k: "trade",
             ok: true,
+            kind: "mint",
+            net: SOL_MAINNET,
+            from: walletAddress ?? "",
             tx: signature,
-            act: "create",
-            token: mintAddress,
-            sol: initialBuy,
+            label: mintAddress,
+            amount: initialBuy,
+            token: "SOL",
           });
 
           return toolResult(
             `Token created\nName: ${params.name} (${params.symbol})\nMint: ${mintAddress}\nInitial buy: ${initialBuy} SOL\nhttps://pump.fun/${mintAddress}\nhttps://solscan.io/tx/${signature}`,
           );
         } catch (err) {
-          appendHistory(historyPath, { t: Date.now(), k: "trade", ok: false, act: "create" });
+          appendHistory(historyPath, {
+            t: Date.now(),
+            ok: false,
+            kind: "mint",
+            net: SOL_MAINNET,
+            from: walletAddress ?? "",
+            error: String(err).substring(0, 200),
+          });
           return toolResult(`Token creation failed: ${String(err)}`);
         }
       }
@@ -701,12 +708,15 @@ export function register(api: OpenClawPluginApi): void {
         const signature = await signAndSendPumpPortalTx(signerRef, rpcUrl, tradeParams);
         appendHistory(historyPath, {
           t: Date.now(),
-          k: "trade",
           ok: true,
+          kind: params.action === "buy" ? "buy" : "sell",
+          net: SOL_MAINNET,
+          from: walletAddress ?? "",
           tx: signature,
-          act: params.action,
-          token: params.mint,
-          sol: params.action === "buy" ? params.amount : undefined,
+          label: params.mint,
+          amount: params.action === "buy" ? params.amount : undefined,
+          token: params.action === "buy" ? "SOL" : undefined,
+          meta: params.action === "sell" ? { pct: params.amount } : undefined,
         });
         const action = params.action === "buy" ? "Bought" : "Sold";
         const detail =
@@ -717,11 +727,15 @@ export function register(api: OpenClawPluginApi): void {
       } catch (err) {
         appendHistory(historyPath, {
           t: Date.now(),
-          k: "trade",
           ok: false,
-          act: params.action,
-          token: params.mint,
-          sol: params.action === "buy" ? params.amount : undefined,
+          kind: params.action === "buy" ? "buy" : "sell",
+          net: SOL_MAINNET,
+          from: walletAddress ?? "",
+          label: params.mint,
+          amount: params.action === "buy" ? params.amount : undefined,
+          token: params.action === "buy" ? "SOL" : undefined,
+          meta: params.action === "sell" ? { pct: params.amount } : undefined,
+          error: String(err).substring(0, 200),
         });
         return toolResult(`Trade failed: ${String(err)}`);
       }
@@ -843,10 +857,18 @@ export function register(api: OpenClawPluginApi): void {
       }
 
       const client = new x402Client();
-      client.register(
-        "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-        new ExactSvmScheme(signer, { rpcUrl }),
-      );
+      client.register(SOL_MAINNET, new ExactSvmScheme(signer, { rpcUrl }));
+
+      // Capture payment amount and payTo from x402 hooks - no RPC lookup needed
+      client.onAfterPaymentCreation(async (hookCtx) => {
+        const raw = hookCtx.selectedRequirements.amount;
+        const cleaned = raw.startsWith("debug.") ? raw.slice(6) : raw;
+        const parsed = Number.parseFloat(cleaned);
+        paymentQueue.push({
+          amount: Number.isNaN(parsed) ? undefined : parsed,
+          payTo: hookCtx.selectedRequirements.payTo,
+        });
+      });
 
       const x402Fetch = wrapFetchWithPayment(globalThis.fetch, client);
       x402FetchRef = x402Fetch;
@@ -877,6 +899,7 @@ export function register(api: OpenClawPluginApi): void {
           // OpenClaw's pi-ai layer hardcodes stream:true (not configurable),
           // so we force stream:false here and wrap the response as SSE below.
           const isChatCompletion = url.includes("/chat/completions");
+          let thinkingMode: string | undefined;
           if (isChatCompletion && cleanInit.body && typeof cleanInit.body === "string") {
             try {
               const parsed = JSON.parse(cleanInit.body) as Record<string, unknown>;
@@ -885,6 +908,7 @@ export function register(api: OpenClawPluginApi): void {
                 cleanInit.body = JSON.stringify(parsed);
                 ctx.logger.info("x402: forced stream: false in request body");
               }
+              if (parsed.reasoning_effort) thinkingMode = String(parsed.reasoning_effort);
             } catch {
               // not JSON body, leave as-is
             }
@@ -897,12 +921,18 @@ export function register(api: OpenClawPluginApi): void {
             if (response.status === 402) {
               const body = await response.text();
               ctx.logger.error(`x402: payment failed, raw response: ${body}`);
+              const payment = paymentQueue.shift();
               appendHistory(historyPath, {
                 t: Date.now(),
-                k: "inference",
                 ok: false,
+                kind: "x402_inference",
+                net: SOL_MAINNET,
+                from: walletAddress ?? "",
+                to: payment?.payTo,
+                amount: payment?.amount,
+                token: payment?.amount != null ? "USDC" : undefined,
                 ms: Date.now() - startMs,
-                s: 402,
+                error: "payment_required",
               });
 
               let userMessage: string;
@@ -942,12 +972,18 @@ export function register(api: OpenClawPluginApi): void {
               ctx.logger.error(
                 `x402: upstream error ${response.status}: ${body.substring(0, 300)}`,
               );
+              const payment = paymentQueue.shift();
               appendHistory(historyPath, {
                 t: Date.now(),
-                k: "inference",
                 ok: false,
+                kind: "x402_inference",
+                net: SOL_MAINNET,
+                from: walletAddress ?? "",
+                to: payment?.payTo,
+                amount: payment?.amount,
+                token: payment?.amount != null ? "USDC" : undefined,
                 ms: Date.now() - startMs,
-                s: response.status,
+                error: `upstream_${response.status}`,
               });
 
               return new Response(
@@ -971,7 +1007,15 @@ export function register(api: OpenClawPluginApi): void {
               try {
                 const body = JSON.parse(text) as {
                   model?: string;
-                  usage?: { prompt_tokens?: number; completion_tokens?: number };
+                  usage?: {
+                    prompt_tokens?: number;
+                    completion_tokens?: number;
+                    prompt_tokens_details?: {
+                      cached_tokens?: number;
+                      cache_creation_input_tokens?: number;
+                    };
+                    completion_tokens_details?: { reasoning_tokens?: number };
+                  };
                   choices?: Array<{ message?: unknown; delta?: unknown }>;
                 };
                 if (body.choices) {
@@ -983,43 +1027,37 @@ export function register(api: OpenClawPluginApi): void {
                   }
                 }
 
-                // Log inference transaction with on-chain cost lookup
-                const inTok = body.usage?.prompt_tokens ?? 0;
-                const outTok = body.usage?.completion_tokens ?? 0;
+                const usage = body.usage;
+                const inTok = usage?.prompt_tokens ?? 0;
+                const outTok = usage?.completion_tokens ?? 0;
                 const model = body.model ?? "";
                 const txSig = extractTxSignature(response);
                 const durationMs = Date.now() - startMs;
-                const recordTime = Date.now();
+                const providerName = allModels.find(
+                  (m) => m.id === model || `${m.provider}/${m.id}` === model,
+                )?.provider;
 
-                // Deferred: look up real USDC cost from on-chain tx, then write history
-                const writeHistory = (cost: number) => {
-                  appendHistory(historyPath, {
-                    t: recordTime,
-                    k: "inference",
-                    ok: true,
-                    m: model,
-                    in: inTok,
-                    out: outTok,
-                    c: cost,
-                    ms: durationMs,
-                    tx: txSig,
-                  });
-                };
-
-                if (txSig && walletAddress) {
-                  // Wait briefly for tx confirmation, then look up real cost
-                  const sig = txSig;
-                  const wallet = walletAddress;
-                  setTimeout(() => {
-                    getTransactionUsdcCost(rpcUrl, sig, wallet).then(
-                      (realCost) =>
-                        writeHistory(realCost ?? estimateCost(allModels, model, inTok, outTok)),
-                      () => writeHistory(estimateCost(allModels, model, inTok, outTok)),
-                    );
-                  }, 2000);
-                } else {
-                  writeHistory(estimateCost(allModels, model, inTok, outTok));
-                }
+                const payment = paymentQueue.shift();
+                appendHistory(historyPath, {
+                  t: Date.now(),
+                  ok: true,
+                  kind: "x402_inference",
+                  net: SOL_MAINNET,
+                  from: walletAddress ?? "",
+                  to: payment?.payTo,
+                  tx: txSig,
+                  amount: payment?.amount,
+                  token: "USDC",
+                  provider: providerName,
+                  model,
+                  inputTokens: inTok,
+                  outputTokens: outTok,
+                  reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens,
+                  cacheRead: usage?.prompt_tokens_details?.cached_tokens,
+                  cacheWrite: usage?.prompt_tokens_details?.cache_creation_input_tokens,
+                  thinking: thinkingMode,
+                  ms: durationMs,
+                });
 
                 ctx.logger.info("x402: wrapped JSON response as SSE");
                 const sse = `data: ${JSON.stringify(body)}\n\ndata: [DONE]\n\n`;
@@ -1042,11 +1080,15 @@ export function register(api: OpenClawPluginApi): void {
           } catch (err) {
             const msg = String(err);
             ctx.logger.error(`x402: fetch threw: ${msg}`);
+            paymentQueue.shift();
             appendHistory(historyPath, {
               t: Date.now(),
-              k: "inference",
               ok: false,
+              kind: "x402_inference",
+              net: SOL_MAINNET,
+              from: walletAddress ?? "",
               ms: Date.now() - startMs,
+              error: String(err).substring(0, 200),
             });
 
             let userMessage: string;
@@ -1136,7 +1178,7 @@ export function register(api: OpenClawPluginApi): void {
 
     if (parts.length !== 2) {
       return {
-        text: "Usage: /x\\_wallet send <amount|all> <address>\n\n  /x\\_wallet send 0.5 7xKXtg...\n  /x\\_wallet send all 7xKXtg...",
+        text: "Usage: `/x_wallet send <amount|all> <address>`\n\n  `/x_wallet send 0.5 7xKXtg...`\n  `/x_wallet send all 7xKXtg...`",
       };
     }
 
@@ -1174,12 +1216,15 @@ export function register(api: OpenClawPluginApi): void {
       const sig = await transferUsdc(signer, rpc, destAddr, amountRaw);
       appendHistory(histPath, {
         t: Date.now(),
-        k: "send",
         ok: true,
-        tx: sig,
+        kind: "transfer",
+        net: SOL_MAINNET,
+        from: wallet,
         to: destAddr,
-        amt: Number.parseFloat(amountUi),
-        cur: "USDC",
+        tx: sig,
+        amount: Number.parseFloat(amountUi),
+        token: "USDC",
+        label: `${destAddr.slice(0, 4)}...${destAddr.slice(-4)}`,
       });
 
       return {
@@ -1188,10 +1233,13 @@ export function register(api: OpenClawPluginApi): void {
     } catch (err) {
       appendHistory(histPath, {
         t: Date.now(),
-        k: "send",
         ok: false,
+        kind: "transfer",
+        net: SOL_MAINNET,
+        from: wallet,
         to: destAddr,
-        cur: "USDC",
+        token: "USDC",
+        error: String(err).substring(0, 200),
       });
       const msg = String(err);
       const cause = (err as { cause?: { message?: string } }).cause?.message || "";
@@ -1225,10 +1273,10 @@ export function register(api: OpenClawPluginApi): void {
 
     const nav: string[] = [];
     if (page > 1) {
-      nav.push(`Newer: /x\\_wallet history${page === 2 ? "" : ` ${page - 1}`}`);
+      nav.push(`Newer: \`/x_wallet history${page === 2 ? "" : ` ${page - 1}`}\``);
     }
     if (start + HISTORY_PAGE_SIZE < totalTxs) {
-      nav.push(`Older: /x\\_wallet history ${page + 1}`);
+      nav.push(`Older: \`/x_wallet history ${page + 1}\``);
     }
     if (nav.length > 0) {
       lines.push("", nav.join(" · "));
