@@ -14,13 +14,13 @@ const X402_PROVIDERS = {
     baseUrl: "https://inference.x402.agentbox.fyi/v1",
     models: [
       {
-        id: "x-ai/grok-4.1-fast",
-        name: "Grok 4.1 Fast",
+        id: "moonshotai/kimi-k2.5",
+        name: "Kimi K2.5",
         maxTokens: 4096,
         reasoning: false,
         input: ["text"],
-        cost: { input: 0.05, output: 0.1, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 131072,
+        cost: { input: 0.15, output: 0.3, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 262144,
       },
       {
         id: "minimax/minimax-m2.5",
@@ -30,15 +30,6 @@ const X402_PROVIDERS = {
         input: ["text"],
         cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 131072,
-      },
-      {
-        id: "moonshotai/kimi-k2.5",
-        name: "Kimi K2.5",
-        maxTokens: 4096,
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0.15, output: 0.3, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 262144,
       },
     ],
   },
@@ -230,7 +221,7 @@ export const OPENCLAW_BASE_CONFIG = {
   },
   agents: {
     defaults: {
-      model: { primary: "agentbox/x-ai/grok-4.1-fast" },
+      model: { primary: "agentbox/moonshotai/kimi-k2.5" },
       skipBootstrap: true,
       timeoutSeconds: 120,
       compaction: {
