@@ -326,8 +326,8 @@ export async function swapViaJupiter(
     getTransactionLifetimeConstraintFromCompiledTransactionMessage(compiledMsg);
   const signed = await signTransaction([signer.keyPair], decoded);
   assertIsSendableTransaction(signed);
-  Object.assign(signed, { lifetimeConstraint });
-  assertIsTransactionWithBlockhashLifetime(signed);
+  const signedWithLifetime = { ...signed, lifetimeConstraint };
+  assertIsTransactionWithBlockhashLifetime(signedWithLifetime);
 
   const rpc = createSolanaRpc(rpcUrl);
   const wsUrl = rpcUrl.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
@@ -335,7 +335,7 @@ export async function swapViaJupiter(
   const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
 
   try {
-    await sendAndConfirm(signed, {
+    await sendAndConfirm(signedWithLifetime, {
       commitment: "confirmed",
       skipPreflight: true,
       abortSignal: AbortSignal.timeout(15_000),
@@ -345,7 +345,7 @@ export async function swapViaJupiter(
   }
 
   return {
-    signature: getSignatureFromTransaction(signed),
+    signature: getSignatureFromTransaction(signedWithLifetime),
     inAmount: quote.inAmount,
     outAmount: quote.outAmount,
   };

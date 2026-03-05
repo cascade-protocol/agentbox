@@ -2,6 +2,12 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.10.1] - 2026-03-05
+
+### Fixed
+
+- `x_swap` crash: `TypeError: Cannot add property lifetimeConstraint, object is not extensible` - `signTransaction` returns a frozen object, now spread into a new object instead of mutating with `Object.assign`
+
 ## [0.10.0] - 2026-03-05
 
 ### Added

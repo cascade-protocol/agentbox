@@ -1,12 +1,12 @@
 ---
 name: web
-description: "Web scraping and search via paid API: crawl any URL with cascade escalation (fast HTTP -> browser -> stealth+proxy), bulk crawl multiple URLs, and search the web via Exa. Uses x402_payment tool for automatic USDC micropayments ($0.005/crawl, $0.01/search). Use when: (1) fetching web page content as markdown/html/text, (2) scraping with CSS selectors, (3) crawling pages behind anti-bot protection, (4) bulk-crawling multiple URLs, (5) searching the web by query."
+description: "Web scraping and search via paid API: crawl any URL with cascade escalation (fast HTTP -> browser -> stealth+proxy), bulk crawl multiple URLs, and search the web via Exa. Uses x_payment tool for automatic USDC micropayments ($0.005/crawl, $0.01/search). Use as escalation when built-in web_fetch fails or is blocked. Use when: (1) web_fetch returned empty/blocked content, (2) scraping JS-rendered or anti-bot protected pages, (3) bulk-crawling multiple URLs, (4) searching the web by query via Exa."
 metadata: {"openclaw": {"emoji": "🌐", "requires": {"bins": ["openclaw"]}}}
 ---
 
 # Web Scraping & Search
 
-Paid web crawling and search API at `https://web.surf.cascade.fyi`. Crawl costs $0.005 USDC, search costs $0.01 USDC per call via x402 on Solana. Use the `x402_payment` tool for all requests.
+Paid web crawling and search API at `https://web.surf.cascade.fyi`. Crawl costs $0.005 USDC, search costs $0.01 USDC per call via x402 on Solana. Use the `x_payment` tool for all requests. Use this when the built-in `web_fetch` tool fails or is blocked (anti-bot, JS-rendered pages, paywalled content).
 
 ## Endpoints
 
@@ -15,10 +15,10 @@ Paid web crawling and search API at `https://web.surf.cascade.fyi`. Crawl costs 
 Fetch and extract content from any URL. Automatically escalates through fetching tiers if blocked: fast HTTP -> headless browser -> stealth browser with proxy.
 
 ```
-x402_payment({
+x_payment({
   "url": "https://web.surf.cascade.fyi/v1/crawl",
   "method": "POST",
-  "body": "{\"url\": \"https://example.com\", \"format\": \"markdown\"}"
+  "params": "{\"url\": \"https://example.com\", \"format\": \"markdown\"}"
 })
 ```
 
@@ -63,10 +63,10 @@ Escalation triggers: HTTP 403/429/503, empty content, or content under 100 chara
 Search the web using Exa's search API. Returns titles, URLs, and text snippets.
 
 ```
-x402_payment({
+x_payment({
   "url": "https://web.surf.cascade.fyi/v1/search",
   "method": "POST",
-  "body": "{\"query\": \"x402 protocol crypto payments\", \"num_results\": 10}"
+  "params": "{\"query\": \"x402 protocol crypto payments\", \"num_results\": 10}"
 })
 ```
 
@@ -96,30 +96,30 @@ x402_payment({
 ### Scrape a page as markdown
 
 ```
-x402_payment({
+x_payment({
   "url": "https://web.surf.cascade.fyi/v1/crawl",
   "method": "POST",
-  "body": "{\"url\": \"https://docs.solana.com\", \"format\": \"markdown\"}"
+  "params": "{\"url\": \"https://docs.solana.com\", \"format\": \"markdown\"}"
 })
 ```
 
 ### Extract specific elements with a CSS selector
 
 ```
-x402_payment({
+x_payment({
   "url": "https://web.surf.cascade.fyi/v1/crawl",
   "method": "POST",
-  "body": "{\"url\": \"https://news.ycombinator.com\", \"format\": \"html\", \"selector\": \".titleline\"}"
+  "params": "{\"url\": \"https://news.ycombinator.com\", \"format\": \"html\", \"selector\": \".titleline\"}"
 })
 ```
 
 ### Bulk crawl multiple URLs
 
 ```
-x402_payment({
+x_payment({
   "url": "https://web.surf.cascade.fyi/v1/crawl",
   "method": "POST",
-  "body": "{\"urls\": [\"https://example.com\", \"https://httpbin.org/get\"], \"format\": \"text\"}"
+  "params": "{\"urls\": [\"https://example.com\", \"https://httpbin.org/get\"], \"format\": \"text\"}"
 })
 ```
 
@@ -127,19 +127,19 @@ x402_payment({
 
 First search:
 ```
-x402_payment({
+x_payment({
   "url": "https://web.surf.cascade.fyi/v1/search",
   "method": "POST",
-  "body": "{\"query\": \"ERC-8004 agent identity standard\", \"num_results\": 5}"
+  "params": "{\"query\": \"ERC-8004 agent identity standard\", \"num_results\": 5}"
 })
 ```
 
 Then crawl the most relevant result:
 ```
-x402_payment({
+x_payment({
   "url": "https://web.surf.cascade.fyi/v1/crawl",
   "method": "POST",
-  "body": "{\"url\": \"https://eips.ethereum.org/EIPS/eip-8004\", \"format\": \"markdown\"}"
+  "params": "{\"url\": \"https://eips.ethereum.org/EIPS/eip-8004\", \"format\": \"markdown\"}"
 })
 ```
 
@@ -155,6 +155,6 @@ All payments on Solana mainnet. Each request is a separate call. For bulk crawls
 | HTTP | Meaning |
 |------|---------|
 | 400 | Invalid parameters (check body format) |
-| 402 | Payment required (handled automatically by x402_payment) |
+| 402 | Payment required (handled automatically by x_payment) |
 | 429 | Too many concurrent requests (retry later) |
 | 502 | Upstream crawl/search error |
