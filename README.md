@@ -37,11 +37,7 @@ Main variables:
 - `API_BASE_URL`
 - `OPERATOR_TOKEN`
 - `JWT_SECRET`
-- `PAY_TO_ADDRESS`
-- `FACILITATOR_URL`
-- `INSTANCE_BASE_DOMAIN`
 - `CF_API_TOKEN`
-- `CF_ZONE_ID`
 - `VITE_HELIUS_API_KEY`
 
 See `.env.example` for the full list.
@@ -52,8 +48,8 @@ At repo root:
 
 - `pnpm dev` - run all dev services through turbo
 - `pnpm build` - build all packages
-- `pnpm check` - biome + type checks
-- `pnpm check:ci` - CI check variant
+- `pnpm check` - build + type-check + biome (with auto-fixes)
+- `pnpm check:all` - same + Docker image builds
 
 Backend package:
 

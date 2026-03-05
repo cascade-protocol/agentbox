@@ -5,7 +5,7 @@ import client from "prom-client";
 import { db } from "../db/connection";
 import { events, instances } from "../db/schema";
 import { logger } from "../logger";
-import { env } from "./env";
+import { PAY_TO_ADDRESS } from "./constants";
 
 export const register = client.register;
 
@@ -170,7 +170,7 @@ export async function refreshChainGauges(): Promise<void> {
   try {
     const { getSati, getHotWallet, USDC_MINT } = await import("./sati");
     const rpc = getSati().getRpc();
-    const treasuryAddress = address(env.PAY_TO_ADDRESS);
+    const treasuryAddress = address(PAY_TO_ADDRESS);
 
     const fetches: Promise<void>[] = [];
 

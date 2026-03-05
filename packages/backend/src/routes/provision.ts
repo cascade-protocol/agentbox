@@ -7,7 +7,7 @@ import { jwtVerify, SignJWT } from "jose";
 import { db } from "../db/connection";
 import { instances } from "../db/schema";
 import * as cloudflare from "../lib/cloudflare";
-import { HETZNER_SNAPSHOT_ID } from "../lib/constants";
+import { HETZNER_SNAPSHOT_ID, INSTANCE_BASE_DOMAIN } from "../lib/constants";
 import { env } from "../lib/env";
 import { recordEvent } from "../lib/events";
 import * as hetzner from "../lib/hetzner";
@@ -95,7 +95,7 @@ provisionRoutes.post("/provision", async (c) => {
     }
   }
 
-  const hostname = `${name}.${env.INSTANCE_BASE_DOMAIN}`;
+  const hostname = `${name}.${INSTANCE_BASE_DOMAIN}`;
   const callbackToken = randomUUID();
   const terminalToken = randomUUID();
 
@@ -116,7 +116,7 @@ provisionRoutes.post("/provision", async (c) => {
     return c.json({ error: "Failed to provision server" }, 502);
   }
 
-  if (env.CF_API_TOKEN && env.CF_ZONE_ID) {
+  if (env.CF_API_TOKEN) {
     try {
       await cloudflare.createDnsRecord(hostname, result.server.public_net.ipv4.ip);
     } catch (err) {
@@ -185,7 +185,7 @@ provisionRoutes.get("/provision/:id", async (c) => {
   const resp: Record<string, unknown> = { ...toInstanceResponse(row) };
 
   if (row.status === "running" || row.status === "minting") {
-    const instanceHost = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
+    const instanceHost = `${row.name}.${INSTANCE_BASE_DOMAIN}`;
     const terminalPath = row.terminalToken ? `/terminal/${row.terminalToken}/` : "/terminal/";
     resp.chatUrl = `https://${instanceHost}/chat#token=${row.gatewayToken}`;
     resp.terminalUrl = `https://${instanceHost}${terminalPath}`;

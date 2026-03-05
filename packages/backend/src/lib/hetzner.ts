@@ -1,5 +1,10 @@
 import { logger } from "../logger";
-import { HETZNER_SNAPSHOT_ID, HETZNER_SSH_KEY_IDS } from "./constants";
+import {
+  HETZNER_LOCATIONS,
+  HETZNER_SERVER_TYPE,
+  HETZNER_SNAPSHOT_ID,
+  HETZNER_SSH_KEY_IDS,
+} from "./constants";
 import { env } from "./env";
 
 const API_BASE = "https://api.hetzner.cloud/v1";
@@ -38,15 +43,13 @@ type ActionResponse = {
 };
 
 export async function createServer(name: string, userData: string): Promise<CreateServerResponse> {
-  const locations = env.HETZNER_LOCATIONS.split(",").map((l) => l.trim());
-
-  for (const location of locations) {
+  for (const location of HETZNER_LOCATIONS) {
     const res = await fetch(`${API_BASE}/servers`, {
       method: "POST",
       headers: headers(),
       body: JSON.stringify({
         name,
-        server_type: env.HETZNER_SERVER_TYPE,
+        server_type: HETZNER_SERVER_TYPE,
         image: Number(HETZNER_SNAPSHOT_ID),
         location,
         start_after_create: true,
@@ -56,7 +59,7 @@ export async function createServer(name: string, userData: string): Promise<Crea
     });
 
     if (res.ok) {
-      if (location !== locations[0]) {
+      if (location !== HETZNER_LOCATIONS[0]) {
         logger.info(`Hetzner: created in fallback location ${location}`);
       }
       return (await res.json()) as CreateServerResponse;
@@ -72,7 +75,7 @@ export async function createServer(name: string, userData: string): Promise<Crea
   }
 
   throw new Error(
-    `Hetzner create server failed: no capacity in any location (${locations.join(", ")})`,
+    `Hetzner create server failed: no capacity in any location (${HETZNER_LOCATIONS.join(", ")})`,
   );
 }
 

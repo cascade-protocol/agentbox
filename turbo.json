@@ -5,7 +5,15 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
-    "type-check": {},
+    "type-check": {
+      "dependsOn": ["^build"]
+    },
+    "//#lint": {
+      "cache": false
+    },
+    "//#docker-build": {
+      "cache": false
+    },
     "dev": {
       "cache": false,
       "persistent": true

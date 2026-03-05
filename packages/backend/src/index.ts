@@ -12,7 +12,12 @@ import { secureHeaders } from "hono/secure-headers";
 import { db } from "./db/connection";
 import { instances } from "./db/schema";
 import * as cloudflare from "./lib/cloudflare";
-import { HETZNER_SNAPSHOT_ID } from "./lib/constants";
+import {
+  FACILITATOR_URL,
+  HETZNER_SNAPSHOT_ID,
+  INSTANCE_BASE_DOMAIN,
+  PAY_TO_ADDRESS,
+} from "./lib/constants";
 import { env } from "./lib/env";
 import { recordEvent } from "./lib/events";
 import * as hetzner from "./lib/hetzner";
@@ -86,7 +91,7 @@ app.use(
 app.use("/*", secureHeaders());
 
 // x402 payment gate on instance creation
-const facilitator = new HTTPFacilitatorClient({ url: env.FACILITATOR_URL });
+const facilitator = new HTTPFacilitatorClient({ url: FACILITATOR_URL });
 const resourceServer = new x402ResourceServer([facilitator])
   .register(SOLANA_MAINNET, new ExactSvmScheme())
   .onAfterVerify(async (ctx) => {
@@ -102,7 +107,7 @@ const resourceServer = new x402ResourceServer([facilitator])
     }
   })
   .onAfterSettle(async (ctx) => {
-    logger.info(`Payment settled via ${env.FACILITATOR_URL}`, {
+    logger.info(`Payment settled via ${FACILITATOR_URL}`, {
       transaction: ctx.result.transaction,
     });
     recordEvent("payment.settled", { type: "system", id: "x402" }, null, {
@@ -118,7 +123,7 @@ const x402Payment = paymentMiddleware(
           scheme: "exact",
           network: SOLANA_MAINNET,
           price: "$5",
-          payTo: env.PAY_TO_ADDRESS,
+          payTo: PAY_TO_ADDRESS,
         },
       ],
       description: "Provision AgentBox VM (7 days)",
@@ -130,7 +135,7 @@ const x402Payment = paymentMiddleware(
           scheme: "exact",
           network: SOLANA_MAINNET,
           price: "$5",
-          payTo: env.PAY_TO_ADDRESS,
+          payTo: PAY_TO_ADDRESS,
         },
       ],
       description: "Extend AgentBox VM (7 days)",
@@ -142,7 +147,7 @@ const x402Payment = paymentMiddleware(
           scheme: "exact",
           network: SOLANA_MAINNET,
           price: "$5",
-          payTo: env.PAY_TO_ADDRESS,
+          payTo: PAY_TO_ADDRESS,
         },
       ],
       description: "Provision AgentBox VM (7 days)",
@@ -154,7 +159,7 @@ const x402Payment = paymentMiddleware(
           scheme: "exact",
           network: SOLANA_MAINNET,
           price: "$5",
-          payTo: env.PAY_TO_ADDRESS,
+          payTo: PAY_TO_ADDRESS,
         },
       ],
       description: "Extend AgentBox VM (7 days)",
@@ -244,7 +249,7 @@ const cleanupInterval = setInterval(
 
         if (env.CF_API_TOKEN) {
           try {
-            await cloudflare.deleteDnsRecord(`${row.name}.${env.INSTANCE_BASE_DOMAIN}`);
+            await cloudflare.deleteDnsRecord(`${row.name}.${INSTANCE_BASE_DOMAIN}`);
           } catch (err) {
             logger.error(`Failed to delete DNS for ${row.name}: ${String(err)}`);
           }

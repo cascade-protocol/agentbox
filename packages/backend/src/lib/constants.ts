@@ -1,6 +1,13 @@
 /** Hetzner snapshot ID for VM provisioning. Update after `just build-image`. */
 export const HETZNER_SNAPSHOT_ID = "363739637";
 
+export const CF_ZONE_ID = "fda671fa572b4c2d26de8aedcbf94f6e";
+export const FACILITATOR_URL = "https://facilitator.payai.network";
+export const PAY_TO_ADDRESS = "7NetKx8TuRMBpqYFKZCVetkNuvWCPTrgekmGrsJwTmfN";
+export const INSTANCE_BASE_DOMAIN = "agentbox.fyi";
+export const HETZNER_LOCATIONS = ["nbg1", "fsn1"];
+export const HETZNER_SERVER_TYPE = "cx33";
+
 /**
  * x402 provider catalog - single source of truth for model metadata.
  * Both the OpenClaw gateway (models.providers) and the plugin (config.providers)

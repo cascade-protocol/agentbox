@@ -1,3 +1,4 @@
+import { CF_ZONE_ID } from "./constants";
 import { env } from "./env";
 
 const API_BASE = "https://api.cloudflare.com/client/v4";
@@ -26,9 +27,7 @@ type CfResponse<T> = {
 };
 
 export async function createDnsRecord(name: string, ip: string): Promise<DnsRecord> {
-  if (!env.CF_ZONE_ID) throw new Error("CF_ZONE_ID is not configured");
-
-  const res = await fetch(`${API_BASE}/zones/${env.CF_ZONE_ID}/dns_records`, {
+  const res = await fetch(`${API_BASE}/zones/${CF_ZONE_ID}/dns_records`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({
@@ -51,11 +50,8 @@ export async function createDnsRecord(name: string, ip: string): Promise<DnsReco
 }
 
 export async function deleteDnsRecord(name: string): Promise<void> {
-  if (!env.CF_ZONE_ID) throw new Error("CF_ZONE_ID is not configured");
-
-  // Find the record by name first
   const searchRes = await fetch(
-    `${API_BASE}/zones/${env.CF_ZONE_ID}/dns_records?type=A&name=${encodeURIComponent(name)}`,
+    `${API_BASE}/zones/${CF_ZONE_ID}/dns_records?type=A&name=${encodeURIComponent(name)}`,
     { headers: headers() },
   );
 
@@ -67,7 +63,7 @@ export async function deleteDnsRecord(name: string): Promise<void> {
   }
 
   for (const record of searchBody.result) {
-    await fetch(`${API_BASE}/zones/${env.CF_ZONE_ID}/dns_records/${record.id}`, {
+    await fetch(`${API_BASE}/zones/${CF_ZONE_ID}/dns_records/${record.id}`, {
       method: "DELETE",
       headers: headers(),
     });

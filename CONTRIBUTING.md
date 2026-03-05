@@ -23,8 +23,7 @@ pnpm dev
 Run checks before opening a PR:
 
 ```bash
-pnpm check
-pnpm check:ci
+pnpm -w check
 ```
 
 ## Commit style

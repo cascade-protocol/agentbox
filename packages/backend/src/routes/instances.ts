@@ -8,7 +8,12 @@ import { jwtVerify, SignJWT } from "jose";
 import { db } from "../db/connection";
 import { instances } from "../db/schema";
 import * as cloudflare from "../lib/cloudflare";
-import { HETZNER_SNAPSHOT_ID, OPENCLAW_BASE_CONFIG } from "../lib/constants";
+import {
+  HETZNER_SNAPSHOT_ID,
+  INSTANCE_BASE_DOMAIN,
+  OPENCLAW_BASE_CONFIG,
+  PAY_TO_ADDRESS,
+} from "../lib/constants";
 import { decrypt, encrypt } from "../lib/crypto";
 import { env } from "../lib/env";
 import { recordEvent } from "../lib/events";
@@ -67,7 +72,7 @@ const auth = createMiddleware<AppEnv>(async (c, next) => {
 });
 
 function isAdmin(wallet: string): boolean {
-  return wallet === env.OPERATOR_WALLET || wallet === env.PAY_TO_ADDRESS;
+  return wallet === env.OPERATOR_WALLET || wallet === PAY_TO_ADDRESS;
 }
 
 function isOwner(row: typeof instances.$inferSelect, wallet: string): boolean {
@@ -139,7 +144,7 @@ export async function mintAndFinalize(row: typeof instances.$inferSelect): Promi
     return;
   }
 
-  const hostname = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
+  const hostname = `${row.name}.${INSTANCE_BASE_DOMAIN}`;
 
   // Fund VM wallet (SOL + USDC) in parallel - await both so the agent
   // is fully operational before the instance transitions to "running".
@@ -228,7 +233,7 @@ instanceRoutes.post("/instances/auth", async (c) => {
 
   recordEvent("auth.signed_in", { type: "wallet", id: input.data.solanaWalletAddress }, null, {});
 
-  return c.json({ token, isAdmin: input.data.solanaWalletAddress === env.PAY_TO_ADDRESS });
+  return c.json({ token, isAdmin: input.data.solanaWalletAddress === PAY_TO_ADDRESS });
 });
 
 // POST /instances - Create instance (wallet from JWT used as ownerWallet)
@@ -300,7 +305,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
     }
   }
 
-  const hostname = `${name}.${env.INSTANCE_BASE_DOMAIN}`;
+  const hostname = `${name}.${INSTANCE_BASE_DOMAIN}`;
   const callbackToken = randomUUID();
   const terminalToken = randomUUID();
 
@@ -322,7 +327,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
     return c.json({ error: "Failed to provision server" }, 502);
   }
 
-  if (env.CF_API_TOKEN && env.CF_ZONE_ID) {
+  if (env.CF_API_TOKEN) {
     try {
       await cloudflare.createDnsRecord(hostname, result.server.public_net.ipv4.ip);
     } catch (err) {
@@ -525,7 +530,7 @@ instanceRoutes.get("/instances/config", async (c) => {
     return c.json({ error: "Instance not found" }, 404);
   }
 
-  const hostname = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
+  const hostname = `${row.name}.${INSTANCE_BASE_DOMAIN}`;
 
   // Decrypt telegram bot token if stored at creation time
   let telegramBotToken: string | undefined;
@@ -596,7 +601,7 @@ instanceRoutes.patch("/instances/:id/agent", auth, async (c) => {
   if (!row.nftMint) return c.json({ error: "Agent NFT not yet minted" }, 400);
   if (!row.vmWallet) return c.json({ error: "VM wallet not available" }, 400);
 
-  const hostname = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
+  const hostname = `${row.name}.${INSTANCE_BASE_DOMAIN}`;
 
   try {
     await updateAgentMetadataForInstance({
@@ -652,9 +657,9 @@ instanceRoutes.delete("/instances/:id", auth, async (c) => {
     logger.error(`Failed to delete Hetzner server ${id}: ${String(err)}`);
   }
 
-  if (env.CF_API_TOKEN && env.CF_ZONE_ID) {
+  if (env.CF_API_TOKEN) {
     try {
-      const hostname = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
+      const hostname = `${row.name}.${INSTANCE_BASE_DOMAIN}`;
       await cloudflare.deleteDnsRecord(hostname);
     } catch (err) {
       logger.error(`Failed to delete DNS record for ${row.name}: ${String(err)}`);
@@ -777,7 +782,7 @@ instanceRoutes.get("/instances/:id/access", auth, async (c) => {
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
-  const instanceHost = `${row.name}.${env.INSTANCE_BASE_DOMAIN}`;
+  const instanceHost = `${row.name}.${INSTANCE_BASE_DOMAIN}`;
   const terminalPath = row.terminalToken ? `/terminal/${row.terminalToken}/` : "/terminal/";
   return c.json({
     ...toInstanceResponse(row),

@@ -16,7 +16,7 @@
     "build": "rm -rf dist && tsdown --publint && cp openclaw.plugin.json dist/",
     "dev": "tsdown --watch",
     "type-check": "tsc --noEmit",
-    "check": "pnpm type-check",
+    "check": "pnpm type-check && biome check --write",
     "prepublishOnly": "pnpm build"
   },
   "dependencies": {

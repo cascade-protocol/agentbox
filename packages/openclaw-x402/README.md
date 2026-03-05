@@ -25,6 +25,8 @@ OpenClaw plugin for x402 USDC payments and pump.fun trading on Solana. Handles L
 ## Installation
 
 ```bash
+pnpm add openclaw-x402
+# or
 npm install openclaw-x402
 ```
 

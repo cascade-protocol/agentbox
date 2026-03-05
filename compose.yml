@@ -17,7 +17,7 @@ services:
       - caddy_config:/config
     environment:
       CF_API_TOKEN: ${CF_API_TOKEN}
-      ACME_EMAIL: ${ACME_EMAIL}
+      ACME_EMAIL: hello@cascade.fyi
     depends_on:
       - backend
     restart: unless-stopped
@@ -36,11 +36,7 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN}
       OPERATOR_TOKEN: ${OPERATOR_TOKEN}
       JWT_SECRET: ${JWT_SECRET}
-      PAY_TO_ADDRESS: ${PAY_TO_ADDRESS}
-      FACILITATOR_URL: ${FACILITATOR_URL}
-      INSTANCE_BASE_DOMAIN: ${INSTANCE_BASE_DOMAIN}
       CF_API_TOKEN: ${CF_API_TOKEN}
-      CF_ZONE_ID: ${CF_ZONE_ID}
       OPERATOR_WALLET: ${OPERATOR_WALLET}
       SATI_HOT_WALLET_PRIVATE_KEY: ${SATI_HOT_WALLET_PRIVATE_KEY}
       SOLANA_RPC_URL: ${SOLANA_RPC_URL}

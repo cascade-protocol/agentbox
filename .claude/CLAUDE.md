@@ -12,11 +12,11 @@
 - Node.js 24+
 
 ## Validation
-- Run `pnpm check` (root) after each set of changes - runs biome + type-check via Turborepo
+- Run `pnpm -w check` after each set of changes - builds all packages, type-checks, and runs biome with auto-fixes via Turborepo
 - Fix all errors before moving on
 
 ## Package Manager
-- Always use `pnpm`, never `npm` or `yarn` - this is a pnpm workspaces monorepo
+- Always use `pnpm` and `pnpm dlx` - this is a pnpm workspaces monorepo
 
 ## Code Style
 - No classes, use plain functions
@@ -31,7 +31,7 @@
 
 ## Baked-in Constants
 - Values that are source-of-truth in the codebase (not env-overridable) live in `packages/backend/src/lib/constants.ts`. Import from there, never add these to env.ts or .env files.
-- Current constants: `HETZNER_SNAPSHOT_ID`, `OPENCLAW_BASE_CONFIG`, `HETZNER_SSH_KEY_IDS`
+- Current constants: `HETZNER_SNAPSHOT_ID`, `OPENCLAW_BASE_CONFIG`, `HETZNER_SSH_KEY_IDS`, `CF_ZONE_ID`, `FACILITATOR_URL`, `PAY_TO_ADDRESS`, `INSTANCE_BASE_DOMAIN`, `HETZNER_LOCATIONS`, `HETZNER_SERVER_TYPE`
 - After `just build-image`, update `HETZNER_SNAPSHOT_ID` in `constants.ts` (not env.ts)
 - All OpenClaw config (gateway, models/providers, plugins, agent defaults, compaction, context pruning) is in `OPENCLAW_BASE_CONFIG` in `constants.ts` - no image rebuild needed. Served to VMs at boot via `/instances/config`.
 - `models.mode: "replace"` hides built-in providers; only `models.providers` entries appear in `/models`. Plugin `registerProvider()` is auth-only - does NOT populate the model catalog.
@@ -72,9 +72,9 @@
 - Config: `ops/packer/` - `agentbox.pkr.hcl`, `setup.sh` (build-time), `agentbox-init.sh` (boot-time)
 - Build: `just build-image` - auto-bumps version in `agentbox.pkr.hcl`, runs packer build, outputs new snapshot ID
 - After build: update `HETZNER_SNAPSHOT_ID` in `packages/backend/src/lib/constants.ts` with the new snapshot ID
-- Base: `ubuntu-24.04`, built on cpx42 (fast compile), snapshotted for cx33 (80GB disk)
+- Base: `ubuntu-24.04`, built on cx23 upgraded to cpx42 (fast compile), snapshot is 40GB (cx23 disk), runs on cx33 (80GB disk)
 - Pre-installed: Node.js 24, OpenClaw (npm global + native modules), Caddy, ttyd, Solana CLI, create-sati-agent, openclaw-x402 plugin, build-essential/cmake/python3 (for node-gyp)
-- Plugin install: `openclaw-x402` is extracted via `npm pack` + `tar` into `~/.openclaw/extensions/openclaw-x402/` (auto-discovered, no `plugins.load.paths` needed)
+- Plugin install: `openclaw plugins install openclaw-x402@latest` into `~/.openclaw/extensions/openclaw-x402/` (auto-discovered, no `plugins.load.paths` needed)
 - Skills: installed at build time via `npx skills add -g cascade-protocol/agentbox` into `~/.openclaw/skills/` (managed skills, auto-discovered)
 - Boot flow: cloud-init writes `/etc/agentbox/callback.env` -> runs `agentbox-init.sh` -> fetches config from backend, creates wallet/SATI identity, starts services, callbacks to API
 - Services on VM: `openclaw-gateway` (:18789), `ttyd` (:7681), `caddy` (HTTPS :443)
@@ -128,7 +128,9 @@ Before committing/pushing changes that affect VM provisioning, boot flow, or the
 - `ops/packer/setup.sh` - packages/software installed on the image
 - `ops/packer/agentbox-init.sh` - boot-time init script
 - `ops/packer/agentbox.pkr.hcl` - Packer config
-- `packages/openclaw-x402/src/**` - plugin source code (baked into image as binary)
+- `ops/packer/workspace/AGENTS.md` - workspace seed file baked into image
+- `packages/openclaw-x402/src/**` - plugin source code (baked into image via npm)
+- `skills/**` - installed at build time from GitHub via `npx skills add -g` (must be committed and pushed BEFORE building the image)
 
 **NO image rebuild needed** for:
 - LLM provider/model changes (URL, name, default model, model catalog) - just edit `constants.ts`, these are served dynamically to VMs via the config endpoint
@@ -144,24 +146,26 @@ This sequence is MANDATORY. Do NOT skip steps. Do NOT reorder.
 1. Bump `version` in `packages/openclaw-x402/package.json`
 2. Update `packages/openclaw-x402/CHANGELOG.md` with new version entry
 3. Update `packages/openclaw-x402/README.md` if the changes affect config, commands, or behavior
-4. `pnpm check` - verify everything passes
-5. `pnpm --filter openclaw-x402 build`
-6. Commit & push ONLY plugin files (`packages/openclaw-x402/` - source, package.json, CHANGELOG, README)
-7. `cd packages/openclaw-x402 && npm publish`
-8. The image build pulls `openclaw-x402@latest` from npm - if you skip publish, the image bakes the OLD plugin
+4. `pnpm -w check` - verify everything passes (this also builds the plugin)
+5. Commit & push plugin files (`packages/openclaw-x402/`)
+6. `cd packages/openclaw-x402 && pnpm publish`
+7. The image build pulls `openclaw-x402@latest` from npm - if you skip publish, the image bakes the OLD plugin
+
+**If skills (`skills/**`) changed, push them first:**
+Skills are installed at build time from GitHub. Commit & push skill changes BEFORE building the image.
 
 **Then build the image:**
-9. `just build-image` - builds new snapshot with current init script + published plugin
-10. Update `HETZNER_SNAPSHOT_ID` in `packages/backend/src/lib/constants.ts` with the new snapshot ID from build output
-11. `pnpm check` - verify everything passes
-12. Commit & push remaining changes (backend, ops, constants, docs)
-13. `just deploy`
+8. `just build-image` - builds new snapshot with current init script + published plugin + skills from GitHub
+9. Update `HETZNER_SNAPSHOT_ID` in `packages/backend/src/lib/constants.ts` with the new snapshot ID from build output
+10. `pnpm -w check` - verify everything passes
+11. Commit & push remaining changes (backend, ops, constants, docs)
+12. `just deploy`
 
 **Why this order matters:** The image pulls the plugin from npm and bakes it in. The backend provisions VMs from the snapshot ID in constants.ts. If any step is skipped or reordered, new VMs get stale code.
 
 ### Deploy without image rebuild (backend/frontend/constants only)
 
-1. `pnpm check`
+1. `pnpm -w check`
 2. Commit & push
 3. `just deploy`
 
