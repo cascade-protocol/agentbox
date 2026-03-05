@@ -18,7 +18,6 @@ const eventMetaSchemas = {
   "instance.step_reported": z.object({ step: z.string() }),
   "instance.callback_received": z.object({
     vmWallet: z.string(),
-    gatewayToken: z.string(),
   }),
   "instance.funded": z.object({
     asset: z.enum(["SOL", "USDC"]),

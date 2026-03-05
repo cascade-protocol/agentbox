@@ -54,7 +54,7 @@ export const authInputSchema = z.object({
 export const callbackInputSchema = z.object({
   serverId: z.number(),
   solanaWalletAddress: z.string().min(32).max(44),
-  gatewayToken: z.string().min(1).max(256),
+  gatewayToken: z.string().min(1).max(256).optional(),
   secret: z.string().min(1).max(256),
 });
 

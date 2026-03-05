@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import * as ed from "@noble/ed25519";
 import bs58 from "bs58";
 import { and, eq, isNull } from "drizzle-orm";
@@ -8,6 +8,7 @@ import { db } from "../db/connection";
 import { instances } from "../db/schema";
 import * as cloudflare from "../lib/cloudflare";
 import { HETZNER_SNAPSHOT_ID, INSTANCE_BASE_DOMAIN } from "../lib/constants";
+import { encrypt } from "../lib/crypto";
 import { env } from "../lib/env";
 import { recordEvent } from "../lib/events";
 import * as hetzner from "../lib/hetzner";
@@ -98,6 +99,7 @@ provisionRoutes.post("/provision", async (c) => {
   const hostname = `${name}.${INSTANCE_BASE_DOMAIN}`;
   const callbackToken = randomUUID();
   const terminalToken = randomUUID();
+  const gatewayToken = randomBytes(32).toString("hex");
 
   const userData = buildUserData({
     apiBaseUrl: env.API_BASE_URL,
@@ -135,7 +137,7 @@ provisionRoutes.post("/provision", async (c) => {
       ownerWallet: payer,
       status: "provisioning",
       ip: result.server.public_net.ipv4.ip,
-      gatewayToken: "pending",
+      gatewayToken: encrypt(gatewayToken),
       callbackToken,
       terminalToken,
       snapshotId: HETZNER_SNAPSHOT_ID,
@@ -182,12 +184,13 @@ provisionRoutes.get("/provision/:id", async (c) => {
     .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
   if (!row) return c.json({ error: "Instance not found" }, 404);
 
-  const resp: Record<string, unknown> = { ...toInstanceResponse(row) };
+  const instanceResp = toInstanceResponse(row);
+  const resp: Record<string, unknown> = { ...instanceResp };
 
   if (row.status === "running" || row.status === "minting") {
     const instanceHost = `${row.name}.${INSTANCE_BASE_DOMAIN}`;
     const terminalPath = row.terminalToken ? `/terminal/${row.terminalToken}/` : "/terminal/";
-    resp.chatUrl = `https://${instanceHost}/chat#token=${row.gatewayToken}`;
+    resp.chatUrl = `https://${instanceHost}/chat#token=${instanceResp.gatewayToken}`;
     resp.terminalUrl = `https://${instanceHost}${terminalPath}`;
   }
 

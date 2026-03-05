@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import * as ed from "@noble/ed25519";
 import bs58 from "bs58";
 import { and, eq, isNull, lte } from "drizzle-orm";
@@ -80,6 +80,12 @@ function isOwner(row: typeof instances.$inferSelect, wallet: string): boolean {
 }
 
 export function toInstanceResponse(row: typeof instances.$inferSelect) {
+  let gatewayToken = row.gatewayToken;
+  try {
+    gatewayToken = decrypt(gatewayToken);
+  } catch {
+    // Legacy plaintext token or decryption failure - return as-is
+  }
   return {
     id: row.id,
     name: row.name,
@@ -88,7 +94,7 @@ export function toInstanceResponse(row: typeof instances.$inferSelect) {
     ip: row.ip,
     nftMint: row.nftMint,
     vmWallet: row.vmWallet,
-    gatewayToken: row.gatewayToken,
+    gatewayToken,
     terminalToken: row.terminalToken,
     telegramBotUsername: row.telegramBotUsername,
     snapshotId: row.snapshotId,
@@ -102,16 +108,12 @@ export function buildUserData(opts: {
   apiBaseUrl: string;
   callbackToken: string;
   terminalToken: string;
-  telegramBotToken?: string;
 }): string {
   const envLines = [
     `API_BASE_URL="${opts.apiBaseUrl}"`,
     `CALLBACK_SECRET="${opts.callbackToken}"`,
     `TERMINAL_TOKEN="${opts.terminalToken}"`,
   ];
-  if (opts.telegramBotToken) {
-    envLines.push(`TELEGRAM_BOT_TOKEN="${opts.telegramBotToken}"`);
-  }
 
   const lines = [
     "#!/bin/bash",
@@ -308,12 +310,12 @@ instanceRoutes.post("/instances", auth, async (c) => {
   const hostname = `${name}.${INSTANCE_BASE_DOMAIN}`;
   const callbackToken = randomUUID();
   const terminalToken = randomUUID();
+  const gatewayToken = randomBytes(32).toString("hex");
 
   const userData = buildUserData({
     apiBaseUrl: env.API_BASE_URL,
     callbackToken,
     terminalToken,
-    telegramBotToken,
   });
 
   let result: Awaited<ReturnType<typeof hetzner.createServer>>;
@@ -346,7 +348,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
       ownerWallet: wallet,
       status: "provisioning",
       ip: result.server.public_net.ipv4.ip,
-      gatewayToken: "pending",
+      gatewayToken: encrypt(gatewayToken),
       callbackToken,
       terminalToken,
       telegramBotToken: telegramBotToken ? encrypt(telegramBotToken) : null,
@@ -451,7 +453,6 @@ instanceRoutes.post("/instances/callback", async (c) => {
     .update(instances)
     .set({
       vmWallet: input.data.solanaWalletAddress,
-      gatewayToken: input.data.gatewayToken,
       status: "minting",
       provisioningStep: null,
       callbackToken: null,
@@ -473,7 +474,7 @@ instanceRoutes.post("/instances/callback", async (c) => {
     "instance.callback_received",
     { type: "vm", id: String(row.id) },
     { type: "instance", id: String(row.id) },
-    { vmWallet: input.data.solanaWalletAddress, gatewayToken: input.data.gatewayToken },
+    { vmWallet: input.data.solanaWalletAddress },
   );
 
   void mintAndFinalize(row).catch((err) => {
@@ -505,7 +506,7 @@ instanceRoutes.post("/instances/sync", auth, async (c) => {
   }
 });
 
-// GET /instances/config - VM fetches dynamic config at boot (callback-token auth)
+// GET /instances/config - VM fetches complete openclaw.json at boot (callback-token auth)
 instanceRoutes.get("/instances/config", async (c) => {
   const query = instanceConfigQuerySchema.safeParse({
     serverId: c.req.query("serverId"),
@@ -532,22 +533,53 @@ instanceRoutes.get("/instances/config", async (c) => {
 
   const hostname = `${row.name}.${INSTANCE_BASE_DOMAIN}`;
 
-  // Decrypt telegram bot token if stored at creation time
+  // Decrypt secrets stored at provision time
+  let gatewayToken: string;
+  try {
+    gatewayToken = decrypt(row.gatewayToken);
+  } catch {
+    logger.error(`Failed to decrypt gateway token for instance ${row.id}`);
+    return c.json({ error: "Internal error" }, 500);
+  }
+
   let telegramBotToken: string | undefined;
   if (row.telegramBotToken) {
     try {
       telegramBotToken = decrypt(row.telegramBotToken);
     } catch {
-      logger.warn(`Failed to decrypt telegram token for instance ${row.id} in config endpoint`);
+      logger.warn(`Failed to decrypt telegram token for instance ${row.id}`);
     }
+  }
+
+  // Build complete openclaw.json - no init script merges needed
+  // biome-ignore lint/suspicious/noExplicitAny: openclaw config is untyped JSON
+  const config: any = structuredClone(OPENCLAW_BASE_CONFIG);
+
+  // Gateway auth
+  config.gateway.auth.token = gatewayToken;
+  config.gateway.remote = { token: gatewayToken };
+  config.gateway.controlUi.allowedOrigins = [`https://${hostname}`];
+
+  // Plugin config
+  config.plugins.entries["openclaw-x402"].config.dashboardUrl =
+    `https://agentbox.fyi/instances/${row.id}`;
+  if (env.SOLANA_RPC_URL) {
+    config.plugins.entries["openclaw-x402"].config.rpcUrl = env.SOLANA_RPC_URL;
+  }
+
+  // Telegram
+  if (telegramBotToken) {
+    config.channels.telegram.enabled = true;
+    config.channels.telegram.botToken = telegramBotToken;
+    config.plugins.entries.telegram = { enabled: true };
   }
 
   return c.json({
     hostname,
     terminalToken: row.terminalToken,
+    gatewayToken,
     telegramBotToken,
-    openclawConfig: OPENCLAW_BASE_CONFIG,
-    rpcUrl: env.SOLANA_RPC_URL || null,
+    openclawConfig: config,
   });
 });
 
@@ -784,9 +816,10 @@ instanceRoutes.get("/instances/:id/access", auth, async (c) => {
 
   const instanceHost = `${row.name}.${INSTANCE_BASE_DOMAIN}`;
   const terminalPath = row.terminalToken ? `/terminal/${row.terminalToken}/` : "/terminal/";
+  const instanceResp = toInstanceResponse(row);
   return c.json({
-    ...toInstanceResponse(row),
-    chatUrl: `https://${instanceHost}/chat#token=${row.gatewayToken}`,
+    ...instanceResp,
+    chatUrl: `https://${instanceHost}/chat#token=${instanceResp.gatewayToken}`,
     terminalUrl: `https://${instanceHost}${terminalPath}`,
   });
 });
@@ -872,12 +905,9 @@ instanceRoutes.post("/instances/:id/telegram", auth, async (c) => {
       const cfg = await vm.readJson<any>(configPath);
       cfg.channels ??= {};
       cfg.channels.telegram = {
+        ...cfg.channels.telegram,
         enabled: true,
         botToken: token,
-        dmPolicy: "open",
-        allowFrom: ["*"],
-        groups: { "*": { requireMention: true } },
-        ackReaction: "\u{1F44B}",
       };
       cfg.plugins ??= {};
       cfg.plugins.entries ??= {};

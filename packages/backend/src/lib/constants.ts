@@ -215,14 +215,23 @@ export const OPENCLAW_BASE_CONFIG = {
     },
   },
   channels: {
-    telegram: { linkPreview: false },
+    telegram: {
+      linkPreview: false,
+      dmPolicy: "pairing",
+      groupPolicy: "allowlist",
+      groups: { "-1003579023474": { requireMention: true } },
+      ackReaction: "\uD83D\uDC4B",
+    },
   },
   plugins: {
+    installs: {
+      "openclaw-x402": { source: "npm", spec: "openclaw-x402@latest" },
+    },
     entries: {
       "openclaw-x402": {
         enabled: true,
         config: {
-          keypairPath: "~/.openclaw/agentbox/wallet-sol.json",
+          keypairPath: "/home/openclaw/.openclaw/agentbox/wallet-sol.json",
           providers: X402_PROVIDERS,
         },
       },
