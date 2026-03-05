@@ -11,7 +11,12 @@ import { dirname, join } from "node:path";
 import { generateMnemonic } from "@scure/bip39";
 import { wordlist as english } from "@scure/bip39/wordlists/english";
 import { Type } from "@sinclair/typebox";
-import { createKeyPairSignerFromBytes, type KeyPairSigner } from "@solana/kit";
+import {
+  createKeyPairSignerFromBytes,
+  generateKeyPair,
+  getAddressFromPublicKey,
+  type KeyPairSigner,
+} from "@solana/kit";
 import { decodePaymentResponseHeader, wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import { ExactSvmScheme } from "@x402/svm/exact/client";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
@@ -497,6 +502,7 @@ export function register(api: OpenClawPluginApi): void {
         "x_payment - Call x402 paid APIs",
         "x_discover - Find x402 services",
         "x_trade - Buy/sell pump.fun tokens",
+        "x_create_token - Launch a new token on pump.fun",
         "x_token_info - Token price lookup",
         "",
         "**How payments work**",
@@ -894,6 +900,137 @@ export function register(api: OpenClawPluginApi): void {
         });
         return {
           content: [{ type: "text" as const, text: `Trade failed: ${String(err)}` }],
+          details: {},
+        };
+      }
+    },
+  });
+
+  api.registerTool({
+    name: "x_create_token",
+    label: "Create pump.fun Token",
+    description:
+      "Create a new token on pump.fun with an initial dev buy. Uploads metadata to IPFS, creates the token on-chain.",
+    parameters: Type.Object({
+      name: Type.String({ description: "Token name (e.g. 'Prompt Fun')" }),
+      symbol: Type.String({ description: "Token ticker (e.g. 'PFUN')" }),
+      description: Type.String({ description: "Token description" }),
+      initial_buy_sol: Type.Optional(
+        Type.Number({ description: "SOL to spend on initial dev buy (default: 0.05)" }),
+      ),
+      image_url: Type.Optional(
+        Type.String({
+          description: "URL to token image (PNG/JPG). A placeholder is used if omitted.",
+        }),
+      ),
+    }),
+    async execute(_id, params) {
+      if (!signerRef || !walletAddress) {
+        return {
+          content: [
+            { type: "text" as const, text: "Wallet not loaded yet. Wait for gateway startup." },
+          ],
+          details: {},
+        };
+      }
+
+      const initialBuy = params.initial_buy_sol ?? 0.05;
+      const sol = await getSolBalance(rpcUrl, walletAddress);
+      if (Number.parseFloat(sol) < initialBuy + 0.02) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Insufficient SOL. Balance: ${sol} SOL, need ~${(initialBuy + 0.02).toFixed(3)} SOL (${initialBuy} buy + fees). Top up: ${walletAddress}`,
+            },
+          ],
+          details: {},
+        };
+      }
+
+      try {
+        // 1. Generate mint keypair
+        const mintKeyPair = await generateKeyPair();
+        const mintAddress = await getAddressFromPublicKey(mintKeyPair.publicKey);
+
+        // 2. Prepare image
+        let imageBlob: Blob;
+        if (params.image_url) {
+          const imgRes = await globalThis.fetch(params.image_url);
+          if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.status}`);
+          imageBlob = await imgRes.blob();
+        } else {
+          // Minimal 1x1 placeholder PNG
+          const png = Buffer.from(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
+            "base64",
+          );
+          imageBlob = new Blob([png], { type: "image/png" });
+        }
+
+        // 3. Upload metadata to pump.fun IPFS
+        const form = new FormData();
+        form.append("file", imageBlob, "token.png");
+        form.append("name", params.name);
+        form.append("symbol", params.symbol);
+        form.append("description", params.description);
+        form.append("showName", "true");
+
+        const ipfsRes = await globalThis.fetch("https://pump.fun/api/ipfs", {
+          method: "POST",
+          body: form,
+        });
+        if (!ipfsRes.ok) {
+          const text = await ipfsRes.text();
+          throw new Error(`IPFS upload failed: ${ipfsRes.status} ${text}`);
+        }
+        const { metadataUri } = (await ipfsRes.json()) as { metadataUri: string };
+
+        // 4. Create token via PumpPortal
+        const signature = await signAndSendPumpPortalTx(
+          signerRef,
+          rpcUrl,
+          {
+            action: "create",
+            tokenMetadata: { name: params.name, symbol: params.symbol, uri: metadataUri },
+            mint: mintAddress,
+            denominatedInSol: "true",
+            amount: initialBuy,
+            slippage: 10,
+            priorityFee: 0.0005,
+            pool: "pump",
+          },
+          [mintKeyPair],
+        );
+
+        appendHistory(historyPath, {
+          t: Date.now(),
+          k: "trade",
+          ok: true,
+          tx: signature,
+          act: "create",
+          token: mintAddress,
+          sol: initialBuy,
+        });
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Token created!\nName: ${params.name} ($${params.symbol})\nMint: ${mintAddress}\nInitial buy: ${initialBuy} SOL\nhttps://pump.fun/${mintAddress}\nhttps://solscan.io/tx/${signature}`,
+            },
+          ],
+          details: {},
+        };
+      } catch (err) {
+        appendHistory(historyPath, {
+          t: Date.now(),
+          k: "trade",
+          ok: false,
+          act: "create",
+        });
+        return {
+          content: [{ type: "text" as const, text: `Token creation failed: ${String(err)}` }],
           details: {},
         };
       }

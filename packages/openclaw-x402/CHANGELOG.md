@@ -2,6 +2,13 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.9.0] - 2026-03-05
+
+### Added
+
+- `x_create_token` tool for launching new tokens on pump.fun with IPFS metadata upload and initial dev buy
+- Multi-signer support in `signAndSendPumpPortalTx` for token creation (mint keypair + wallet signer)
+
 ## [0.8.2] - 2026-03-04
 
 ### Added

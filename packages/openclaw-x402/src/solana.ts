@@ -145,6 +145,7 @@ export async function signAndSendPumpPortalTx(
   signer: KeyPairSigner,
   rpcUrl: string,
   params: Record<string, unknown>,
+  extraKeyPairs?: Parameters<typeof signTransaction>[0],
 ): Promise<string> {
   const response = await globalThis.fetch("https://pumpportal.fun/api/trade-local", {
     method: "POST",
@@ -161,7 +162,7 @@ export async function signAndSendPumpPortalTx(
   const compiledMsg = getCompiledTransactionMessageDecoder().decode(decoded.messageBytes);
   const lifetimeConstraint =
     getTransactionLifetimeConstraintFromCompiledTransactionMessage(compiledMsg);
-  const signed = await signTransaction([signer.keyPair], decoded);
+  const signed = await signTransaction([...(extraKeyPairs ?? []), signer.keyPair], decoded);
   assertIsSendableTransaction(signed);
   Object.assign(signed, { lifetimeConstraint });
   assertIsTransactionWithBlockhashLifetime(signed);
