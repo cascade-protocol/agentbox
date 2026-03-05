@@ -23,9 +23,13 @@ variable "server_type" {
   default = "cx23"
 }
 
-variable "image_version" {
+variable "image_timestamp" {
   type    = string
-  default = "62"
+  default = ""
+}
+
+locals {
+  timestamp = var.image_timestamp != "" ? var.image_timestamp : formatdate("YYYY-MM-DD-hhmm", timestamp())
 }
 
 source "hcloud" "agentbox" {
@@ -39,12 +43,12 @@ source "hcloud" "agentbox" {
   upgrade_server_type = "cpx42"
 
   server_name   = "agentbox-packer-build"
-  snapshot_name = "agentbox-golden-v${var.image_version}"
+  snapshot_name = "agentbox-${local.timestamp}"
   snapshot_labels = {
-    app     = "agentbox"
-    version = var.image_version
-    os      = "ubuntu-24.04"
-    base    = var.server_type
+    app       = "agentbox"
+    timestamp = local.timestamp
+    os        = "ubuntu-24.04"
+    base      = var.server_type
   }
 
   ssh_username            = "root"
