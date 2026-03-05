@@ -6,8 +6,31 @@ All notable changes to `openclaw-x402` are documented here.
 
 ### Added
 
-- `x_create_token` tool for launching new tokens on pump.fun with IPFS metadata upload and initial dev buy
-- Multi-signer support in `signAndSendPumpPortalTx` for token creation (mint keypair + wallet signer)
+- `/x_wallet` command - unified wallet view with balance, token holdings, inline history, send USDC, and paginated history subcommand
+- `/x_status` command - system overview with version check, model info, pricing table, wallet summary, and recent transactions
+- `/x_update` command - one-tap plugin + skills update with automatic gateway restart
+- `x_trade` tool - merged buy/sell/create into single tool for pump.fun token operations
+
+### Changed
+
+- Extracted history utilities into `history.ts` - pure functions with no plugin state dependency
+- Batch DexScreener API for token symbol resolution (single request instead of N)
+- Shared `getWalletSnapshot()` eliminates duplicate balance fetching across commands/tools
+- `toolResult()` helper reduces tool return boilerplate
+- Simplified `formatTxLine` - unified format with middle-dot separators and Solscan time links
+- Token symbols (USDC, SOL) instead of $ prefix everywhere
+- Full wallet address in backticks (copyable in Telegram)
+- Transaction times rendered as clickable Solscan links
+- Adaptive wallet layout: inline history when tokens <= 3, link-only when more
+
+### Removed
+
+- `/x_help` command (replaced by `/x_status`)
+- `/x_models` command (pricing table merged into `/x_status`)
+- `/x_send` command (merged into `/x_wallet send`)
+- `/x_balance` command (replaced by `/x_wallet`)
+- `x_create_token` tool (merged into `x_trade` with `action: "create"`)
+- `x_discover` tool
 
 ## [0.8.2] - 2026-03-04
 

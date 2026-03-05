@@ -1,11 +1,5 @@
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { execSync, spawn } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { generateMnemonic } from "@scure/bip39";
@@ -21,6 +15,16 @@ import { decodePaymentResponseHeader, wrapFetchWithPayment, x402Client } from "@
 import { ExactSvmScheme } from "@x402/svm/exact/client";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import {
+  appendHistory,
+  calcSpend,
+  formatTxLine,
+  HISTORY_PAGE_SIZE,
+  INLINE_HISTORY_TOKEN_THRESHOLD,
+  readHistory,
+  resolveTokenSymbols,
+  STATUS_HISTORY_COUNT,
+} from "./history.js";
+import {
   checkAtaExists,
   getSolBalance,
   getTokenAccounts,
@@ -32,8 +36,10 @@ import { deriveEvmKeypair, deriveSolanaKeypair } from "./wallet.js";
 
 const INFERENCE_RESERVE = 0.3;
 const MAX_RESPONSE_CHARS = 50_000;
+const PLUGIN_VERSION = "0.9.0";
 
-// Model metadata type - matches the shape in X402_PROVIDERS (constants.ts)
+// --- Types ---
+
 type ModelEntry = {
   provider: string;
   id: string;
@@ -49,6 +55,8 @@ type ProviderConfig = {
   baseUrl: string;
   models: Array<Omit<ModelEntry, "provider">>;
 };
+
+// --- Pure functions ---
 
 function parseProviders(config: Record<string, unknown>): {
   models: ModelEntry[];
@@ -66,32 +74,6 @@ function parseProviders(config: Record<string, unknown>): {
   return { models, x402Urls };
 }
 
-// --- Transaction history ---
-
-const HISTORY_MAX_LINES = 1000;
-const HISTORY_KEEP_LINES = 500;
-const HISTORY_PAGE_SIZE = 5;
-
-type HistoryRecord = {
-  t: number; // epoch ms
-  k: "inference" | "x402" | "send" | "trade";
-  ok: boolean;
-  tx?: string; // solana signature
-  ms?: number; // duration
-  m?: string; // model (inference)
-  in?: number; // input tokens
-  out?: number; // output tokens
-  c?: number; // estimated cost USD
-  u?: string; // url (x402)
-  s?: number; // http status
-  to?: string; // recipient (send)
-  amt?: number; // amount
-  cur?: string; // currency
-  act?: string; // buy/sell (trade)
-  token?: string; // mint (trade)
-  sol?: number; // SOL amount (trade)
-};
-
 function estimateCost(
   allModels: ModelEntry[],
   modelId: string,
@@ -105,136 +87,6 @@ function estimateCost(
   return (inputTokens * model.cost.input + outputTokens * model.cost.output) / 1_000_000;
 }
 
-function appendHistory(historyPath: string, record: HistoryRecord): void {
-  try {
-    appendFileSync(historyPath, `${JSON.stringify(record)}\n`);
-    if (existsSync(historyPath)) {
-      const stat = statSync(historyPath);
-      if (stat.size > HISTORY_MAX_LINES * 120) {
-        const lines = readFileSync(historyPath, "utf-8").trimEnd().split("\n");
-        if (lines.length > HISTORY_MAX_LINES) {
-          writeFileSync(historyPath, `${lines.slice(-HISTORY_KEEP_LINES).join("\n")}\n`);
-        }
-      }
-    }
-  } catch {
-    // History is non-critical - never break the plugin
-  }
-}
-
-function readHistory(historyPath: string): HistoryRecord[] {
-  try {
-    if (!existsSync(historyPath)) return [];
-    const content = readFileSync(historyPath, "utf-8").trimEnd();
-    if (!content) return [];
-    return content.split("\n").flatMap((line) => {
-      try {
-        return [JSON.parse(line) as HistoryRecord];
-      } catch {
-        return [];
-      }
-    });
-  } catch {
-    return [];
-  }
-}
-
-function calcSpend(records: HistoryRecord[]): { today: number; total: number; count: number } {
-  const todayStart = new Date();
-  todayStart.setUTCHours(0, 0, 0, 0);
-  const todayMs = todayStart.getTime();
-  let today = 0;
-  let total = 0;
-  let count = 0;
-  for (const r of records) {
-    if (!r.ok) continue;
-    const cost = r.c ?? 0;
-    total += cost;
-    count++;
-    if (r.t >= todayMs) today += cost;
-  }
-  return { today, total, count };
-}
-
-function formatTxLine(r: HistoryRecord, full: boolean): string {
-  const time = new Date(r.t).toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "UTC",
-  });
-  const txLink = (label: string) => (r.tx ? `[${label}](https://solscan.io/tx/${r.tx})` : label);
-  const fail = r.ok ? "" : " (failed)";
-
-  switch (r.k) {
-    case "inference": {
-      const model = r.m ? (full ? r.m : (r.m.split("/").pop() ?? r.m)) : "unknown";
-      const cost = r.c != null ? `$${r.c.toFixed(3)} USDC` : "";
-      return `\`${time}\` ${model}${fail} ${txLink(cost)}`;
-    }
-    case "x402": {
-      let host = r.u ?? "unknown";
-      try {
-        if (r.u) host = new URL(r.u).hostname;
-      } catch {
-        // keep raw value
-      }
-      const cost = r.c != null ? `$${r.c.toFixed(3)} USDC` : `HTTP ${r.s ?? "?"}`;
-      return `\`${time}\` \`x402\` ${host}${fail} ${txLink(cost)}`;
-    }
-    case "send": {
-      const dest = r.to ? `\`${r.to.slice(0, 4)}...${r.to.slice(-4)}\`` : "unknown";
-      const amount = r.amt != null ? `$${r.amt.toFixed(2)} USDC` : "";
-      return `\`${time}\` send ${dest}${fail} ${txLink(amount)}`;
-    }
-    case "trade": {
-      const action = r.act ?? "trade";
-      const tokenShort = r.token ? r.token.slice(0, 8) : "token";
-      const amount = r.sol != null ? `${r.sol} SOL` : "";
-      return `\`${time}\` ${action} ${tokenShort} - pump.fun${fail} ${txLink(amount)}`;
-    }
-    default:
-      return `\`${time}\` unknown tx`;
-  }
-}
-
-// Module-level cache for token symbol resolution
-const tokenSymbolCache = new Map<string, string>();
-
-async function resolveTokenSymbols(mints: string[]): Promise<Map<string, string>> {
-  const result = new Map<string, string>();
-  const toResolve = mints.filter((m) => {
-    const cached = tokenSymbolCache.get(m);
-    if (cached) {
-      result.set(m, cached);
-      return false;
-    }
-    return true;
-  });
-  if (toResolve.length === 0) return result;
-
-  const settled = await Promise.allSettled(
-    toResolve.map(async (mint) => {
-      const res = await globalThis.fetch(`https://api.dexscreener.com/tokens/v1/solana/${mint}`, {
-        signal: AbortSignal.timeout(3000),
-      });
-      if (!res.ok) return { mint, symbol: null };
-      const pairs = (await res.json()) as Array<{
-        baseToken?: { symbol?: string };
-      }>;
-      return { mint, symbol: pairs[0]?.baseToken?.symbol ?? null };
-    }),
-  );
-
-  for (const s of settled) {
-    if (s.status === "fulfilled" && s.value.symbol) {
-      tokenSymbolCache.set(s.value.mint, s.value.symbol);
-      result.set(s.value.mint, s.value.symbol);
-    }
-  }
-  return result;
-}
-
 function extractTxSignature(response: Response): string | undefined {
   const header =
     response.headers.get("PAYMENT-RESPONSE") ?? response.headers.get("X-PAYMENT-RESPONSE");
@@ -246,6 +98,25 @@ function extractTxSignature(response: Response): string | undefined {
     return undefined;
   }
 }
+
+async function checkNpmLatestVersion(pkg: string): Promise<string | null> {
+  try {
+    const res = await globalThis.fetch(`https://registry.npmjs.org/${pkg}/latest`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { version?: string };
+    return data.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function toolResult(text: string) {
+  return { content: [{ type: "text" as const, text }], details: {} };
+}
+
+// --- Plugin entry point ---
 
 export function register(api: OpenClawPluginApi): void {
   const config = (api.pluginConfig ?? {}) as Record<string, unknown>;
@@ -292,11 +163,23 @@ export function register(api: OpenClawPluginApi): void {
     | ((input: string | URL | Request, init?: RequestInit) => Promise<Response>)
     | null = null;
 
+  // Shared balance + token + spend snapshot
+  async function getWalletSnapshot(wallet: string) {
+    const [{ ui, raw }, sol, tokens] = await Promise.all([
+      getUsdcBalance(rpcUrl, wallet),
+      getSolBalance(rpcUrl, wallet),
+      getTokenAccounts(rpcUrl, wallet).catch(() => []),
+    ]);
+    const records = readHistory(historyPath);
+    const spend = calcSpend(records);
+    return { ui, raw, sol, tokens, records, spend };
+  }
+
   // --- Slash commands ---
 
   api.registerCommand({
-    name: "x_balance",
-    description: "Wallet balance, tokens, and transaction history",
+    name: "x_wallet",
+    description: "Wallet balance, tokens, send USDC, transaction history",
     acceptsArgs: true,
     handler: async (ctx) => {
       if (!walletAddress) {
@@ -305,222 +188,100 @@ export function register(api: OpenClawPluginApi): void {
 
       const args = ctx.args?.trim() ?? "";
       const parts = args.split(/\s+/).filter(Boolean);
-      const full = parts.includes("full");
-      const pageArg = parts.find((p) => /^\d+$/.test(p));
-      const page = pageArg ? Math.max(1, Number.parseInt(pageArg, 10)) : 1;
 
-      const records = readHistory(historyPath);
-      const reversed = [...records].reverse();
-      const totalTxs = reversed.length;
-      const start = (page - 1) * HISTORY_PAGE_SIZE;
-      const pageRecords = reversed.slice(start, start + HISTORY_PAGE_SIZE);
-
-      if (page === 1) {
-        try {
-          const [{ ui }, sol, tokens] = await Promise.all([
-            getUsdcBalance(rpcUrl, walletAddress),
-            getSolBalance(rpcUrl, walletAddress),
-            getTokenAccounts(rpcUrl, walletAddress).catch(() => []),
-          ]);
-          const spend = calcSpend(records);
-          const lines: string[] = [
-            "**Wallet**",
-            `\`${walletAddress}\``,
-            `SOL: ${sol} - USDC: $${ui}`,
-          ];
-          if (spend.today > 0) {
-            lines.push(`Spent today: ~$${spend.today.toFixed(2)}`);
-          }
-
-          // Token holdings
-          if (tokens.length > 0) {
-            const displayTokens = tokens.slice(0, 5);
-            const symbols = await resolveTokenSymbols(displayTokens.map((t) => t.mint));
-            lines.push("", "**Tokens**");
-            for (const t of displayTokens) {
-              const sym = symbols.get(t.mint);
-              const label = sym ? `$${sym}` : `\`${t.mint.slice(0, 4)}...${t.mint.slice(-4)}\``;
-              const amt = Number.parseFloat(t.amount).toLocaleString("en-US", {
-                maximumFractionDigits: 0,
-              });
-              lines.push(`${amt} ${label}`);
-            }
-            if (tokens.length > 5) {
-              lines.push(`...and ${tokens.length - 5} more`);
-            }
-          }
-
-          if (pageRecords.length > 0) {
-            lines.push("", "**Recent**");
-            for (const r of pageRecords) {
-              lines.push(formatTxLine(r, full), "");
-            }
-          }
-
-          lines.push(
-            "Top up: send SOL or USDC (SPL) to the address above",
-            `[View on Solscan](https://solscan.io/account/${walletAddress})`,
-          );
-          if (dashboardUrl) {
-            lines.push(`[Open Dashboard](${dashboardUrl})`);
-          }
-
-          if (totalTxs > HISTORY_PAGE_SIZE) {
-            lines.push("", `/x_balance 2 - More transactions`);
-          }
-
-          return { text: lines.join("\n") };
-        } catch (err) {
-          return { text: `Failed to check balance: ${String(err)}` };
-        }
+      // /x_wallet send <amount|all> <address>
+      if (parts[0]?.toLowerCase() === "send") {
+        return handleSend(parts.slice(1), walletAddress, signerRef, rpcUrl, historyPath);
       }
 
-      // Page 2+: just transactions
-      if (pageRecords.length === 0) {
-        return { text: "No more transactions." };
+      // /x_wallet history [page]
+      if (parts[0]?.toLowerCase() === "history") {
+        const pageArg = parts[1];
+        const page = pageArg ? Math.max(1, Number.parseInt(pageArg, 10) || 1) : 1;
+        return handleHistory(historyPath, page);
       }
 
-      const rangeStart = start + 1;
-      const rangeEnd = start + pageRecords.length;
-      const lines: string[] = [`**Transactions** (${rangeStart}-${rangeEnd})`, ""];
-      for (const r of pageRecords) {
-        lines.push(formatTxLine(r, full), "");
-      }
-      if (start + HISTORY_PAGE_SIZE < totalTxs) {
-        lines.push(`/x_balance ${page + 1} - More transactions`);
-      }
-
-      return { text: lines.join("\n") };
-    },
-  });
-
-  api.registerCommand({
-    name: "x_send",
-    description: "Send USDC to a Solana address. Usage: /x_send <amount|all> <address>",
-    acceptsArgs: true,
-    handler: async (ctx) => {
-      if (!walletAddress || !signerRef) {
-        return { text: "Wallet not loaded yet. Please wait for the gateway to finish starting." };
-      }
-
-      const args = ctx.args?.trim() ?? "";
-      const parts = args.split(/\s+/);
-      if (parts.length !== 2) {
-        return {
-          text: "Usage: /x_send <amount|all> <address>\nExamples:\n  /x_send 0.5 7xKXtg...\n  /x_send all 7xKXtg...",
-        };
-      }
-
-      const [amountStr, destAddr] = parts;
-      if (destAddr.length < 32 || destAddr.length > 44) {
-        return { text: `Invalid Solana address: ${destAddr}` };
-      }
-
+      // Default: balance view
       try {
-        const recipientHasAta = await checkAtaExists(rpcUrl, destAddr);
-        if (!recipientHasAta) {
-          return {
-            text:
-              "Recipient " +
-              destAddr +
-              " does not have a USDC token account.\n" +
-              "They need to have received USDC at least once to have an account.\n" +
-              "Ask them to create a USDC account first (e.g. by receiving any amount of USDC).",
-          };
+        const snap = await getWalletSnapshot(walletAddress);
+
+        const lines: string[] = [
+          "**Wallet**",
+          `\`${walletAddress}\``,
+          "",
+          `  ${snap.sol} SOL`,
+          `  ${snap.ui} USDC`,
+        ];
+        if (snap.spend.today > 0) {
+          lines.push(`  -${snap.spend.today.toFixed(2)} USDC today`);
         }
 
-        let amountRaw: bigint;
-        let amountUi: string;
-        if (amountStr.toLowerCase() === "all") {
-          const balance = await getUsdcBalance(rpcUrl, walletAddress);
-          if (balance.raw === 0n) {
-            return { text: "Wallet has no USDC to send." };
+        // Token holdings
+        if (snap.tokens.length > 0) {
+          const displayTokens = snap.tokens.slice(0, 10);
+          const symbols = await resolveTokenSymbols(displayTokens.map((t) => t.mint));
+          lines.push("", "**Tokens**");
+          for (const t of displayTokens) {
+            const sym = symbols.get(t.mint);
+            const label = sym ?? `${t.mint.slice(0, 4)}...${t.mint.slice(-4)}`;
+            const amt = Number.parseFloat(t.amount).toLocaleString("en-US", {
+              maximumFractionDigits: 0,
+            });
+            lines.push(`  ${amt} ${label}`);
           }
-          amountRaw = balance.raw;
-          amountUi = balance.ui;
-        } else {
-          const amount = Number.parseFloat(amountStr);
-          if (Number.isNaN(amount) || amount <= 0) {
-            return { text: `Invalid amount: ${amountStr}` };
+          if (snap.tokens.length > 10) {
+            lines.push(`  ...and ${snap.tokens.length - 10} more`);
           }
-          amountRaw = BigInt(Math.round(amount * 1e6));
-          amountUi = amount.toString();
         }
 
-        const sig = await transferUsdc(signerRef, rpcUrl, destAddr, amountRaw);
-        appendHistory(historyPath, {
-          t: Date.now(),
-          k: "send",
-          ok: true,
-          tx: sig,
-          to: destAddr,
-          amt: Number.parseFloat(amountUi),
-          cur: "USDC",
-        });
-        return { text: `Sent ${amountUi} USDC to ${destAddr}\nhttps://solscan.io/tx/${sig}` };
+        // Show inline history only when token count is low
+        if (snap.tokens.length <= INLINE_HISTORY_TOKEN_THRESHOLD) {
+          const reversed = [...snap.records].reverse();
+          const recentRecords = reversed.slice(0, STATUS_HISTORY_COUNT);
+          if (recentRecords.length > 0) {
+            lines.push("", "**Recent**");
+            for (const r of recentRecords) {
+              lines.push(formatTxLine(r));
+            }
+          }
+        }
+
+        // Footer
+        const footer: string[] = [];
+        footer.push("History: /x\\_wallet history");
+        footer.push(`[Solscan](https://solscan.io/account/${walletAddress})`);
+        if (dashboardUrl) {
+          footer.push(`[Dashboard](${dashboardUrl})`);
+        }
+        lines.push("", footer.join(" · "));
+
+        return { text: lines.join("\n") };
       } catch (err) {
-        appendHistory(historyPath, {
-          t: Date.now(),
-          k: "send",
-          ok: false,
-          to: destAddr,
-          cur: "USDC",
-        });
-        const msg = String(err);
-        const cause = (err as { cause?: { message?: string } }).cause?.message || "";
-        const detail = cause || msg;
-        if (detail.includes("insufficient") || detail.includes("lamports")) {
-          return {
-            text:
-              "Insufficient SOL for transaction fees. Send a tiny amount of SOL to " +
-              walletAddress,
-          };
-        }
-        return { text: `Failed to send USDC: ${detail}` };
+        return { text: `Failed to check balance: ${String(err)}` };
       }
     },
   });
 
   api.registerCommand({
-    name: "x_help",
-    description: "Show wallet commands and agent tools reference",
-    acceptsArgs: false,
-    handler: async () => ({
-      text: [
-        "**AgentBox Wallet**",
-        "",
-        "/x_balance - Balance, tokens, and recent transactions",
-        "/x_balance 2 - Page 2 of transactions",
-        "/x_balance full - Show full model provider paths",
-        "/x_send <amount|all> <address> - Send USDC",
-        "/x_models - Models and pricing",
-        "/model - Browse and switch AI models",
-        "/x_help - This help",
-        "",
-        "**Agent Tools** (used by your AI agent)",
-        "x_balance - Check wallet balance",
-        "x_payment - Call x402 paid APIs",
-        "x_discover - Find x402 services",
-        "x_trade - Buy/sell pump.fun tokens",
-        "x_create_token - Launch a new token on pump.fun",
-        "x_token_info - Token price lookup",
-        "",
-        "**How payments work**",
-        "Your agent pays per LLM call via x402 (USDC on Solana).",
-        `$${INFERENCE_RESERVE.toFixed(2)} USDC is reserved for inference and can't be spent by tools.`,
-        "Top up by sending USDC or SOL to your wallet address.",
-        "",
-        "To update the x402 plugin, copy and send this to your agent:",
-        "```Run 'openclaw plugins install openclaw-x402@latest' and restart the gateway```",
-      ].join("\n"),
-    }),
-  });
-
-  api.registerCommand({
-    name: "x_models",
-    description: "Available AI models and pricing",
+    name: "x_status",
+    description: "System overview: version, model, balance, recent activity",
     acceptsArgs: false,
     handler: async () => {
+      const latestVersion = await checkNpmLatestVersion("openclaw-x402");
+      const updateStatus =
+        latestVersion && latestVersion !== PLUGIN_VERSION
+          ? `update available: v${latestVersion}`
+          : "up to date";
+
+      const lines: string[] = [`x402 v${PLUGIN_VERSION} · ${updateStatus}`];
+
+      // Current model
+      const defaultModel = allModels[0];
+      if (defaultModel) {
+        lines.push("", `**Model** · ${defaultModel.name} (${defaultModel.provider})`);
+      }
+
+      // Models pricing
       const byProvider = new Map<string, ModelEntry[]>();
       for (const m of allModels) {
         let list = byProvider.get(m.provider);
@@ -530,19 +291,117 @@ export function register(api: OpenClawPluginApi): void {
         }
         list.push(m);
       }
-      const lines: string[] = ["**Available Models**"];
-      for (const [prov, models] of byProvider) {
-        lines.push(`\n_${prov}_`);
+      lines.push("", "**Models**");
+      for (const [, models] of byProvider) {
         for (const m of models) {
-          const inp = m.cost.input < 1 ? `$${m.cost.input}` : `$${m.cost.input.toFixed(0)}`;
-          const out = m.cost.output < 1 ? `$${m.cost.output}` : `$${m.cost.output.toFixed(0)}`;
+          const inp = m.cost.input < 1 ? `${m.cost.input}` : `${m.cost.input.toFixed(0)}`;
+          const out = m.cost.output < 1 ? `${m.cost.output}` : `${m.cost.output.toFixed(0)}`;
           const ctx = `${(m.contextWindow / 1000).toFixed(0)}K`;
-          lines.push(
-            `• **${m.name}** - ${inp}/${out} per 1M | ${ctx} ctx`,
-            `\`/model ${prov}/${m.id}\``,
-          );
+          lines.push(`  ${m.name} · ${inp}/${out} per 1M · ${ctx}`);
         }
       }
+
+      // Wallet summary
+      if (walletAddress) {
+        try {
+          const snap = await getWalletSnapshot(walletAddress);
+          lines.push("", "**Wallet**", `\`${walletAddress}\``, `${snap.sol} SOL · ${snap.ui} USDC`);
+
+          // Recent transactions
+          const reversed = [...snap.records].reverse();
+          const recentRecords = reversed.slice(0, STATUS_HISTORY_COUNT);
+          if (recentRecords.length > 0) {
+            lines.push("", "**Recent**");
+            for (const r of recentRecords) {
+              lines.push(formatTxLine(r));
+            }
+          }
+        } catch {
+          lines.push("", "**Wallet**", `\`${walletAddress}\``, "Balance unavailable");
+        }
+      } else {
+        lines.push("", "Wallet not loaded yet");
+      }
+
+      // Commands
+      lines.push(
+        "",
+        "/x\\_wallet · full balance and send",
+        "/x\\_wallet history · transaction history",
+        "/x\\_update · update plugin + skills",
+        "/model · switch AI model",
+      );
+
+      return { text: lines.join("\n") };
+    },
+  });
+
+  api.registerCommand({
+    name: "x_update",
+    description: "Update x402 plugin and skills, then restart gateway",
+    acceptsArgs: false,
+    handler: async () => {
+      const latestVersion = await checkNpmLatestVersion("openclaw-x402");
+
+      if (!latestVersion) {
+        return { text: "Could not check npm registry. Try again later." };
+      }
+
+      if (latestVersion === PLUGIN_VERSION) {
+        const lines = [
+          `Everything up to date · plugin v${PLUGIN_VERSION}`,
+          "",
+          "/x\\_status · system overview",
+          "/x\\_wallet · balance and send",
+        ];
+        return { text: lines.join("\n") };
+      }
+
+      const lines = [`Updating x402 v${PLUGIN_VERSION} -> v${latestVersion}`, ""];
+
+      try {
+        execSync("openclaw plugins update openclaw-x402", {
+          timeout: 60_000,
+          stdio: "pipe",
+        });
+        lines.push("Plugin   updated");
+      } catch (err) {
+        lines.push(`Plugin   failed: ${String(err)}`);
+        return { text: lines.join("\n") };
+      }
+
+      try {
+        execSync("npx skills add -g cascade-protocol/agentbox", {
+          timeout: 30_000,
+          stdio: "pipe",
+        });
+        lines.push("Skills   refreshed");
+      } catch {
+        lines.push("Skills   skipped (could not reach GitHub)");
+      }
+
+      lines.push("", "Restarting gateway...");
+
+      // Schedule restart after response is sent
+      setTimeout(() => {
+        try {
+          spawn("systemctl", ["--user", "restart", "openclaw-gateway"], {
+            detached: true,
+            stdio: "ignore",
+          }).unref();
+        } catch {
+          // Fallback: try system-level restart
+          try {
+            spawn("systemctl", ["restart", "openclaw-gateway"], {
+              detached: true,
+              stdio: "ignore",
+            }).unref();
+          } catch {
+            // Cannot restart - user will need to restart manually
+          }
+        }
+      }, 2000);
+
       return { text: lines.join("\n") };
     },
   });
@@ -557,50 +416,30 @@ export function register(api: OpenClawPluginApi): void {
     parameters: Type.Object({}),
     async execute() {
       if (!walletAddress) {
-        return {
-          content: [
-            { type: "text" as const, text: "Wallet not loaded yet. Wait for gateway startup." },
-          ],
-          details: {},
-        };
+        return toolResult("Wallet not loaded yet. Wait for gateway startup.");
       }
       try {
-        const [{ ui }, sol, tokens] = await Promise.all([
-          getUsdcBalance(rpcUrl, walletAddress),
-          getSolBalance(rpcUrl, walletAddress),
-          getTokenAccounts(rpcUrl, walletAddress).catch(() => []),
-        ]);
-        const total = Number.parseFloat(ui);
+        const snap = await getWalletSnapshot(walletAddress);
+        const total = Number.parseFloat(snap.ui);
         const available = Math.max(0, total - INFERENCE_RESERVE);
-        const records = readHistory(historyPath);
-        const spend = calcSpend(records);
-        const tokenLines = tokens.slice(0, 5).map((t) => {
+        const tokenLines = snap.tokens.slice(0, 5).map((t) => {
           const short = `${t.mint.slice(0, 4)}...${t.mint.slice(-4)}`;
           return `${Number.parseFloat(t.amount).toLocaleString("en-US", { maximumFractionDigits: 0 })} (${short})`;
         });
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: [
-                `Wallet: ${walletAddress}`,
-                `SOL: ${sol} SOL`,
-                `USDC: $${ui}`,
-                `Available for tools: $${available.toFixed(2)}`,
-                `Reserved for inference: $${INFERENCE_RESERVE.toFixed(2)}`,
-                `Spent today: $${spend.today.toFixed(4)}`,
-                `Total spent: $${spend.total.toFixed(4)} (${spend.count} txs)`,
-                ...(tokenLines.length > 0 ? [`Tokens held: ${tokenLines.join(", ")}`] : []),
-              ].join("\n"),
-            },
-          ],
-          details: {},
-        };
+        return toolResult(
+          [
+            `Wallet: ${walletAddress}`,
+            `SOL: ${snap.sol} SOL`,
+            `USDC: ${snap.ui} USDC`,
+            `Available for tools: ${available.toFixed(2)} USDC`,
+            `Reserved for inference: ${INFERENCE_RESERVE.toFixed(2)} USDC`,
+            `Spent today: ${snap.spend.today.toFixed(4)} USDC`,
+            `Total spent: ${snap.spend.total.toFixed(4)} USDC (${snap.spend.count} txs)`,
+            ...(tokenLines.length > 0 ? [`Tokens held: ${tokenLines.join(", ")}`] : []),
+          ].join("\n"),
+        );
       } catch (err) {
-        return {
-          content: [{ type: "text" as const, text: `Failed to check balance: ${String(err)}` }],
-          details: {},
-        };
+        return toolResult(`Failed to check balance: ${String(err)}`);
       }
     },
   });
@@ -610,8 +449,8 @@ export function register(api: OpenClawPluginApi): void {
     label: "x402 Payment",
     description:
       "Call an x402-enabled paid API endpoint with automatic USDC payment on Solana. " +
-      "Use this when you need to call a paid service discovered via x_discover or given by the user. " +
-      `Note: $${INFERENCE_RESERVE.toFixed(2)} USDC is reserved for LLM inference and cannot be spent by this tool.`,
+      "Use this when you need to call a paid service given by the user. " +
+      `Note: ${INFERENCE_RESERVE.toFixed(2)} USDC is reserved for LLM inference and cannot be spent by this tool.`,
     parameters: Type.Object({
       url: Type.String({ description: "The x402-enabled endpoint URL" }),
       method: Type.Optional(Type.String({ description: "HTTP method (default: GET)" })),
@@ -625,26 +464,15 @@ export function register(api: OpenClawPluginApi): void {
     }),
     async execute(_id, params) {
       if (!walletAddress || !x402FetchRef) {
-        return {
-          content: [
-            { type: "text" as const, text: "Wallet not loaded yet. Wait for gateway startup." },
-          ],
-          details: {},
-        };
+        return toolResult("Wallet not loaded yet. Wait for gateway startup.");
       }
 
       try {
         const { ui } = await getUsdcBalance(rpcUrl, walletAddress);
         if (Number.parseFloat(ui) <= INFERENCE_RESERVE) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Insufficient funds. Balance: $${ui}, reserved for inference: $${INFERENCE_RESERVE.toFixed(2)}. Top up wallet: ${walletAddress}`,
-              },
-            ],
-            details: {},
-          };
+          return toolResult(
+            `Insufficient funds. Balance: ${ui} USDC, reserved for inference: ${INFERENCE_RESERVE.toFixed(2)} USDC. Top up wallet: ${walletAddress}`,
+          );
         }
       } catch {
         // If balance check fails, proceed anyway
@@ -658,10 +486,7 @@ export function register(api: OpenClawPluginApi): void {
         try {
           reqInit.headers = JSON.parse(params.headers) as Record<string, string>;
         } catch {
-          return {
-            content: [{ type: "text" as const, text: "Invalid headers JSON." }],
-            details: {},
-          };
+          return toolResult("Invalid headers JSON.");
         }
       }
 
@@ -672,10 +497,7 @@ export function register(api: OpenClawPluginApi): void {
             const qs = new URLSearchParams(qp).toString();
             url = qs ? `${url}${url.includes("?") ? "&" : "?"}${qs}` : url;
           } catch {
-            return {
-              content: [{ type: "text" as const, text: "Invalid params JSON for GET request." }],
-              details: {},
-            };
+            return toolResult("Invalid params JSON for GET request.");
           }
         } else {
           reqInit.body = params.params;
@@ -700,15 +522,9 @@ export function register(api: OpenClawPluginApi): void {
             s: 402,
             ms: Date.now() - toolStartMs,
           });
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Payment failed (402): ${body.substring(0, 500)}. Wallet: ${walletAddress}`,
-              },
-            ],
-            details: {},
-          };
+          return toolResult(
+            `Payment failed (402): ${body.substring(0, 500)}. Wallet: ${walletAddress}`,
+          );
         }
 
         appendHistory(historyPath, {
@@ -726,10 +542,7 @@ export function register(api: OpenClawPluginApi): void {
             ? `${body.substring(0, MAX_RESPONSE_CHARS)}\n\n[Truncated - response was ${body.length} chars]`
             : body;
 
-        return {
-          content: [{ type: "text" as const, text: `HTTP ${response.status}\n\n${truncated}` }],
-          details: {},
-        };
+        return toolResult(`HTTP ${response.status}\n\n${truncated}`);
       } catch (err) {
         appendHistory(historyPath, {
           t: Date.now(),
@@ -742,65 +555,7 @@ export function register(api: OpenClawPluginApi): void {
           msg.includes("Simulation failed") || msg.includes("insufficient")
             ? `Payment failed - insufficient funds. Wallet: ${walletAddress}. Error: ${msg}`
             : `Request failed: ${msg}`;
-        return { content: [{ type: "text" as const, text }], details: {} };
-      }
-    },
-  });
-
-  api.registerTool({
-    name: "x_discover",
-    label: "x402 Discover",
-    description:
-      "Search for x402-enabled paid APIs in the zauth verified provider directory. " +
-      "Use this to find services the user needs - weather, trading signals, blockchain data, AI agents, etc.",
-    parameters: Type.Object({
-      query: Type.Optional(
-        Type.String({
-          description: "Search keyword (e.g. 'trending tokens', 'weather', 'trading')",
-        }),
-      ),
-      network: Type.Optional(
-        Type.String({ description: "Filter by blockchain network (e.g. 'solana', 'base')" }),
-      ),
-      verified: Type.Optional(
-        Type.Boolean({ description: "Only show verified endpoints (default: false)" }),
-      ),
-      limit: Type.Optional(Type.Number({ description: "Max results to return (default: 10)" })),
-    }),
-    async execute(_id, params) {
-      const url = new URL("https://back.zauthx402.com/api/directory");
-      if (params.query) url.searchParams.set("search", params.query);
-      if (params.network) url.searchParams.set("network", params.network);
-      if (params.verified) url.searchParams.set("verified", "true");
-      url.searchParams.set("limit", String(params.limit || 10));
-
-      try {
-        const res = await globalThis.fetch(url.toString());
-        if (!res.ok) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Directory returned HTTP ${res.status}: ${await res.text()}`,
-              },
-            ],
-            details: {},
-          };
-        }
-        const data = await res.text();
-        const truncated =
-          data.length > MAX_RESPONSE_CHARS
-            ? `${data.substring(0, MAX_RESPONSE_CHARS)}\n\n[Truncated]`
-            : data;
-        return {
-          content: [{ type: "text" as const, text: truncated }],
-          details: {},
-        };
-      } catch (err) {
-        return {
-          content: [{ type: "text" as const, text: `Failed to search directory: ${String(err)}` }],
-          details: {},
-        };
+        return toolResult(text);
       }
     },
   });
@@ -809,44 +564,143 @@ export function register(api: OpenClawPluginApi): void {
     name: "x_trade",
     label: "Pump.fun Trade",
     description:
-      "Buy or sell pump.fun tokens. Buy spends SOL to get tokens, sell converts tokens back to SOL.",
+      "Buy, sell, or create pump.fun tokens. Buy spends SOL to get tokens, sell converts tokens back to SOL, create launches a new token.",
     parameters: Type.Object({
-      action: Type.Unsafe<"buy" | "sell">({
+      action: Type.Unsafe<"buy" | "sell" | "create">({
         type: "string",
-        enum: ["buy", "sell"],
-        description: "buy = spend SOL to get tokens, sell = sell tokens for SOL",
-      }),
-      mint: Type.String({ description: "Token mint address" }),
-      amount: Type.Number({
+        enum: ["buy", "sell", "create"],
         description:
-          "For buy: SOL amount to spend (e.g. 0.1). For sell: percentage of held tokens to sell (e.g. 50 for 50%, 100 for all)",
+          "buy = spend SOL to get tokens, sell = sell tokens for SOL, create = launch a new token on pump.fun",
       }),
+      mint: Type.Optional(
+        Type.String({
+          description: "Token mint address (required for buy/sell, omit for create)",
+        }),
+      ),
+      amount: Type.Optional(
+        Type.Number({
+          description:
+            "For buy: SOL to spend. For sell: % of tokens to sell (e.g. 50 for 50%). For create: SOL for initial dev buy (default: 0.05)",
+        }),
+      ),
       slippage: Type.Optional(
-        Type.Number({ description: "Slippage tolerance in % (default: 25)" }),
+        Type.Number({
+          description: "Slippage tolerance in % (default: 25 for trade, 10 for create)",
+        }),
+      ),
+      name: Type.Optional(Type.String({ description: "Token name (required for create)" })),
+      symbol: Type.Optional(Type.String({ description: "Token ticker (required for create)" })),
+      description: Type.Optional(
+        Type.String({ description: "Token description (required for create)" }),
+      ),
+      image_url: Type.Optional(
+        Type.String({
+          description: "URL to token image for create (PNG/JPG). Placeholder used if omitted.",
+        }),
       ),
     }),
     async execute(_id, params) {
-      if (!signerRef) {
-        return {
-          content: [
-            { type: "text" as const, text: "Wallet not loaded yet. Wait for gateway startup." },
-          ],
-          details: {},
-        };
+      if (!signerRef || !walletAddress) {
+        return toolResult("Wallet not loaded yet. Wait for gateway startup.");
       }
 
-      if (params.action === "buy" && walletAddress) {
+      // --- Create token ---
+      if (params.action === "create") {
+        if (!params.name || !params.symbol || !params.description) {
+          return toolResult("Token creation requires name, symbol, and description parameters.");
+        }
+
+        const initialBuy = params.amount ?? 0.05;
+        const sol = await getSolBalance(rpcUrl, walletAddress);
+        if (Number.parseFloat(sol) < initialBuy + 0.02) {
+          return toolResult(
+            `Insufficient SOL. Balance: ${sol} SOL, need ~${(initialBuy + 0.02).toFixed(3)} SOL (${initialBuy} buy + fees). Top up: ${walletAddress}`,
+          );
+        }
+
+        try {
+          const mintKeyPair = await generateKeyPair();
+          const mintAddress = await getAddressFromPublicKey(mintKeyPair.publicKey);
+
+          let imageBlob: Blob;
+          if (params.image_url) {
+            const imgRes = await globalThis.fetch(params.image_url);
+            if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.status}`);
+            imageBlob = await imgRes.blob();
+          } else {
+            const png = Buffer.from(
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
+              "base64",
+            );
+            imageBlob = new Blob([png], { type: "image/png" });
+          }
+
+          const form = new FormData();
+          form.append("file", imageBlob, "token.png");
+          form.append("name", params.name);
+          form.append("symbol", params.symbol);
+          form.append("description", params.description);
+          form.append("showName", "true");
+
+          const ipfsRes = await globalThis.fetch("https://pump.fun/api/ipfs", {
+            method: "POST",
+            body: form,
+          });
+          if (!ipfsRes.ok) {
+            const text = await ipfsRes.text();
+            throw new Error(`IPFS upload failed: ${ipfsRes.status} ${text}`);
+          }
+          const { metadataUri } = (await ipfsRes.json()) as { metadataUri: string };
+
+          const signature = await signAndSendPumpPortalTx(
+            signerRef,
+            rpcUrl,
+            {
+              action: "create",
+              tokenMetadata: { name: params.name, symbol: params.symbol, uri: metadataUri },
+              mint: mintAddress,
+              denominatedInSol: "true",
+              amount: initialBuy,
+              slippage: params.slippage ?? 10,
+              priorityFee: 0.0005,
+              pool: "pump",
+            },
+            [mintKeyPair],
+          );
+
+          appendHistory(historyPath, {
+            t: Date.now(),
+            k: "trade",
+            ok: true,
+            tx: signature,
+            act: "create",
+            token: mintAddress,
+            sol: initialBuy,
+          });
+
+          return toolResult(
+            `Token created\nName: ${params.name} (${params.symbol})\nMint: ${mintAddress}\nInitial buy: ${initialBuy} SOL\nhttps://pump.fun/${mintAddress}\nhttps://solscan.io/tx/${signature}`,
+          );
+        } catch (err) {
+          appendHistory(historyPath, { t: Date.now(), k: "trade", ok: false, act: "create" });
+          return toolResult(`Token creation failed: ${String(err)}`);
+        }
+      }
+
+      // --- Buy/Sell ---
+      if (!params.mint) {
+        return toolResult("Token mint address is required for buy/sell.");
+      }
+      if (params.amount == null) {
+        return toolResult("Amount is required for buy/sell.");
+      }
+
+      if (params.action === "buy") {
         const sol = await getSolBalance(rpcUrl, walletAddress);
         if (Number.parseFloat(sol) < params.amount + 0.01) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Insufficient SOL. Balance: ${sol} SOL, need ~${(params.amount + 0.01).toFixed(3)} SOL (${params.amount} + fees). Top up: ${walletAddress}`,
-              },
-            ],
-            details: {},
-          };
+          return toolResult(
+            `Insufficient SOL. Balance: ${sol} SOL, need ~${(params.amount + 0.01).toFixed(3)} SOL (${params.amount} + fees). Top up: ${walletAddress}`,
+          );
         }
       }
 
@@ -880,15 +734,9 @@ export function register(api: OpenClawPluginApi): void {
         const action = params.action === "buy" ? "Bought" : "Sold";
         const detail =
           params.action === "buy" ? `Spent: ${params.amount} SOL` : `Sold: ${params.amount}%`;
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `${action} tokens\nMint: ${params.mint}\n${detail}\nhttps://solscan.io/tx/${signature}`,
-            },
-          ],
-          details: {},
-        };
+        return toolResult(
+          `${action} tokens\nMint: ${params.mint}\n${detail}\nhttps://solscan.io/tx/${signature}`,
+        );
       } catch (err) {
         appendHistory(historyPath, {
           t: Date.now(),
@@ -898,141 +746,7 @@ export function register(api: OpenClawPluginApi): void {
           token: params.mint,
           sol: params.action === "buy" ? params.amount : undefined,
         });
-        return {
-          content: [{ type: "text" as const, text: `Trade failed: ${String(err)}` }],
-          details: {},
-        };
-      }
-    },
-  });
-
-  api.registerTool({
-    name: "x_create_token",
-    label: "Create pump.fun Token",
-    description:
-      "Create a new token on pump.fun with an initial dev buy. Uploads metadata to IPFS, creates the token on-chain.",
-    parameters: Type.Object({
-      name: Type.String({ description: "Token name (e.g. 'Prompt Fun')" }),
-      symbol: Type.String({ description: "Token ticker (e.g. 'PFUN')" }),
-      description: Type.String({ description: "Token description" }),
-      initial_buy_sol: Type.Optional(
-        Type.Number({ description: "SOL to spend on initial dev buy (default: 0.05)" }),
-      ),
-      image_url: Type.Optional(
-        Type.String({
-          description: "URL to token image (PNG/JPG). A placeholder is used if omitted.",
-        }),
-      ),
-    }),
-    async execute(_id, params) {
-      if (!signerRef || !walletAddress) {
-        return {
-          content: [
-            { type: "text" as const, text: "Wallet not loaded yet. Wait for gateway startup." },
-          ],
-          details: {},
-        };
-      }
-
-      const initialBuy = params.initial_buy_sol ?? 0.05;
-      const sol = await getSolBalance(rpcUrl, walletAddress);
-      if (Number.parseFloat(sol) < initialBuy + 0.02) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Insufficient SOL. Balance: ${sol} SOL, need ~${(initialBuy + 0.02).toFixed(3)} SOL (${initialBuy} buy + fees). Top up: ${walletAddress}`,
-            },
-          ],
-          details: {},
-        };
-      }
-
-      try {
-        // 1. Generate mint keypair
-        const mintKeyPair = await generateKeyPair();
-        const mintAddress = await getAddressFromPublicKey(mintKeyPair.publicKey);
-
-        // 2. Prepare image
-        let imageBlob: Blob;
-        if (params.image_url) {
-          const imgRes = await globalThis.fetch(params.image_url);
-          if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.status}`);
-          imageBlob = await imgRes.blob();
-        } else {
-          // Minimal 1x1 placeholder PNG
-          const png = Buffer.from(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
-            "base64",
-          );
-          imageBlob = new Blob([png], { type: "image/png" });
-        }
-
-        // 3. Upload metadata to pump.fun IPFS
-        const form = new FormData();
-        form.append("file", imageBlob, "token.png");
-        form.append("name", params.name);
-        form.append("symbol", params.symbol);
-        form.append("description", params.description);
-        form.append("showName", "true");
-
-        const ipfsRes = await globalThis.fetch("https://pump.fun/api/ipfs", {
-          method: "POST",
-          body: form,
-        });
-        if (!ipfsRes.ok) {
-          const text = await ipfsRes.text();
-          throw new Error(`IPFS upload failed: ${ipfsRes.status} ${text}`);
-        }
-        const { metadataUri } = (await ipfsRes.json()) as { metadataUri: string };
-
-        // 4. Create token via PumpPortal
-        const signature = await signAndSendPumpPortalTx(
-          signerRef,
-          rpcUrl,
-          {
-            action: "create",
-            tokenMetadata: { name: params.name, symbol: params.symbol, uri: metadataUri },
-            mint: mintAddress,
-            denominatedInSol: "true",
-            amount: initialBuy,
-            slippage: 10,
-            priorityFee: 0.0005,
-            pool: "pump",
-          },
-          [mintKeyPair],
-        );
-
-        appendHistory(historyPath, {
-          t: Date.now(),
-          k: "trade",
-          ok: true,
-          tx: signature,
-          act: "create",
-          token: mintAddress,
-          sol: initialBuy,
-        });
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Token created!\nName: ${params.name} ($${params.symbol})\nMint: ${mintAddress}\nInitial buy: ${initialBuy} SOL\nhttps://pump.fun/${mintAddress}\nhttps://solscan.io/tx/${signature}`,
-            },
-          ],
-          details: {},
-        };
-      } catch (err) {
-        appendHistory(historyPath, {
-          t: Date.now(),
-          k: "trade",
-          ok: false,
-          act: "create",
-        });
-        return {
-          content: [{ type: "text" as const, text: `Token creation failed: ${String(err)}` }],
-          details: {},
-        };
+        return toolResult(`Trade failed: ${String(err)}`);
       }
     },
   });
@@ -1049,14 +763,10 @@ export function register(api: OpenClawPluginApi): void {
     }),
     async execute(_id, params) {
       try {
-        // Trending mode: no mint provided
         if (!params.mint) {
           const res = await globalThis.fetch("https://api.dexscreener.com/token-boosts/top/v1");
           if (!res.ok) {
-            return {
-              content: [{ type: "text" as const, text: "Failed to fetch trending tokens" }],
-              details: {},
-            };
+            return toolResult("Failed to fetch trending tokens");
           }
           const boosts = (await res.json()) as Array<{
             chainId?: string;
@@ -1067,10 +777,7 @@ export function register(api: OpenClawPluginApi): void {
           }>;
           const solana = boosts.filter((b) => b.chainId === "solana").slice(0, 10);
           if (solana.length === 0) {
-            return {
-              content: [{ type: "text" as const, text: "No trending Solana tokens right now" }],
-              details: {},
-            };
+            return toolResult("No trending Solana tokens right now");
           }
           const lines = ["Trending Solana tokens (by DexScreener boosts):\n"];
           for (const [i, b] of solana.entries()) {
@@ -1080,13 +787,9 @@ export function register(api: OpenClawPluginApi): void {
               `   Boosts: ${b.totalAmount ?? 0} | ${b.url ?? ""}`,
             );
           }
-          return {
-            content: [{ type: "text" as const, text: lines.join("\n") }],
-            details: {},
-          };
+          return toolResult(lines.join("\n"));
         }
 
-        // Lookup mode: mint provided
         const dexRes = await globalThis.fetch(
           `https://api.dexscreener.com/tokens/v1/solana/${params.mint}`,
         );
@@ -1104,24 +807,20 @@ export function register(api: OpenClawPluginApi): void {
             const p = pairs[0];
             const lines = [
               `${p.baseToken?.name || "Unknown"} (${p.baseToken?.symbol || "?"})`,
-              `Price: $${p.priceUsd || "N/A"}`,
-              p.fdv ? `Market cap: $${(p.fdv / 1e6).toFixed(2)}M` : null,
-              p.volume?.h24 ? `24h volume: $${(p.volume.h24 / 1e3).toFixed(1)}K` : null,
-              p.liquidity?.usd ? `Liquidity: $${(p.liquidity.usd / 1e3).toFixed(1)}K` : null,
+              `Price: ${p.priceUsd || "N/A"} USD`,
+              p.fdv ? `Market cap: ${(p.fdv / 1e6).toFixed(2)}M USD` : null,
+              p.volume?.h24 ? `24h volume: ${(p.volume.h24 / 1e3).toFixed(1)}K USD` : null,
+              p.liquidity?.usd ? `Liquidity: ${(p.liquidity.usd / 1e3).toFixed(1)}K USD` : null,
               p.priceChange?.h24 != null
                 ? `24h change: ${p.priceChange.h24 > 0 ? "+" : ""}${p.priceChange.h24.toFixed(2)}%`
                 : null,
               `Mint: ${params.mint}`,
               p.url || null,
             ].filter(Boolean);
-            return {
-              content: [{ type: "text" as const, text: lines.join("\n") }],
-              details: {},
-            };
+            return toolResult(lines.join("\n"));
           }
         }
 
-        // Fallback: pump.fun API for pre-graduation tokens on bonding curve
         const pfRes = await globalThis.fetch(
           `https://frontend-api-v3.pump.fun/coins/${params.mint}`,
         );
@@ -1133,25 +832,18 @@ export function register(api: OpenClawPluginApi): void {
           };
           const lines = [
             `${coin.name || "Unknown"} (${coin.symbol || "?"})`,
-            coin.usd_market_cap ? `Market cap: $${(coin.usd_market_cap / 1e3).toFixed(1)}K` : null,
+            coin.usd_market_cap
+              ? `Market cap: ${(coin.usd_market_cap / 1e3).toFixed(1)}K USD`
+              : null,
             "Status: Pre-graduation (bonding curve)",
             `Mint: ${params.mint}`,
           ].filter(Boolean);
-          return {
-            content: [{ type: "text" as const, text: lines.join("\n") }],
-            details: {},
-          };
+          return toolResult(lines.join("\n"));
         }
 
-        return {
-          content: [{ type: "text" as const, text: `No data found for mint: ${params.mint}` }],
-          details: {},
-        };
+        return toolResult(`No data found for mint: ${params.mint}`);
       } catch (err) {
-        return {
-          content: [{ type: "text" as const, text: `Failed to fetch token info: ${String(err)}` }],
-          details: {},
-        };
+        return toolResult(`Failed to fetch token info: ${String(err)}`);
       }
     },
   });
@@ -1372,7 +1064,11 @@ export function register(api: OpenClawPluginApi): void {
 
             return new Response(
               JSON.stringify({
-                error: { message: userMessage, type: "x402_payment_error", code: "payment_failed" },
+                error: {
+                  message: userMessage,
+                  type: "x402_payment_error",
+                  code: "payment_failed",
+                },
               }),
               { status: 402, headers: { "Content-Type": "application/json" } },
             );
@@ -1404,12 +1100,10 @@ export function register(api: OpenClawPluginApi): void {
           const dir = opts.output;
           mkdirSync(dir, { recursive: true });
 
-          // Generate a single mnemonic, then derive both chain keypairs from it
           const mnemonic = generateMnemonic(english, 256);
           const sol = deriveSolanaKeypair(mnemonic);
           const evm = deriveEvmKeypair(mnemonic);
 
-          // wallet-sol.json: 64-byte array [32 secret + 32 public] (solana-keygen compatible)
           const keypairBytes = new Uint8Array(64);
           keypairBytes.set(sol.secretKey, 0);
           keypairBytes.set(sol.publicKey, 32);
@@ -1419,10 +1113,7 @@ export function register(api: OpenClawPluginApi): void {
             { mode: 0o600 },
           );
 
-          // wallet-evm.key: raw 0x... private key hex
           writeFileSync(join(dir, "wallet-evm.key"), `${evm.privateKey}\n`, { mode: 0o600 });
-
-          // mnemonic: 24 words plaintext
           writeFileSync(join(dir, "mnemonic"), `${mnemonic}\n`, { mode: 0o600 });
 
           console.log(sol.address);
@@ -1430,4 +1121,120 @@ export function register(api: OpenClawPluginApi): void {
     },
     { commands: ["x402"] },
   );
+
+  // --- Helper functions for command handlers ---
+
+  async function handleSend(
+    parts: string[],
+    wallet: string,
+    signer: KeyPairSigner | null,
+    rpc: string,
+    histPath: string,
+  ): Promise<{ text: string }> {
+    if (!signer) {
+      return { text: "Wallet not loaded yet. Please wait for the gateway to finish starting." };
+    }
+
+    if (parts.length !== 2) {
+      return {
+        text: "Usage: /x\\_wallet send <amount|all> <address>\n\n  /x\\_wallet send 0.5 7xKXtg...\n  /x\\_wallet send all 7xKXtg...",
+      };
+    }
+
+    const [amountStr, destAddr] = parts;
+    if (destAddr.length < 32 || destAddr.length > 44) {
+      return { text: `Invalid Solana address: ${destAddr}` };
+    }
+
+    try {
+      const recipientHasAta = await checkAtaExists(rpc, destAddr);
+      if (!recipientHasAta) {
+        return {
+          text: "Recipient does not have a USDC token account.\nThey need to receive USDC at least once to create one.",
+        };
+      }
+
+      let amountRaw: bigint;
+      let amountUi: string;
+      if (amountStr.toLowerCase() === "all") {
+        const balance = await getUsdcBalance(rpc, wallet);
+        if (balance.raw === 0n) {
+          return { text: "Wallet has no USDC to send." };
+        }
+        amountRaw = balance.raw;
+        amountUi = balance.ui;
+      } else {
+        const amount = Number.parseFloat(amountStr);
+        if (Number.isNaN(amount) || amount <= 0) {
+          return { text: `Invalid amount: ${amountStr}` };
+        }
+        amountRaw = BigInt(Math.round(amount * 1e6));
+        amountUi = amount.toString();
+      }
+
+      const sig = await transferUsdc(signer, rpc, destAddr, amountRaw);
+      appendHistory(histPath, {
+        t: Date.now(),
+        k: "send",
+        ok: true,
+        tx: sig,
+        to: destAddr,
+        amt: Number.parseFloat(amountUi),
+        cur: "USDC",
+      });
+
+      return {
+        text: `Sent ${amountUi} USDC to \`${destAddr}\`\n[View transaction](https://solscan.io/tx/${sig})`,
+      };
+    } catch (err) {
+      appendHistory(histPath, {
+        t: Date.now(),
+        k: "send",
+        ok: false,
+        to: destAddr,
+        cur: "USDC",
+      });
+      const msg = String(err);
+      const cause = (err as { cause?: { message?: string } }).cause?.message || "";
+      const detail = cause || msg;
+      if (detail.includes("insufficient") || detail.includes("lamports")) {
+        return {
+          text: "Send failed - insufficient SOL for fees\nBalance too low for transaction fees. Fund wallet with SOL.",
+        };
+      }
+      return { text: `Send failed: ${detail}` };
+    }
+  }
+
+  function handleHistory(histPath: string, page: number): { text: string } {
+    const records = readHistory(histPath);
+    const reversed = [...records].reverse();
+    const totalTxs = reversed.length;
+    const start = (page - 1) * HISTORY_PAGE_SIZE;
+    const pageRecords = reversed.slice(start, start + HISTORY_PAGE_SIZE);
+
+    if (pageRecords.length === 0) {
+      return { text: page === 1 ? "No transactions yet." : "No more transactions." };
+    }
+
+    const rangeStart = start + 1;
+    const rangeEnd = start + pageRecords.length;
+    const lines: string[] = [`**History** (${rangeStart}-${rangeEnd})`, ""];
+    for (const r of pageRecords) {
+      lines.push(formatTxLine(r));
+    }
+
+    const nav: string[] = [];
+    if (page > 1) {
+      nav.push(`Newer: /x\\_wallet history${page === 2 ? "" : ` ${page - 1}`}`);
+    }
+    if (start + HISTORY_PAGE_SIZE < totalTxs) {
+      nav.push(`Older: /x\\_wallet history ${page + 1}`);
+    }
+    if (nav.length > 0) {
+      lines.push("", nav.join(" · "));
+    }
+
+    return { text: lines.join("\n") };
+  }
 }

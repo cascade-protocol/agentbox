@@ -214,6 +214,9 @@ export const OPENCLAW_BASE_CONFIG = {
       },
     },
   },
+  channels: {
+    telegram: { linkPreview: false },
+  },
   plugins: {
     entries: {
       "openclaw-x402": {

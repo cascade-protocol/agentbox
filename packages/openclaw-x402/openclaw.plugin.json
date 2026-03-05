@@ -1,8 +1,8 @@
 {
   "id": "openclaw-x402",
   "name": "x402 Payment Plugin",
-  "description": "x402 USDC payments and pump.fun trading on Solana - LLM inference, token trading, service discovery, and wallet generation",
-  "version": "0.8.2",
+  "description": "x402 USDC payments on Solana - LLM inference, pump.fun trading, wallet management, and service discovery",
+  "version": "0.9.0",
   "configSchema": {
     "type": "object",
     "properties": {
@@ -20,7 +20,7 @@
       },
       "dashboardUrl": {
         "type": "string",
-        "description": "URL to link from /x_balance wallet dashboard"
+        "description": "URL to link from /x_wallet dashboard"
       }
     },
     "required": []
