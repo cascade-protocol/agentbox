@@ -220,11 +220,11 @@ export async function signAndSendPumpPortalTx(
   const decoded = getTransactionDecoder().decode(txBytes);
   const compiledMsg = getCompiledTransactionMessageDecoder().decode(decoded.messageBytes);
   const lifetimeConstraint =
-    getTransactionLifetimeConstraintFromCompiledTransactionMessage(compiledMsg);
+    await getTransactionLifetimeConstraintFromCompiledTransactionMessage(compiledMsg);
   const signed = await signTransaction([...(extraKeyPairs ?? []), signer.keyPair], decoded);
   assertIsSendableTransaction(signed);
-  Object.assign(signed, { lifetimeConstraint });
-  assertIsTransactionWithBlockhashLifetime(signed);
+  const signedWithLifetime = { ...signed, lifetimeConstraint };
+  assertIsTransactionWithBlockhashLifetime(signedWithLifetime);
 
   const rpc = createSolanaRpc(rpcUrl);
   const wsUrl = rpcUrl.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
@@ -232,7 +232,7 @@ export async function signAndSendPumpPortalTx(
   const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
 
   try {
-    await sendAndConfirm(signed, {
+    await sendAndConfirm(signedWithLifetime, {
       commitment: "confirmed",
       skipPreflight: true,
       abortSignal: AbortSignal.timeout(15_000),
@@ -242,7 +242,7 @@ export async function signAndSendPumpPortalTx(
     // Re-throw everything else (send failure, on-chain error).
     if (!(e instanceof DOMException)) throw e;
   }
-  return getSignatureFromTransaction(signed);
+  return getSignatureFromTransaction(signedWithLifetime);
 }
 
 // --- Jupiter swap ---
@@ -323,7 +323,7 @@ export async function swapViaJupiter(
   const decoded = getTransactionDecoder().decode(txBytes);
   const compiledMsg = getCompiledTransactionMessageDecoder().decode(decoded.messageBytes);
   const lifetimeConstraint =
-    getTransactionLifetimeConstraintFromCompiledTransactionMessage(compiledMsg);
+    await getTransactionLifetimeConstraintFromCompiledTransactionMessage(compiledMsg);
   const signed = await signTransaction([signer.keyPair], decoded);
   assertIsSendableTransaction(signed);
   const signedWithLifetime = { ...signed, lifetimeConstraint };

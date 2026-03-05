@@ -2,11 +2,11 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
-## [0.10.1] - 2026-03-05
+## [0.10.2] - 2026-03-05
 
 ### Fixed
 
-- `x_swap` crash: `TypeError: Cannot add property lifetimeConstraint, object is not extensible` - `signTransaction` returns a frozen object, now spread into a new object instead of mutating with `Object.assign`
+- `x_swap` and PumpPortal swaps crash: missing `await` on async `getTransactionLifetimeConstraintFromCompiledTransactionMessage` (became async in @solana/kit 5.x, see anza-xyz/kit#1011). The unawaited Promise caused `assertIsTransactionWithBlockhashLifetime` to fail. Also spread signed transaction instead of `Object.assign` on frozen object.
 
 ## [0.10.0] - 2026-03-05
 
