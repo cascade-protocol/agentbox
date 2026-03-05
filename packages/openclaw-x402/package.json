@@ -28,8 +28,8 @@
     "@sinclair/typebox": "^0.34.48",
     "@solana-program/token-2022": "^0.6.1",
     "@solana/kit": "^5.1.0",
-    "@x402/fetch": "^2.4.0",
-    "@x402/svm": "^2.4.0"
+    "@x402/fetch": "^2.5.0",
+    "@x402/svm": "^2.5.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

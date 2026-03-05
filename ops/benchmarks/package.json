@@ -1,0 +1,17 @@
+{
+  "name": "@agentbox/benchmarks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "cost-compare": "tsx cost-compare.ts",
+    "inference-compare": "tsx inference-compare.ts"
+  },
+  "dependencies": {
+    "@solana/kit": "^5.5.1",
+    "@x402/fetch": "^2.5.0",
+    "@x402/svm": "^2.5.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  }
+}

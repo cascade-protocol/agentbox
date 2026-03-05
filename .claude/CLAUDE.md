@@ -113,11 +113,11 @@ Before committing/pushing changes that affect VM provisioning, boot flow, or the
 
 1. User starts `pnpm dev` and `just tunnel` (exposes local backend at `dev-api.agentbox.fyi`)
 2. If image changes: `just build-image`, update `HETZNER_SNAPSHOT_ID` in `constants.ts`
-3. Run: `node ops/e2e/provision.mjs /path/to/wallet.json`
+3. Run: `pnpm test:smoke` (requires `WALLET_PATH` in `tests/smoke/.env`)
    - Provisions a real VM via x402 payment against local backend through tunnel
    - Polls until running (~2-4 min)
    - Tests `/v1/chat/completions` with the gateway token
-   - Optional second arg overrides API URL (defaults to `https://dev-api.agentbox.fyi`)
+   - `SMOKE_API_URL` in `.env` overrides API URL (defaults to `https://dev-api.agentbox.fyi`)
 4. All 3 steps must pass (provision 201, poll to running, chat completions 200) before pushing
 
 ## Release & Deploy

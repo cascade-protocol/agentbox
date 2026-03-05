@@ -1,4 +1,5 @@
 {
+  "name": "@agentbox/smoke-tests",
   "private": true,
   "type": "module",
   "dependencies": {

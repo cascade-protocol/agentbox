@@ -1,3 +1,4 @@
 packages:
   - "packages/*"
-  - "ops/e2e"
+  - "tests/*"
+  - "ops/benchmarks"
