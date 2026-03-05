@@ -11,7 +11,7 @@ export const INLINE_HISTORY_TOKEN_THRESHOLD = 3;
 export type TxRecord = {
   t: number;
   ok: boolean;
-  kind: "x402_inference" | "x402_payment" | "transfer" | "buy" | "sell" | "mint";
+  kind: "x402_inference" | "x402_payment" | "transfer" | "buy" | "sell" | "mint" | "swap";
   net: string;
   from: string;
   to?: string;
@@ -113,6 +113,7 @@ const KIND_LABELS: Record<TxRecord["kind"], string> = {
   buy: "buy",
   sell: "sell",
   mint: "mint",
+  swap: "swap",
 };
 
 export function explorerUrl(net: string, tx: string): string {

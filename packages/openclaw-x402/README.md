@@ -12,7 +12,8 @@ OpenClaw plugin for x402 USDC payments and pump.fun trading on Solana. Handles L
 **Agent tools (AI-callable):**
 - `x_balance` - check wallet SOL and USDC balances
 - `x_payment` - call any x402-enabled paid API with automatic USDC payment
-- `x_trade` - buy, sell, or create pump.fun tokens via PumpPortal
+- `x_swap` - swap any Solana token for another (Jupiter + PumpPortal fallback)
+- `x_launch_token` - launch a new token on pump.fun
 - `x_token_info` - look up token price, market cap, volume, liquidity
 
 **User commands (slash commands):**
@@ -68,18 +69,18 @@ Add to your OpenClaw plugin config:
 
 Each model in `providers.*.models` supports: `id`, `name`, `maxTokens`, `cost` (per 1M tokens: `input`, `output`, `cacheRead`, `cacheWrite`), `contextWindow`, `reasoning`, `input` (modalities).
 
-## Pump.fun trading
+## Token swaps
 
-The `x_trade` tool lets agents buy, sell, and create tokens on pump.fun via PumpPortal's Local Transaction API.
+The `x_swap` tool lets agents swap any Solana token for another using mint addresses. Routing:
 
-- **Buy**: specify SOL amount to spend (e.g. 0.1 SOL)
-- **Sell**: specify percentage of holdings to sell (e.g. 50 for half, 100 for all)
-- **Create**: launch a new token with name, symbol, description, and optional image
-- Default slippage: 25% for buy/sell, 10% for create
-- PumpPortal fee: 0.5%
-- Transactions are signed locally and confirmed via WebSocket (15s timeout)
+1. **Jupiter** (via `lite-api.jup.ag`) - handles all DEX-listed tokens (SOL, USDC, any SPL token)
+2. **PumpPortal fallback** - for pre-graduation pump.fun tokens still on the bonding curve (SOL pairs only)
 
-Use `x_token_info` to look up token data before trading. It checks DexScreener first, then falls back to pump.fun's API for pre-graduation tokens still on the bonding curve.
+Amount is in human-readable input token units (e.g. 0.5 for 0.5 SOL). Default slippage: 250 bps (2.5%). Transactions are signed locally and confirmed via WebSocket.
+
+The `x_launch_token` tool launches new tokens on pump.fun with an initial dev buy (default: 0.05 SOL, slippage: 10%).
+
+Use `x_token_info` to look up token data and mint addresses. It checks DexScreener first, then falls back to pump.fun's API for pre-graduation tokens.
 
 ## Wallet generation
 
@@ -114,7 +115,7 @@ The `/x_wallet` command shows balance, token holdings, and recent transactions w
 
 ## How it works
 
-On startup the plugin loads the keypair, creates an x402 client with `ExactSvmScheme` for Solana mainnet, and replaces `globalThis.fetch` with a wrapper. Requests to any configured provider URL go through x402 payment handling. All other requests pass through unmodified. Agent tools use the same x402 fetch wrapper to pay for external endpoints. Trading uses PumpPortal's Local Transaction API - the plugin receives raw transaction bytes, signs them locally, and confirms via WebSocket.
+On startup the plugin loads the keypair, creates an x402 client with `ExactSvmScheme` for Solana mainnet, and replaces `globalThis.fetch` with a wrapper. Requests to any configured provider URL go through x402 payment handling. All other requests pass through unmodified. Agent tools use the same x402 fetch wrapper to pay for external endpoints. Token swaps use Jupiter's Metis API for routing, with PumpPortal fallback for bonding curve tokens. Both return raw transaction bytes that are signed locally and confirmed via WebSocket.
 
 ## License
 

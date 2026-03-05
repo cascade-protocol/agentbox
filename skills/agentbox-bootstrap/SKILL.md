@@ -52,11 +52,12 @@ spl-token balance --owner $(solana address) EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGk
 
 **Agent tools:**
 - `x_balance` - check wallet SOL and USDC balances
-- `x_trade` - buy/sell/create pump.fun tokens via PumpPortal
+- `x_swap` - swap any Solana token for another (SOL, USDC, meme tokens, any SPL token)
+- `x_launch_token` - launch a new token on pump.fun
 - `x_token_info` - look up token price, market cap, volume, liquidity
 - `x_payment` - call any x402-enabled paid API
 
-Buy trades spend SOL, sell trades specify a percentage of held tokens. Default slippage: 25%.
+Swaps use Jupiter aggregator for best routing, with automatic fallback to PumpPortal for bonding curve tokens. Amount is in input token units, slippage in basis points (default: 250 = 2.5%).
 
 ## Default model provider
 

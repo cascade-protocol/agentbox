@@ -25,6 +25,11 @@ import { findAssociatedTokenPda, getTransferCheckedInstruction } from "@solana-p
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const TOKEN_PROGRAM: Address = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
+export const SOL_MINT = "So11111111111111111111111111111111111111112";
+
+const JUPITER_QUOTE_URL = "https://lite-api.jup.ag/swap/v1/quote";
+const JUPITER_SWAP_URL = "https://lite-api.jup.ag/swap/v1/swap";
+
 export type UsdcBalance = { raw: bigint; ui: string };
 export type TokenHolding = { mint: string; amount: string; decimals: number };
 
@@ -238,4 +243,110 @@ export async function signAndSendPumpPortalTx(
     if (!(e instanceof DOMException)) throw e;
   }
   return getSignatureFromTransaction(signed);
+}
+
+// --- Jupiter swap ---
+
+export class JupiterNoRouteError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "JupiterNoRouteError";
+  }
+}
+
+export async function getTokenDecimals(rpcUrl: string, mint: string): Promise<number> {
+  if (mint === SOL_MINT) return 9;
+  if (mint === USDC_MINT) return 6;
+  const rpc = createSolanaRpc(rpcUrl);
+  const { value } = await rpc.getAccountInfo(address(mint), { encoding: "jsonParsed" }).send();
+  if (!value) throw new Error(`Token mint not found: ${mint}`);
+  const data = value.data as { parsed: { info: { decimals: number } } };
+  return data.parsed.info.decimals;
+}
+
+/**
+ * Swap tokens via Jupiter aggregator. Returns the tx signature and
+ * the raw input/output amounts (in smallest units) from the quote.
+ *
+ * Trust assumption identical to PumpPortal: Jupiter constructs the
+ * transaction, we sign whatever it returns. Acceptable for small
+ * operational balances.
+ */
+export async function swapViaJupiter(
+  signer: KeyPairSigner,
+  rpcUrl: string,
+  inputMint: string,
+  outputMint: string,
+  amountRaw: string,
+  slippageBps: number,
+): Promise<{ signature: string; inAmount: string; outAmount: string }> {
+  const quoteUrl = new URL(JUPITER_QUOTE_URL);
+  quoteUrl.searchParams.set("inputMint", inputMint);
+  quoteUrl.searchParams.set("outputMint", outputMint);
+  quoteUrl.searchParams.set("amount", amountRaw);
+  quoteUrl.searchParams.set("slippageBps", String(slippageBps));
+  quoteUrl.searchParams.set("restrictIntermediateTokens", "true");
+
+  const quoteRes = await globalThis.fetch(quoteUrl.toString(), {
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!quoteRes.ok) {
+    const body = await quoteRes.json().catch(() => ({}) as Record<string, unknown>);
+    const msg = (body as { error?: string }).error || `HTTP ${quoteRes.status}`;
+    throw new JupiterNoRouteError(msg);
+  }
+  const quote = (await quoteRes.json()) as {
+    inAmount: string;
+    outAmount: string;
+    error?: string;
+  };
+  if (quote.error) throw new JupiterNoRouteError(quote.error);
+
+  const swapRes = await globalThis.fetch(JUPITER_SWAP_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      quoteResponse: quote,
+      userPublicKey: signer.address,
+      dynamicComputeUnitLimit: true,
+      prioritizationFeeLamports: "auto",
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!swapRes.ok) {
+    const text = await swapRes.text();
+    throw new Error(`Jupiter swap tx failed: ${swapRes.status} ${text}`);
+  }
+  const { swapTransaction } = (await swapRes.json()) as { swapTransaction: string };
+
+  const txBytes = new Uint8Array(Buffer.from(swapTransaction, "base64"));
+  const decoded = getTransactionDecoder().decode(txBytes);
+  const compiledMsg = getCompiledTransactionMessageDecoder().decode(decoded.messageBytes);
+  const lifetimeConstraint =
+    getTransactionLifetimeConstraintFromCompiledTransactionMessage(compiledMsg);
+  const signed = await signTransaction([signer.keyPair], decoded);
+  assertIsSendableTransaction(signed);
+  Object.assign(signed, { lifetimeConstraint });
+  assertIsTransactionWithBlockhashLifetime(signed);
+
+  const rpc = createSolanaRpc(rpcUrl);
+  const wsUrl = rpcUrl.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
+  const rpcSubscriptions = createSolanaRpcSubscriptions(wsUrl);
+  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
+
+  try {
+    await sendAndConfirm(signed, {
+      commitment: "confirmed",
+      skipPreflight: true,
+      abortSignal: AbortSignal.timeout(15_000),
+    });
+  } catch (e) {
+    if (!(e instanceof DOMException)) throw e;
+  }
+
+  return {
+    signature: getSignatureFromTransaction(signed),
+    inAmount: quote.inAmount,
+    outAmount: quote.outAmount,
+  };
 }

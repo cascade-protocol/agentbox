@@ -28,15 +28,19 @@ import {
   checkAtaExists,
   getSolBalance,
   getTokenAccounts,
+  getTokenDecimals,
   getUsdcBalance,
+  JupiterNoRouteError,
+  SOL_MINT,
   signAndSendPumpPortalTx,
+  swapViaJupiter,
   transferUsdc,
 } from "./solana.js";
 import { deriveEvmKeypair, deriveSolanaKeypair } from "./wallet.js";
 
 const INFERENCE_RESERVE = 0.3;
 const MAX_RESPONSE_CHARS = 50_000;
-const PLUGIN_VERSION = "0.9.4";
+const PLUGIN_VERSION = "0.10.0";
 const SOL_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
 // --- Types ---
@@ -536,41 +540,23 @@ export function register(api: OpenClawPluginApi): void {
   });
 
   api.registerTool({
-    name: "x_trade",
-    label: "Pump.fun Trade",
+    name: "x_swap",
+    label: "Token Swap",
     description:
-      "Buy, sell, or create pump.fun tokens. Buy spends SOL to get tokens, sell converts tokens back to SOL, create launches a new token.",
+      "Swap any Solana token for another. Provide mint addresses for both tokens. " +
+      "Works for SOL, USDC, meme tokens, and any SPL token with DEX liquidity. " +
+      "Use x_token_info to look up mint addresses. " +
+      `SOL mint: ${SOL_MINT}  USDC mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`,
     parameters: Type.Object({
-      action: Type.Unsafe<"buy" | "sell" | "create">({
-        type: "string",
-        enum: ["buy", "sell", "create"],
+      inputMint: Type.String({ description: "Mint address of the token to sell" }),
+      outputMint: Type.String({ description: "Mint address of the token to buy" }),
+      amount: Type.Number({
         description:
-          "buy = spend SOL to get tokens, sell = sell tokens for SOL, create = launch a new token on pump.fun",
+          "Amount of input token to swap in human-readable units (e.g. 0.5 for 0.5 SOL, 10 for 10 USDC)",
       }),
-      mint: Type.Optional(
-        Type.String({
-          description: "Token mint address (required for buy/sell, omit for create)",
-        }),
-      ),
-      amount: Type.Optional(
-        Type.Number({
-          description:
-            "For buy: SOL to spend. For sell: % of tokens to sell (e.g. 50 for 50%). For create: SOL for initial dev buy (default: 0.05)",
-        }),
-      ),
       slippage: Type.Optional(
         Type.Number({
-          description: "Slippage tolerance in % (default: 25 for trade, 10 for create)",
-        }),
-      ),
-      name: Type.Optional(Type.String({ description: "Token name (required for create)" })),
-      symbol: Type.Optional(Type.String({ description: "Token ticker (required for create)" })),
-      description: Type.Optional(
-        Type.String({ description: "Token description (required for create)" }),
-      ),
-      image_url: Type.Optional(
-        Type.String({
-          description: "URL to token image for create (PNG/JPG). Placeholder used if omitted.",
+          description: "Slippage tolerance in basis points (default: 250 = 2.5%)",
         }),
       ),
     }),
@@ -579,165 +565,206 @@ export function register(api: OpenClawPluginApi): void {
         return toolResult("Wallet not loaded yet. Wait for gateway startup.");
       }
 
-      // --- Create token ---
-      if (params.action === "create") {
-        if (!params.name || !params.symbol || !params.description) {
-          return toolResult("Token creation requires name, symbol, and description parameters.");
-        }
-
-        const initialBuy = params.amount ?? 0.05;
-        const sol = await getSolBalance(rpcUrl, walletAddress);
-        if (Number.parseFloat(sol) < initialBuy + 0.02) {
-          return toolResult(
-            `Insufficient SOL. Balance: ${sol} SOL, need ~${(initialBuy + 0.02).toFixed(3)} SOL (${initialBuy} buy + fees). Top up: ${walletAddress}`,
-          );
-        }
-
-        try {
-          const mintKeyPair = await generateKeyPair();
-          const mintAddress = await getAddressFromPublicKey(mintKeyPair.publicKey);
-
-          let imageBlob: Blob;
-          if (params.image_url) {
-            const imgRes = await globalThis.fetch(params.image_url);
-            if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.status}`);
-            imageBlob = await imgRes.blob();
-          } else {
-            const png = Buffer.from(
-              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
-              "base64",
-            );
-            imageBlob = new Blob([png], { type: "image/png" });
-          }
-
-          const form = new FormData();
-          form.append("file", imageBlob, "token.png");
-          form.append("name", params.name);
-          form.append("symbol", params.symbol);
-          form.append("description", params.description);
-          form.append("showName", "true");
-
-          const ipfsRes = await globalThis.fetch("https://pump.fun/api/ipfs", {
-            method: "POST",
-            body: form,
-          });
-          if (!ipfsRes.ok) {
-            const text = await ipfsRes.text();
-            throw new Error(`IPFS upload failed: ${ipfsRes.status} ${text}`);
-          }
-          const { metadataUri } = (await ipfsRes.json()) as { metadataUri: string };
-
-          const signature = await signAndSendPumpPortalTx(
-            signerRef,
-            rpcUrl,
-            {
-              action: "create",
-              tokenMetadata: { name: params.name, symbol: params.symbol, uri: metadataUri },
-              mint: mintAddress,
-              denominatedInSol: "true",
-              amount: initialBuy,
-              slippage: params.slippage ?? 10,
-              priorityFee: 0.0005,
-              pool: "pump",
-            },
-            [mintKeyPair],
-          );
-
-          appendHistory(historyPath, {
-            t: Date.now(),
-            ok: true,
-            kind: "mint",
-            net: SOL_MAINNET,
-            from: walletAddress ?? "",
-            tx: signature,
-            label: mintAddress,
-            amount: initialBuy,
-            token: "SOL",
-          });
-
-          return toolResult(
-            `Token created\nName: ${params.name} (${params.symbol})\nMint: ${mintAddress}\nInitial buy: ${initialBuy} SOL\nhttps://pump.fun/${mintAddress}\nhttps://solscan.io/tx/${signature}`,
-          );
-        } catch (err) {
-          appendHistory(historyPath, {
-            t: Date.now(),
-            ok: false,
-            kind: "mint",
-            net: SOL_MAINNET,
-            from: walletAddress ?? "",
-            error: String(err).substring(0, 200),
-          });
-          return toolResult(`Token creation failed: ${String(err)}`);
-        }
-      }
-
-      // --- Buy/Sell ---
-      if (!params.mint) {
-        return toolResult("Token mint address is required for buy/sell.");
-      }
-      if (params.amount == null) {
-        return toolResult("Amount is required for buy/sell.");
-      }
-
-      if (params.action === "buy") {
-        const sol = await getSolBalance(rpcUrl, walletAddress);
-        if (Number.parseFloat(sol) < params.amount + 0.01) {
-          return toolResult(
-            `Insufficient SOL. Balance: ${sol} SOL, need ~${(params.amount + 0.01).toFixed(3)} SOL (${params.amount} + fees). Top up: ${walletAddress}`,
-          );
-        }
-      }
-
-      const tradeParams: Record<string, unknown> = {
-        action: params.action,
-        mint: params.mint,
-        slippage: params.slippage ?? 25,
-        priorityFee: 0.0005,
-        pool: "auto",
-      };
-
-      if (params.action === "buy") {
-        tradeParams.amount = params.amount;
-        tradeParams.denominatedInSol = "true";
-      } else {
-        tradeParams.amount = `${params.amount}%`;
-        tradeParams.denominatedInSol = "false";
-      }
+      const slippageBps = params.slippage ?? 250;
+      const inputShort = `${params.inputMint.slice(0, 4)}...${params.inputMint.slice(-4)}`;
+      const outputShort = `${params.outputMint.slice(0, 4)}...${params.outputMint.slice(-4)}`;
 
       try {
-        const signature = await signAndSendPumpPortalTx(signerRef, rpcUrl, tradeParams);
+        const inputDecimals = await getTokenDecimals(rpcUrl, params.inputMint);
+        const amountRaw = String(Math.round(params.amount * 10 ** inputDecimals));
+
+        // Jupiter first, PumpPortal fallback for bonding curve tokens
+        let signature: string;
+        let outAmountDisplay: string | undefined;
+        try {
+          const result = await swapViaJupiter(
+            signerRef,
+            rpcUrl,
+            params.inputMint,
+            params.outputMint,
+            amountRaw,
+            slippageBps,
+          );
+          signature = result.signature;
+          const outDecimals = await getTokenDecimals(rpcUrl, params.outputMint);
+          outAmountDisplay = (Number(result.outAmount) / 10 ** outDecimals).toFixed(
+            Math.min(outDecimals, 6),
+          );
+        } catch (err) {
+          if (!(err instanceof JupiterNoRouteError)) throw err;
+
+          // PumpPortal fallback: only works for SOL <-> token pairs
+          const isBuy = params.inputMint === SOL_MINT;
+          const isSell = params.outputMint === SOL_MINT;
+          if (!isBuy && !isSell) {
+            throw new Error("No swap route found for this token pair");
+          }
+
+          const tokenMint = isBuy ? params.outputMint : params.inputMint;
+          const pumpParams: Record<string, unknown> = {
+            action: isBuy ? "buy" : "sell",
+            mint: tokenMint,
+            slippage: Math.max(slippageBps / 100, 10),
+            priorityFee: 0.0005,
+            pool: "pump",
+          };
+
+          if (isBuy) {
+            pumpParams.amount = params.amount;
+            pumpParams.denominatedInSol = "true";
+          } else {
+            const holdings = await getTokenAccounts(rpcUrl, walletAddress);
+            const holding = holdings.find((h) => h.mint === tokenMint);
+            if (!holding || Number.parseFloat(holding.amount) === 0) {
+              throw new Error(`No holdings found for token ${tokenMint}`);
+            }
+            const pct = Math.min(100, (params.amount / Number.parseFloat(holding.amount)) * 100);
+            pumpParams.amount = `${Math.round(pct)}%`;
+            pumpParams.denominatedInSol = "false";
+          }
+
+          signature = await signAndSendPumpPortalTx(signerRef, rpcUrl, pumpParams);
+        }
+
         appendHistory(historyPath, {
           t: Date.now(),
           ok: true,
-          kind: params.action === "buy" ? "buy" : "sell",
+          kind: "swap",
           net: SOL_MAINNET,
-          from: walletAddress ?? "",
+          from: walletAddress,
           tx: signature,
-          label: params.mint,
-          amount: params.action === "buy" ? params.amount : undefined,
-          token: params.action === "buy" ? "SOL" : undefined,
-          meta: params.action === "sell" ? { pct: params.amount } : undefined,
+          amount: params.amount,
+          label: `${inputShort}→${outputShort}`,
         });
-        const action = params.action === "buy" ? "Bought" : "Sold";
-        const detail =
-          params.action === "buy" ? `Spent: ${params.amount} SOL` : `Sold: ${params.amount}%`;
+
+        const outLine = outAmountDisplay ? ` → ${outAmountDisplay}` : "";
         return toolResult(
-          `${action} tokens\nMint: ${params.mint}\n${detail}\nhttps://solscan.io/tx/${signature}`,
+          `Swapped ${params.amount}${outLine}\nInput: ${params.inputMint}\nOutput: ${params.outputMint}\nhttps://solscan.io/tx/${signature}`,
         );
       } catch (err) {
         appendHistory(historyPath, {
           t: Date.now(),
           ok: false,
-          kind: params.action === "buy" ? "buy" : "sell",
+          kind: "swap",
           net: SOL_MAINNET,
-          from: walletAddress ?? "",
-          label: params.mint,
-          amount: params.action === "buy" ? params.amount : undefined,
-          token: params.action === "buy" ? "SOL" : undefined,
-          meta: params.action === "sell" ? { pct: params.amount } : undefined,
+          from: walletAddress,
+          label: `${inputShort}→${outputShort}`,
           error: String(err).substring(0, 200),
         });
-        return toolResult(`Trade failed: ${String(err)}`);
+        return toolResult(`Swap failed: ${String(err)}`);
+      }
+    },
+  });
+
+  api.registerTool({
+    name: "x_launch_token",
+    label: "Launch Token",
+    description:
+      "Launch a new token on pump.fun with an initial dev buy. Requires name, symbol, and description.",
+    parameters: Type.Object({
+      name: Type.String({ description: "Token name" }),
+      symbol: Type.String({ description: "Token ticker symbol" }),
+      description: Type.String({ description: "Token description" }),
+      image_url: Type.Optional(
+        Type.String({
+          description: "URL to token image (PNG/JPG). Placeholder used if omitted.",
+        }),
+      ),
+      initial_buy: Type.Optional(
+        Type.Number({ description: "SOL for initial dev buy (default: 0.05)" }),
+      ),
+      slippage: Type.Optional(
+        Type.Number({ description: "Slippage tolerance in % (default: 10)" }),
+      ),
+    }),
+    async execute(_id, params) {
+      if (!signerRef || !walletAddress) {
+        return toolResult("Wallet not loaded yet. Wait for gateway startup.");
+      }
+
+      const initialBuy = params.initial_buy ?? 0.05;
+      const sol = await getSolBalance(rpcUrl, walletAddress);
+      if (Number.parseFloat(sol) < initialBuy + 0.02) {
+        return toolResult(
+          `Insufficient SOL. Balance: ${sol} SOL, need ~${(initialBuy + 0.02).toFixed(3)} SOL (${initialBuy} buy + fees). Top up: ${walletAddress}`,
+        );
+      }
+
+      try {
+        const mintKeyPair = await generateKeyPair();
+        const mintAddress = await getAddressFromPublicKey(mintKeyPair.publicKey);
+
+        let imageBlob: Blob;
+        if (params.image_url) {
+          const imgRes = await globalThis.fetch(params.image_url);
+          if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.status}`);
+          imageBlob = await imgRes.blob();
+        } else {
+          const png = Buffer.from(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
+            "base64",
+          );
+          imageBlob = new Blob([png], { type: "image/png" });
+        }
+
+        const form = new FormData();
+        form.append("file", imageBlob, "token.png");
+        form.append("name", params.name);
+        form.append("symbol", params.symbol);
+        form.append("description", params.description);
+        form.append("showName", "true");
+
+        const ipfsRes = await globalThis.fetch("https://pump.fun/api/ipfs", {
+          method: "POST",
+          body: form,
+        });
+        if (!ipfsRes.ok) {
+          const text = await ipfsRes.text();
+          throw new Error(`IPFS upload failed: ${ipfsRes.status} ${text}`);
+        }
+        const { metadataUri } = (await ipfsRes.json()) as { metadataUri: string };
+
+        const signature = await signAndSendPumpPortalTx(
+          signerRef,
+          rpcUrl,
+          {
+            action: "create",
+            tokenMetadata: { name: params.name, symbol: params.symbol, uri: metadataUri },
+            mint: mintAddress,
+            denominatedInSol: "true",
+            amount: initialBuy,
+            slippage: params.slippage ?? 10,
+            priorityFee: 0.0005,
+            pool: "pump",
+          },
+          [mintKeyPair],
+        );
+
+        appendHistory(historyPath, {
+          t: Date.now(),
+          ok: true,
+          kind: "mint",
+          net: SOL_MAINNET,
+          from: walletAddress,
+          tx: signature,
+          label: mintAddress,
+          amount: initialBuy,
+          token: "SOL",
+        });
+
+        return toolResult(
+          `Token launched\nName: ${params.name} (${params.symbol})\nMint: ${mintAddress}\nInitial buy: ${initialBuy} SOL\nhttps://pump.fun/${mintAddress}\nhttps://solscan.io/tx/${signature}`,
+        );
+      } catch (err) {
+        appendHistory(historyPath, {
+          t: Date.now(),
+          ok: false,
+          kind: "mint",
+          net: SOL_MAINNET,
+          from: walletAddress,
+          error: String(err).substring(0, 200),
+        });
+        return toolResult(`Token launch failed: ${String(err)}`);
       }
     },
   });
@@ -859,13 +886,15 @@ export function register(api: OpenClawPluginApi): void {
       const client = new x402Client();
       client.register(SOL_MAINNET, new ExactSvmScheme(signer, { rpcUrl }));
 
-      // Capture payment amount and payTo from x402 hooks - no RPC lookup needed
+      // Capture payment amount and payTo from x402 hooks - no RPC lookup needed.
+      // The amount from selectedRequirements is in base units (micro-USDC for 6-decimal tokens).
+      const USDC_DECIMALS = 6;
       client.onAfterPaymentCreation(async (hookCtx) => {
         const raw = hookCtx.selectedRequirements.amount;
         const cleaned = raw.startsWith("debug.") ? raw.slice(6) : raw;
         const parsed = Number.parseFloat(cleaned);
         paymentQueue.push({
-          amount: Number.isNaN(parsed) ? undefined : parsed,
+          amount: Number.isNaN(parsed) ? undefined : parsed / 10 ** USDC_DECIMALS,
           payTo: hookCtx.selectedRequirements.payTo,
         });
       });

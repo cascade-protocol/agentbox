@@ -2,6 +2,29 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.10.0] - 2026-03-05
+
+### Added
+
+- `x_swap` tool - universal token swap using mint addresses. Routes through Jupiter aggregator for all DEX-listed tokens, falls back to PumpPortal for pre-graduation pump.fun bonding curve tokens. Amount in human-readable input token units, default slippage 250 bps (2.5%).
+- `x_launch_token` tool - launch new tokens on pump.fun with initial dev buy (default 0.05 SOL, 10% slippage)
+- `JupiterNoRouteError` class for clean fallback detection from Jupiter to PumpPortal
+- `getTokenDecimals()` helper with hardcoded values for SOL/USDC and RPC lookup for unknown mints
+- `swapViaJupiter()` - full Jupiter Metis API flow (quote + swap tx + local signing + WebSocket confirmation)
+- Comprehensive test suite for Jupiter swap HTTP interactions and token decimal resolution
+
+### Changed
+
+- Token swaps use `lite-api.jup.ag` (no API key required) - scales independently per VM
+
+### Fixed
+
+- x402 payment amount was in base units (micro-USDC), now correctly divided by 10^6 for human-readable USDC
+
+### Removed
+
+- `x_trade` tool (replaced by `x_swap` for swaps and `x_launch_token` for token creation)
+
 ## [0.9.4] - 2026-03-05
 
 ### Added
