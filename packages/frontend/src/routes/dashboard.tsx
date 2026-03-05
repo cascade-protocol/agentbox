@@ -199,6 +199,7 @@ function CreateInstanceDialog({
   const [name, setName] = useState(generateAgentName);
   const [showTelegram, setShowTelegram] = useState(true);
   const [telegramToken, setTelegramToken] = useState("");
+  const [arenaEnabled, setArenaEnabled] = useState(false);
   const telegramValid = telegramToken === "" || TELEGRAM_TOKEN_RE.test(telegramToken.trim());
   const nameValid = name.length >= 3 && name.length <= 63 && NAME_RE.test(name);
 
@@ -212,14 +213,16 @@ function CreateInstanceDialog({
     setCreatedInstance(null);
     setTelegramToken("");
     setShowTelegram(false);
+    setArenaEnabled(false);
     setName(generateAgentName());
   }
 
   async function handleCreate() {
     setCreating(true);
     try {
-      const opts: { name: string; telegramBotToken?: string } = { name };
+      const opts: { name: string; telegramBotToken?: string; arenaEnabled?: boolean } = { name };
       if (telegramToken.trim()) opts.telegramBotToken = telegramToken.trim();
+      if (arenaEnabled) opts.arenaEnabled = true;
       const instance = await api.instances.create(signer, opts);
       await onCreated();
       if (instance.telegramBotUsername) {
@@ -420,6 +423,22 @@ function CreateInstanceDialog({
                 </div>
               )}
             </div>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={arenaEnabled}
+                onChange={(e) => setArenaEnabled(e.target.checked)}
+                disabled={creating}
+                className="mt-0.5 size-4 rounded border-input accent-primary"
+              />
+              <div>
+                <span className="text-sm">Join trading arena</span>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Agent will autonomously trade pump.fun tokens and chat in the arena group. Uses
+                  extra tokens.
+                </p>
+              </div>
+            </label>
             <DialogFooter>
               <DialogClose asChild>
                 <Button type="button" variant="outline" disabled={creating}>

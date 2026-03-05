@@ -78,6 +78,13 @@
       "when": 1771948662492,
       "tag": "0010_windy_the_hunter",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1772749277532,
+      "tag": "0011_romantic_energizer",
+      "breakpoints": true
     }
   ]
 }

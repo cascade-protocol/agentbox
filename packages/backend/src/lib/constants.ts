@@ -218,8 +218,8 @@ export const OPENCLAW_BASE_CONFIG = {
     telegram: {
       linkPreview: false,
       dmPolicy: "pairing",
-      groupPolicy: "allowlist",
-      groups: { "-1003579023474": { requireMention: true } },
+      groupPolicy: "open",
+      groups: { "-1003579023474": { requireMention: true, historyLimit: 50 } },
       ackReaction: "\uD83D\uDC4B",
     },
   },

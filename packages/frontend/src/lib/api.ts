@@ -138,12 +138,13 @@ export const api = {
     get: (id: number) => request<Instance>(`/instances/${id}`),
     create: async (
       signer: TransactionSigner,
-      opts?: { name?: string; telegramBotToken?: string },
+      opts?: { name?: string; telegramBotToken?: string; arenaEnabled?: boolean },
     ) => {
       const payFetch = createPaymentFetch(signer);
-      const body: Record<string, string> = {};
+      const body: Record<string, string | boolean> = {};
       if (opts?.name) body.name = opts.name;
       if (opts?.telegramBotToken) body.telegramBotToken = opts.telegramBotToken;
+      if (opts?.arenaEnabled) body.arenaEnabled = true;
       const res = await payFetch(`${API_URL}/instances`, {
         method: "POST",
         headers: authHeaders(),

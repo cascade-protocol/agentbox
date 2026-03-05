@@ -142,6 +142,18 @@ echo "$CONFIG_JSON" | jq '.openclawConfig' > /home/openclaw/.openclaw/openclaw.j
 chown openclaw:openclaw /home/openclaw/.openclaw/openclaw.json
 echo "OpenClaw config written from backend"
 
+# --- Write any workspace files provided by the backend ---
+
+WORKSPACE_DIR="/home/openclaw/.openclaw/agentbox"
+mkdir -p "$WORKSPACE_DIR"
+echo "$CONFIG_JSON" | jq -r '.workspaceFiles // {} | to_entries[] | @base64' | while read entry; do
+  FILENAME=$(echo "$entry" | base64 -d | jq -r '.key')
+  CONTENT=$(echo "$entry" | base64 -d | jq -r '.value')
+  echo "$CONTENT" > "$WORKSPACE_DIR/$FILENAME"
+  echo "Wrote workspace file: $FILENAME"
+done
+chown -R openclaw:openclaw "$WORKSPACE_DIR"
+
 # --- Verify preloaded OpenClaw ---
 
 if ! command -v openclaw >/dev/null 2>&1; then

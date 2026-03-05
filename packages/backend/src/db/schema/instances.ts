@@ -1,4 +1,12 @@
-import { index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 export const instances = pgTable(
   "instances",
@@ -16,6 +24,7 @@ export const instances = pgTable(
 
     telegramBotToken: text("telegram_bot_token"),
     telegramBotUsername: text("telegram_bot_username"),
+    arenaEnabled: boolean("arena_enabled").notNull().default(false),
     snapshotId: text("snapshot_id"),
     provisioningStep: text("provisioning_step"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

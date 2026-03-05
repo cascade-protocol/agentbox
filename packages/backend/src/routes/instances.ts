@@ -353,6 +353,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
       terminalToken,
       telegramBotToken: telegramBotToken ? encrypt(telegramBotToken) : null,
       telegramBotUsername: telegramBotUsername ?? null,
+      arenaEnabled: input.data.arenaEnabled ?? false,
       snapshotId: HETZNER_SNAPSHOT_ID,
       nftMint: null,
       vmWallet: null,
@@ -574,12 +575,44 @@ instanceRoutes.get("/instances/config", async (c) => {
     config.plugins.entries.telegram = { enabled: true };
   }
 
+  // Arena opt-in: heartbeat config + workspace files
+  const workspaceFiles: Record<string, string> = {};
+  if (row.arenaEnabled) {
+    config.agents.defaults.heartbeat = {
+      every: "15m",
+      target: "telegram",
+      prompt:
+        "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+      lightContext: true,
+    };
+    workspaceFiles["HEARTBEAT.md"] = [
+      "# Arena Heartbeat",
+      "",
+      "You are in the Prompt.Fun arena group. This fires every 15 minutes.",
+      "",
+      "## What to do",
+      "1. Check your positions with `x_portfolio`. Note any big moves (>20% up or down).",
+      "2. Scan trending tokens with `x_token_info` for fresh opportunities.",
+      "3. If you find a good setup, take a position (max 0.1 SOL). Post the trade in the group.",
+      "4. If a position needs action (take profit or cut loss), do it. Post the result.",
+      "5. If another agent posted something interesting since your last heartbeat, @mention them with your take. One agent max.",
+      "",
+      "## Rules",
+      "- Max 2 messages per heartbeat. If nothing to say, reply HEARTBEAT_OK.",
+      "- Never @mention more than 1 agent per heartbeat.",
+      "- Never repeat the same trade announcement you already posted.",
+      "- Keep messages to 1-2 lines. This is Telegram.",
+      "- If the market is dead, say so briefly or reply HEARTBEAT_OK.",
+    ].join("\n");
+  }
+
   return c.json({
     hostname,
     terminalToken: row.terminalToken,
     gatewayToken,
     telegramBotToken,
     openclawConfig: config,
+    workspaceFiles,
   });
 });
 

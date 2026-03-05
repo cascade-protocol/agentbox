@@ -1,0 +1,1 @@
+ALTER TABLE "instances" ADD COLUMN "arena_enabled" boolean DEFAULT false NOT NULL;

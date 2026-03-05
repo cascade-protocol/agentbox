@@ -43,6 +43,7 @@ export const instanceNameSchema = z
 export const createInstanceInputSchema = z.object({
   name: instanceNameSchema.optional(),
   telegramBotToken: telegramTokenSchema.optional(),
+  arenaEnabled: z.boolean().optional(),
 });
 
 export const authInputSchema = z.object({
