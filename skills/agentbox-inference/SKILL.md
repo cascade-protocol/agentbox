@@ -1,6 +1,6 @@
 ---
 name: agentbox-inference
-description: "LLM inference via paid API: OpenAI-compatible chat completions proxied through OpenRouter. Supports Grok 4.1 Fast, Moonshot Kimi K2.5, MiniMax M2.5. Uses x_payment tool for automatic USDC micropayments ($0.001-$0.003/call). Use when: (1) generating text with a specific model, (2) running chat completions through a pay-per-request LLM endpoint, (3) comparing outputs across models."
+description: "LLM inference via paid API: OpenAI-compatible chat completions proxied through x402 providers. Supports Kimi K2.5, MiniMax M2.5. Uses x_payment tool for automatic USDC micropayments ($0.001-$0.003/call). Use when: (1) generating text with a specific model, (2) running chat completions through a pay-per-request LLM endpoint, (3) comparing outputs across models."
 metadata: {"openclaw": {"emoji": "🧠", "requires": {"bins": ["openclaw"]}}}
 ---
 
@@ -18,7 +18,7 @@ Generate a chat completion from a supported model.
 x_payment({
   "url": "https://inference.x402.agentbox.fyi/v1/chat/completions",
   "method": "POST",
-  "body": "{\"model\": \"x-ai/grok-4.1-fast\", \"messages\": [{\"role\": \"user\", \"content\": \"Explain x402 in one sentence\"}]}"
+  "body": "{\"model\": \"moonshotai/kimi-k2.5\", \"messages\": [{\"role\": \"user\", \"content\": \"Explain x402 in one sentence\"}]}"
 })
 ```
 
@@ -38,9 +38,8 @@ x_payment({
 
 | Model | Cost/call | Best for |
 |-------|-----------|----------|
-| `x-ai/grok-4.1-fast` | $0.001 | Fast, cheap general tasks |
+| `moonshotai/kimi-k2.5` | $0.003 | High-quality output, large context (262K) |
 | `minimax/minimax-m2.5` | $0.002 | Balanced quality/cost |
-| `moonshotai/kimi-k2.5` | $0.003 | Longer, higher-quality output |
 
 ## Usage Patterns
 
@@ -50,7 +49,7 @@ x_payment({
 x_payment({
   "url": "https://inference.x402.agentbox.fyi/v1/chat/completions",
   "method": "POST",
-  "body": "{\"model\": \"x-ai/grok-4.1-fast\", \"messages\": [{\"role\": \"user\", \"content\": \"What is the x402 protocol?\"}]}"
+  "body": "{\"model\": \"moonshotai/kimi-k2.5\", \"messages\": [{\"role\": \"user\", \"content\": \"What is the x402 protocol?\"}]}"
 })
 ```
 
@@ -72,7 +71,7 @@ Standard OpenAI chat completion response:
 {
   "id": "gen-...",
   "object": "chat.completion",
-  "model": "x-ai/grok-4.1-fast",
+  "model": "moonshotai/kimi-k2.5",
   "choices": [{
     "index": 0,
     "message": { "role": "assistant", "content": "..." },

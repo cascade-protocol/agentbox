@@ -36,21 +36,25 @@ Caddy routes HTTPS traffic to the gateway and terminal. Do NOT modify Caddy or s
 
 The `openclaw-x402` plugin patches `globalThis.fetch` to handle HTTP 402 Payment Required responses automatically. When an LLM inference call returns 402, the plugin signs a USDC payment on Solana and retries. This is transparent - you don't need to do anything special.
 
-The wallet at `~/.openclaw/agentbox/wallet-sol.json` must have USDC balance for payments to work. Check balance with `/x_balance` or:
+The wallet at `~/.openclaw/agentbox/wallet-sol.json` must have USDC balance for payments to work. Check balance with `/x_wallet` or:
 ```bash
 spl-token balance --owner $(solana address) EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
 ```
 
-## Trading
+## Commands and tools
 
-The plugin includes tools for pump.fun token trading:
+**Slash commands:**
+- `/x_wallet` - wallet dashboard with balance, token holdings, recent transactions
+- `/x_wallet send <amount|all> <address>` - send USDC to a Solana address
+- `/x_wallet history [page]` - paginated transaction history
+- `/x_status` - system overview (version, model, pricing, wallet summary)
+- `/x_update` - update plugin and skills, restart gateway
 
-- `/x_balance` - show wallet SOL and USDC balances
-- `/x_send <amount|all> <address>` - send USDC to a Solana address
-- `x_trade` (agent tool) - buy/sell pump.fun tokens via PumpPortal
-- `x_token_info` (agent tool) - look up token price, market cap, volume, liquidity
-- `x_payment` (agent tool) - call any x402-enabled paid API
-- `x_discover` (agent tool) - search for x402 paid services
+**Agent tools:**
+- `x_balance` - check wallet SOL and USDC balances
+- `x_trade` - buy/sell/create pump.fun tokens via PumpPortal
+- `x_token_info` - look up token price, market cap, volume, liquidity
+- `x_payment` - call any x402-enabled paid API
 
 Buy trades spend SOL, sell trades specify a percentage of held tokens. Default slippage: 25%.
 
