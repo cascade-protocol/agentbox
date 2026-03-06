@@ -6,7 +6,7 @@ metadata: {"openclaw": {"emoji": "🐦", "requires": {"bins": ["openclaw"]}}}
 
 # Twitter Research
 
-Paid Twitter/X data API at `https://twitter.x402.agentbox.fyi`. Costs $0.003 USDC per call via x402 on Solana. Use the `x_payment` tool for all requests.
+Paid Twitter/X data API at `https://twitter.x402.agentbox.fyi`. Costs $0.003 USDC per call via x402 on Solana or Base. Use the `x_payment` tool for all requests.
 
 ## Endpoints
 
@@ -166,7 +166,7 @@ x_payment({
 
 ## Cost
 
-Every call costs $0.003 USDC on Solana mainnet. Each paginated request is a separate call. Plan queries to minimize calls - use specific operators and reasonable limits.
+Every call costs $0.003 USDC on Solana mainnet or Base mainnet. Each paginated request is a separate call. Plan queries to minimize calls - use specific operators and reasonable limits.
 
 ## Errors
 
