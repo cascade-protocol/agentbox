@@ -160,6 +160,8 @@ export async function createServerWithIp(
   location: string,
   primaryIpId: number,
 ): Promise<CreateServerResponse> {
+  // Normalize datacenter name (e.g. "fsn1-dc14") to location (e.g. "fsn1")
+  const loc = location.replace(/-dc\d+$/, "");
   const res = await fetch(`${API_BASE}/servers`, {
     method: "POST",
     headers: headers(),
@@ -167,7 +169,7 @@ export async function createServerWithIp(
       name,
       server_type: HETZNER_SERVER_TYPE,
       image: Number(HETZNER_SNAPSHOT_ID),
-      location,
+      location: loc,
       start_after_create: true,
       user_data: userData,
       ssh_keys: HETZNER_SSH_KEY_IDS,

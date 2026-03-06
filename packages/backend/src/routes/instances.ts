@@ -384,7 +384,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
     .values({
       serverId: result.server.id,
       primaryIpId: result.server.public_net.ipv4.id,
-      location: result.server.datacenter.name,
+      location: result.server.datacenter.name.replace(/-dc\d+$/, ""),
       name,
       ownerWallet: wallet,
       status: "provisioning",
