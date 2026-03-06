@@ -324,12 +324,12 @@ export function register(api: OpenClawPluginApi): void {
           const snap = await getWalletSnapshot(walletAddress);
           walletParts.push(`[Wallet](${solscanUrl})`, `${snap.ui} USDC`);
           if (snap.spend.today > 0)
-            walletParts.push(`-${snap.spend.today.toFixed(2)} USDC spent today`);
+            walletParts.push(`-${snap.spend.today.toFixed(3)} USDC spent today`);
         } catch {
           walletParts.push(`[Wallet](${solscanUrl})`);
         }
         lines.push("", walletParts.join(" · "));
-        const linkParts = ["`/x_wallet`"];
+        const linkParts = ["/x_wallet"];
         if (dashboardUrl) linkParts.push(`[Dashboard](${dashboardUrl})`);
         lines.push(linkParts.join(" · "));
       } else {
