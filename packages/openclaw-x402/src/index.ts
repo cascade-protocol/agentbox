@@ -273,6 +273,22 @@ export function register(api: OpenClawPluginApi): void {
 
       const lines: string[] = [`x402 v${PLUGIN_VERSION} · ${updateStatus}`];
 
+      // Skills update check
+      try {
+        const checkOutput = execSync("npx skills check", {
+          timeout: 15_000,
+          stdio: "pipe",
+          env: { ...process.env, INSTALL_INTERNAL_SKILLS: "1", NO_COLOR: "1" },
+        })
+          .toString()
+          .trim();
+        const hasUpdates =
+          checkOutput.includes("update available") || checkOutput.includes("Update");
+        lines.push(`Skills   ${hasUpdates ? "updates available" : "up to date"}`);
+      } catch {
+        lines.push("Skills   check failed");
+      }
+
       // Current model
       const defaultModel = allModels[0];
       if (defaultModel) {
@@ -333,16 +349,28 @@ export function register(api: OpenClawPluginApi): void {
       const hasPluginUpdate = latestVersion && latestVersion !== PLUGIN_VERSION;
       const lines: string[] = [];
       let needsRestart = false;
+      const skillsEnv = { ...process.env, INSTALL_INTERNAL_SKILLS: "1", NO_COLOR: "1" };
 
-      // Always refresh skills regardless of plugin version
+      // Check for skills updates first, then apply
       try {
-        execSync("npx skills add -g cascade-protocol/agentbox", {
-          timeout: 30_000,
+        const checkOutput = execSync("npx skills check", {
+          timeout: 15_000,
           stdio: "pipe",
-        });
-        lines.push("Skills   refreshed");
+          env: skillsEnv,
+        })
+          .toString()
+          .trim();
+        const hasSkillUpdates =
+          checkOutput.includes("update available") || checkOutput.includes("Update");
+
+        if (hasSkillUpdates) {
+          execSync("npx skills update", { timeout: 30_000, stdio: "pipe", env: skillsEnv });
+          lines.push("Skills   updated");
+        } else {
+          lines.push("Skills   up to date");
+        }
       } catch {
-        lines.push("Skills   skipped (could not reach GitHub)");
+        lines.push("Skills   update failed (could not reach GitHub)");
       }
 
       // Update plugin only if a new version exists
@@ -364,7 +392,10 @@ export function register(api: OpenClawPluginApi): void {
       }
 
       if (needsRestart) {
-        lines.push("", "Restarting gateway...");
+        lines.push(
+          "",
+          "Restarting gateway - cold start takes ~60-90s. You'll see a confirmation when I'm back.",
+        );
         // Exit after response is sent - systemd Restart=always handles the restart
         setTimeout(() => process.exit(0), 2000);
       }

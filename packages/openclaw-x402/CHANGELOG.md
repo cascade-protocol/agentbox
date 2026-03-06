@@ -2,6 +2,15 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.10.3] - 2026-03-06
+
+### Changed
+
+- `x_status` now includes skills update check via `npx skills check`
+- `x_update` uses native `npx skills check` / `npx skills update` instead of force-reinstalling via `skills add` (respects lockfile)
+- `x_update` passes `INSTALL_INTERNAL_SKILLS=1` so internal skills (e.g. agentbox-bootstrap) can be updated
+- Improved restart message with cold start timing guidance
+
 ## [0.10.2] - 2026-03-05
 
 ### Fixed
