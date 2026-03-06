@@ -1,5 +1,5 @@
 /** Hetzner snapshot ID for VM provisioning. Update after `just build-image`. */
-export const HETZNER_SNAPSHOT_ID = "364292501";
+export const HETZNER_SNAPSHOT_ID = "364292741";
 
 export const CF_ZONE_ID = "fda671fa572b4c2d26de8aedcbf94f6e";
 export const FACILITATOR_URL = "https://facilitator.cascade.fyi";
@@ -76,8 +76,7 @@ export const OPENCLAW_BASE_CONFIG = {
   },
   update: { auto: { enabled: false }, checkOnStart: false },
   logging: { maxFileBytes: 104857600 },
-  tools: { profile: "full", deny: ["web_search"] },
-  browser: { enabled: true, headless: true, noSandbox: true, defaultProfile: "openclaw" },
+  tools: { profile: "full", deny: ["web_search", "browser"] },
   models: {
     mode: "replace",
     providers: {
