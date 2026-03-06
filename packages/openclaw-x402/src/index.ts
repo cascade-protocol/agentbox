@@ -40,7 +40,9 @@ import { deriveEvmKeypair, deriveSolanaKeypair } from "./wallet.js";
 
 const INFERENCE_RESERVE = 0.3;
 const MAX_RESPONSE_CHARS = 50_000;
-const PLUGIN_VERSION = "0.10.0";
+const PLUGIN_VERSION = JSON.parse(
+  readFileSync(join(dirname(new URL(import.meta.url).pathname), "../package.json"), "utf-8"),
+).version as string;
 const SOL_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
 // --- Types ---

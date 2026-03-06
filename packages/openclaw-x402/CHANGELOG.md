@@ -2,6 +2,12 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.10.4] - 2026-03-06
+
+### Fixed
+
+- `PLUGIN_VERSION` was hardcoded and never updated across releases, causing `/x_status` to always report `v0.10.0`. Now reads version from `package.json` at runtime.
+
 ## [0.10.3] - 2026-03-06
 
 ### Changed

@@ -1,6 +1,6 @@
 {
   "name": "openclaw-x402",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "description": "OpenClaw plugin for x402 USDC payments and token trading on Solana",
   "type": "module",
   "sideEffects": false,
