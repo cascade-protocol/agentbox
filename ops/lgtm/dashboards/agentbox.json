@@ -457,32 +457,9 @@
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 41 }
     },
     {
-      "type": "stat",
-      "title": "Reconciled Orphans",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [
-        {
-          "expr": "agentbox_reconciled_orphans_total",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "red", "value": 5 }
-            ]
-          }
-        }
-      },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 45 }
-    },
-    {
       "type": "row",
       "title": "HTTP",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 49 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 45 },
       "collapsed": false
     },
     {
@@ -502,7 +479,7 @@
           "unit": "reqps"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 50 }
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 46 }
     },
     {
       "type": "timeseries",
@@ -531,7 +508,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 50 }
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 46 }
     },
     {
       "type": "timeseries",
@@ -551,12 +528,12 @@
           "color": { "fixedColor": "red", "mode": "fixed" }
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 50 }
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 46 }
     },
     {
       "type": "row",
       "title": "System (Node.js)",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 58 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 54 },
       "collapsed": false
     },
     {
@@ -581,7 +558,7 @@
           "unit": "bytes"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 59 }
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 55 }
     },
     {
       "type": "timeseries",
@@ -600,7 +577,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 59 }
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 55 }
     },
     {
       "type": "timeseries",
@@ -619,7 +596,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 59 }
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 55 }
     }
   ],
   "schemaVersion": 39,
