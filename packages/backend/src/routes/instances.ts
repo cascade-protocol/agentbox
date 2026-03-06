@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import * as ed from "@noble/ed25519";
 import bs58 from "bs58";
 import { and, eq, isNull, lte } from "drizzle-orm";
@@ -41,6 +41,11 @@ import {
 } from "../lib/schemas";
 import { withVM } from "../lib/ssh";
 import { logger } from "../logger";
+
+/** Derive a per-instance Telegram webhook secret from the instance's callbackToken via HMAC. */
+function deriveWebhookSecret(callbackToken: string): string {
+  return createHmac("sha256", callbackToken).update("telegram-webhook").digest("hex").slice(0, 64);
+}
 
 type AppEnv = { Variables: { walletAddress: string } };
 
@@ -271,7 +276,7 @@ instanceRoutes.post("/instances", auth, async (c) => {
       return c.json({ error: "Failed to validate bot token with Telegram" }, 502);
     }
 
-    // Clear stale webhook so long polling works at boot
+    // Clear stale webhook from any previous deployment (gateway calls setWebhook on startup)
     try {
       await fetch(`https://api.telegram.org/bot${telegramBotToken}/deleteWebhook`);
     } catch {
@@ -570,10 +575,13 @@ instanceRoutes.get("/instances/config", async (c) => {
     config.plugins.entries["openclaw-x402"].config.rpcUrl = env.SOLANA_RPC_URL;
   }
 
-  // Telegram
+  // Telegram (webhook mode - OpenClaw switches from long-polling to webhook when webhookUrl is set)
   if (telegramBotToken) {
     config.channels.telegram.enabled = true;
     config.channels.telegram.botToken = telegramBotToken;
+    config.channels.telegram.webhookUrl = `https://${hostname}/telegram-webhook`;
+    // query.data.secret IS the callbackToken (used to auth this request)
+    config.channels.telegram.webhookSecret = deriveWebhookSecret(query.data.secret);
     config.plugins.entries.telegram = { enabled: true };
   }
 
@@ -585,6 +593,9 @@ instanceRoutes.get("/instances/config", async (c) => {
   redactedConfig.gateway.remote.token = "[REDACTED]";
   if (redactedConfig.channels?.telegram?.botToken) {
     redactedConfig.channels.telegram.botToken = "[REDACTED]";
+  }
+  if (redactedConfig.channels?.telegram?.webhookSecret) {
+    redactedConfig.channels.telegram.webhookSecret = "[REDACTED]";
   }
 
   await db
@@ -911,14 +922,20 @@ instanceRoutes.post("/instances/:id/telegram", auth, async (c) => {
     return c.json({ error: "Failed to validate bot token with Telegram" }, 502);
   }
 
-  // Clear any stale webhook so long polling works
+  // Clear stale webhook from any previous deployment (gateway calls setWebhook on startup)
   try {
     await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`);
   } catch {
     logger.warn(`Failed to delete webhook for instance ${id}, proceeding anyway`);
   }
 
+  if (!row.callbackToken) {
+    return c.json({ error: "Instance missing callback token" }, 500);
+  }
+
   const configPath = "/home/openclaw/.openclaw/openclaw.json";
+  const hostname = `${row.name}.${INSTANCE_BASE_DOMAIN}`;
+  const webhookSecret = deriveWebhookSecret(row.callbackToken);
 
   try {
     await withVM(row.ip, async (vm) => {
@@ -929,6 +946,8 @@ instanceRoutes.post("/instances/:id/telegram", auth, async (c) => {
         ...cfg.channels.telegram,
         enabled: true,
         botToken: token,
+        webhookUrl: `https://${hostname}/telegram-webhook`,
+        webhookSecret,
       };
       cfg.plugins ??= {};
       cfg.plugins.entries ??= {};
@@ -994,13 +1013,27 @@ instanceRoutes.get("/instances/:id/telegram/status", auth, async (c) => {
     return c.json({ status: "error", error: "Failed to reach Telegram API" });
   }
 
-  // Probe getUpdates with timeout=0 for instant response.
-  // 409 = gateway is actively polling (bot is live).
-  // 200 = nobody is polling yet (bot still starting).
+  // Check webhook status (webhook mode - gateway calls setWebhook on startup)
   try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/getUpdates?limit=0&timeout=0`);
-    if (res.status === 409) {
-      return c.json({ status: "live", botUsername });
+    const res = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
+    const data = (await res.json()) as {
+      ok: boolean;
+      result?: {
+        url: string;
+        pending_update_count: number;
+        last_error_date?: number;
+        last_error_message?: string;
+      };
+    };
+    if (data.ok && data.result?.url) {
+      const hasRecentError =
+        data.result.last_error_date && Date.now() / 1000 - data.result.last_error_date < 300;
+      return c.json({
+        status: hasRecentError ? "degraded" : "live",
+        botUsername,
+        pendingUpdates: data.result.pending_update_count,
+        lastError: hasRecentError ? data.result.last_error_message : undefined,
+      });
     }
     return c.json({ status: "starting", botUsername });
   } catch {

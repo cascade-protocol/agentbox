@@ -1,5 +1,5 @@
 /** Hetzner snapshot ID for VM provisioning. Update after `just build-image`. */
-export const HETZNER_SNAPSHOT_ID = "364141967";
+export const HETZNER_SNAPSHOT_ID = "364142079";
 
 export const CF_ZONE_ID = "fda671fa572b4c2d26de8aedcbf94f6e";
 export const FACILITATOR_URL = "https://facilitator.cascade.fyi";
@@ -191,6 +191,12 @@ export const OPENCLAW_BASE_CONFIG = {
     auth: { mode: "token" },
     controlUi: { dangerouslyDisableDeviceAuth: true },
     http: { endpoints: { chatCompletions: { enabled: true } } },
+    // Workaround for OpenClaw 2026.3.2 health-monitor false positives that restart
+    // Telegram every ~30min. `evaluateChannelHealth()` treats null `lastEventAt` as
+    // epoch 0, so `eventAge` always exceeds the stale threshold.
+    // https://github.com/openclaw-chat/openclaw/issues/34052
+    // Remove after PR #34103 ships in a release.
+    channelHealthCheckMinutes: 0,
   },
   update: { auto: { enabled: false }, checkOnStart: false },
   logging: { maxFileBytes: 104857600 },

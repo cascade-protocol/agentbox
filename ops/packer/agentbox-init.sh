@@ -98,7 +98,6 @@ fi
 # Extract per-instance values from backend response
 INSTANCE_HOSTNAME=$(echo "$CONFIG_JSON" | jq -r '.hostname')
 GATEWAY_TOKEN=$(echo "$CONFIG_JSON" | jq -r '.gatewayToken')
-TELEGRAM_BOT_TOKEN=$(echo "$CONFIG_JSON" | jq -r '.telegramBotToken // empty')
 echo "Hostname: $INSTANCE_HOSTNAME"
 
 # --- Start Caddy early (ACME cert provisioning runs in parallel with gateway cold start) ---
@@ -123,6 +122,9 @@ ${INSTANCE_HOSTNAME} {
         reverse_proxy localhost:7681
     }
     redir /terminal/${TERMINAL_TOKEN} /terminal/${TERMINAL_TOKEN}/
+    handle /telegram-webhook {
+        reverse_proxy localhost:8787
+    }
     handle {
         reverse_proxy localhost:18789
     }
@@ -188,13 +190,11 @@ EOF
 chown openclaw:openclaw "$GATEWAY_DROPIN_DIR/token.conf"
 echo "Gateway token written"
 
-# Clear any stale Telegram webhook right before gateway starts polling.
-# The backend also calls deleteWebhook at provision time, but minutes pass
-# between that and the gateway actually starting getUpdates long-polling.
-if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
-  curl -sf "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/deleteWebhook" >/dev/null || true
-  echo "Cleared any stale Telegram webhook"
-fi
+# Telegram webhook lifecycle is managed by the OpenClaw gateway itself:
+# - On startup: calls setWebhook() with the configured webhookUrl
+# - On shutdown: calls deleteWebhook(drop_pending_updates: false)
+# The backend still calls deleteWebhook at provision time (POST /instances)
+# to clear any stale webhook the bot token might have from a previous deployment.
 
 oc_systemctl daemon-reload
 oc_systemctl enable openclaw-gateway
