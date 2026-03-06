@@ -423,7 +423,7 @@ function CreateInstanceDialog({
                 </div>
               )}
             </div>
-            <label className="flex items-start gap-3 cursor-pointer">
+            {/* <label className="flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={arenaEnabled}
@@ -438,7 +438,7 @@ function CreateInstanceDialog({
                   extra tokens.
                 </p>
               </div>
-            </label>
+            </label> */}
             <DialogFooter>
               <DialogClose asChild>
                 <Button type="button" variant="outline" disabled={creating}>
