@@ -361,13 +361,6 @@ instanceRoutes.post("/instances", auth, async (c) => {
     return c.json({ error: "Failed to provision server" }, 502);
   }
 
-  // Preserve primary IP across rebuilds
-  try {
-    await hetzner.setPrimaryIpAutoDelete(result.server.public_net.ipv4.id, false);
-  } catch (err) {
-    logger.warn(`Failed to set primary IP auto_delete=false: ${String(err)}`);
-  }
-
   if (env.CF_API_TOKEN) {
     try {
       await cloudflare.createDnsRecord(hostname, result.server.public_net.ipv4.ip);
@@ -872,8 +865,8 @@ instanceRoutes.post("/instances/:name/rebuild", auth, async (c) => {
   if (!row.encryptedMnemonic) {
     return c.json({ error: "Instance has no stored wallet (legacy instance)" }, 400);
   }
-  if (!row.primaryIpId || !row.location) {
-    return c.json({ error: "Instance missing primary IP or location data" }, 400);
+  if (!row.serverId) {
+    return c.json({ error: "No server associated" }, 400);
   }
 
   // Atomic status transition to prevent concurrent rebuilds
@@ -896,39 +889,18 @@ instanceRoutes.post("/instances/:name/rebuild", auth, async (c) => {
     terminalToken,
   });
 
-  // Delete old server - IP survives (auto_delete=false)
-  if (row.serverId) {
-    try {
-      await hetzner.deleteServer(row.serverId);
-    } catch (err) {
-      logger.error(`Failed to delete old server ${row.serverId} during rebuild: ${String(err)}`);
-      // Set error state but preserve IP for retry
-      await db
-        .update(instances)
-        .set({ status: "error", serverId: null })
-        .where(eq(instances.id, row.id));
-      return c.json({ error: "Failed to delete old server" }, 502);
-    }
-  }
-
-  // Create new server with preserved IP
-  let result: Awaited<ReturnType<typeof hetzner.createServerWithIp>>;
+  // Rebuild in-place: same server ID, same IP, reimaged disk
   try {
-    result = await hetzner.createServerWithIp(name, userData, row.location, row.primaryIpId);
+    await hetzner.rebuildServer(row.serverId, userData);
   } catch (err) {
-    logger.error(`Failed to create new server during rebuild: ${String(err)}`);
-    await db
-      .update(instances)
-      .set({ status: "error", serverId: null })
-      .where(eq(instances.id, row.id));
-    return c.json({ error: "Failed to create new server" }, 502);
+    logger.error(`Failed to rebuild server ${row.serverId}: ${String(err)}`);
+    await db.update(instances).set({ status: "running" }).where(eq(instances.id, row.id));
+    return c.json({ error: "Failed to rebuild server" }, 502);
   }
 
-  // Update row - same UUID, name, wallet, mnemonic, IP, location, nftMint, expiry, telegram
   const [updated] = await db
     .update(instances)
     .set({
-      serverId: result.server.id,
       status: "provisioning",
       gatewayToken: encrypt(gatewayToken),
       callbackToken,

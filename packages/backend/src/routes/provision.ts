@@ -147,13 +147,6 @@ provisionRoutes.post("/provision", async (c) => {
     return c.json({ error: "Failed to provision server" }, 502);
   }
 
-  // Preserve primary IP across rebuilds
-  try {
-    await hetzner.setPrimaryIpAutoDelete(result.server.public_net.ipv4.id, false);
-  } catch (err) {
-    logger.warn(`Failed to set primary IP auto_delete=false: ${String(err)}`);
-  }
-
   if (env.CF_API_TOKEN) {
     try {
       await cloudflare.createDnsRecord(hostname, result.server.public_net.ipv4.ip);
