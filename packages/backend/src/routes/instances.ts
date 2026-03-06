@@ -164,6 +164,16 @@ export async function mintAndFinalize(row: typeof instances.$inferSelect): Promi
     return;
   }
 
+  // Skip funding + minting on rebuild (wallet already funded, NFT already minted)
+  if (row.nftMint) {
+    logger.info(
+      `Instance ${row.id} already has NFT ${row.nftMint}, skipping funding/minting (rebuild)`,
+    );
+    await db.update(instances).set({ status: "running" }).where(eq(instances.id, row.id));
+    recordEvent("instance.running", system, entity, {}, row.id);
+    return;
+  }
+
   const hostname = `${row.name}.${INSTANCE_BASE_DOMAIN}`;
 
   // Fund VM wallet (SOL + USDC) in parallel - await both so the agent
