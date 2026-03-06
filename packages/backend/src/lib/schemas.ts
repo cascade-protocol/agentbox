@@ -103,6 +103,7 @@ export const instanceAccessSchema = instanceSchema.extend({
 
 export const provisionInputSchema = z.object({
   name: instanceNameSchema.optional(),
+  telegramBotToken: telegramTokenSchema.optional(),
 });
 
 export const provisionListQuerySchema = z.object({

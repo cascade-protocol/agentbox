@@ -13,6 +13,7 @@ if (!WALLET_PATH) {
   console.error("Missing WALLET_PATH. Set it in tests/smoke/.env");
 }
 const API = process.env.SMOKE_API_URL || "https://dev-api.agentbox.fyi";
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const POLL_INTERVAL = 15_000;
 const POLL_TIMEOUT_S = 600;
 
@@ -47,7 +48,7 @@ describe.skipIf(!WALLET_PATH)("provision e2e", () => {
     const res = await x402Fetch(`${API}/provision`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify(TELEGRAM_BOT_TOKEN ? { telegramBotToken: TELEGRAM_BOT_TOKEN } : {}),
     });
 
     expect(res.status).toBe(201);
@@ -95,5 +96,25 @@ describe.skipIf(!WALLET_PATH)("provision e2e", () => {
     };
     expect(chatData.choices?.[0]?.message?.content).toBeTruthy();
     console.log(`Agent says: ${chatData.choices?.[0]?.message?.content}`);
+
+    // 4. Telegram webhook verification (when bot token provided)
+    if (TELEGRAM_BOT_TOKEN) {
+      const whRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo`);
+      const whData = (await whRes.json()) as {
+        ok: boolean;
+        result?: {
+          url: string;
+          pending_update_count: number;
+          last_error_date?: number;
+          last_error_message?: string;
+        };
+      };
+      console.log(`Webhook URL: ${whData.result?.url || "NOT SET"}`);
+      console.log(`Webhook error: ${whData.result?.last_error_message || "none"}`);
+
+      expect(whData.ok).toBe(true);
+      expect(whData.result?.url).toContain(name);
+      expect(whData.result?.url).toContain("/telegram-webhook");
+    }
   });
 });

@@ -66,6 +66,30 @@ provisionRoutes.post("/provision", async (c) => {
     return c.json({ error: "Invalid input", details: input.error.issues }, 400);
   }
 
+  // Validate Telegram bot token early if provided
+  let telegramBotToken: string | undefined;
+  let telegramBotUsername: string | undefined;
+  if (input.data.telegramBotToken) {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${input.data.telegramBotToken}/getMe`);
+      const data = (await res.json()) as { ok: boolean; result?: { username?: string } };
+      if (!data.ok) {
+        return c.json({ error: "Invalid Telegram bot token" }, 400);
+      }
+      telegramBotToken = input.data.telegramBotToken;
+      telegramBotUsername = data.result?.username;
+    } catch {
+      return c.json({ error: "Failed to validate bot token with Telegram" }, 502);
+    }
+
+    // Clear stale webhook from any previous deployment (gateway calls setWebhook on startup)
+    try {
+      await fetch(`https://api.telegram.org/bot${telegramBotToken}/deleteWebhook`);
+    } catch {
+      // Non-critical
+    }
+  }
+
   let name = "";
   if (input.data.name) {
     const [existing] = await db
@@ -140,6 +164,8 @@ provisionRoutes.post("/provision", async (c) => {
       gatewayToken: encrypt(gatewayToken),
       callbackToken,
       terminalToken,
+      telegramBotToken: telegramBotToken ? encrypt(telegramBotToken) : null,
+      telegramBotUsername: telegramBotUsername ?? null,
       snapshotId: HETZNER_SNAPSHOT_ID,
       nftMint: null,
       vmWallet: null,
