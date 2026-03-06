@@ -165,7 +165,7 @@ function RootLayout() {
                 <span className="sr-only">GitHub</span>
               </a>
               <a
-                href="https://x.com/agentbox_fyi"
+                href="https://x.com/agentboxfyi"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted-foreground transition-colors hover:text-foreground"
@@ -328,7 +328,7 @@ function RootLayout() {
               <span className="sr-only">GitHub</span>
             </a>
             <a
-              href="https://x.com/agentbox_fyi"
+              href="https://x.com/agentboxfyi"
               target="_blank"
               rel="noopener noreferrer"
               className="text-muted-foreground transition-colors hover:text-foreground"
