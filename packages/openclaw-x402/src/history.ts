@@ -131,7 +131,8 @@ export function explorerUrl(net: string, tx: string): string {
  *  e.g. "minimax/minimax-m2.5-20260211" -> "minimax-m2.5"
  *       "moonshotai/kimi-k2.5-0127" -> "kimi-k2.5" */
 function shortModel(model: string): string {
-  const name = model.includes("/") ? model.split("/").pop()! : model;
+  const parts = model.split("/");
+  const name = parts[parts.length - 1];
   return name.replace(/-\d{6,8}$/, "").replace(/-\d{4}$/, "");
 }
 
