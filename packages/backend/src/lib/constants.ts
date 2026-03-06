@@ -225,11 +225,14 @@ export const OPENCLAW_BASE_CONFIG = {
   channels: {
     telegram: {
       linkPreview: false,
+      streaming: "off",
       dmPolicy: "pairing",
       groupPolicy: "allowlist",
       historyLimit: 50,
-      groups: { "-1003579023474": { requireMention: true, groupPolicy: "open" } },
-      ackReaction: "\uD83D\uDC4B",
+      groups: {
+        "-1003579023474": { requireMention: true, groupPolicy: "open", allowFrom: ["*"] },
+      },
+      ackReaction: "\uD83D\uDC40",
     },
   },
   plugins: {
@@ -246,6 +249,10 @@ export const OPENCLAW_BASE_CONFIG = {
       },
       telegram: { enabled: true },
     },
+  },
+  messages: {
+    ackReactionScope: "all",
+    removeAckAfterReply: true,
   },
   agents: {
     defaults: {
