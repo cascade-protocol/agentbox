@@ -67,13 +67,6 @@ build {
     destination = "/tmp/agentbox-init.sh"
   }
 
-  # Upload workspace seed file (AGENTS.md) for the OpenClaw workspace.
-  # Skills are installed via `npx skills add -g` at build time into ~/.openclaw/skills/.
-  provisioner "file" {
-    source      = "workspace/AGENTS.md"
-    destination = "/tmp/agentbox-AGENTS.md"
-  }
-
   # Build-time setup: installs Node.js, preloads/builds OpenClaw source,
   # prepares wallet helper deps, and configures base services/firewall.
   # Packer uploads, executes, and cleans up this script automatically.

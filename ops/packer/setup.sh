@@ -160,19 +160,6 @@ echo "==> Installing AgentBox skills"
 su - openclaw -c "INSTALL_INTERNAL_SKILLS=1 npx -y skills add -g --yes cascade-protocol/agentbox"
 echo "    AgentBox skills installed to ~/.openclaw/skills/"
 
-# --- Seed workspace ---
-#
-# AGENTS.md is uploaded by Packer file provisioner to /tmp/agentbox-AGENTS.md.
-# It tells the agent to invoke /agentbox at session start for full instructions.
-
-echo ""
-echo "==> Seeding workspace"
-WORKSPACE=/home/openclaw/.openclaw/workspace
-su - openclaw -c "mkdir -p $WORKSPACE"
-cp /tmp/agentbox-AGENTS.md $WORKSPACE/AGENTS.md
-chown openclaw:openclaw $WORKSPACE/AGENTS.md
-echo "    Workspace seeded"
-
 # --- Solana CLI + SATI identity CLI ---
 #
 # Solana CLI: used by agentbox-init.sh to create a per-instance keypair on boot.

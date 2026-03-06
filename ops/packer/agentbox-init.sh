@@ -144,7 +144,7 @@ echo "OpenClaw config written from backend"
 
 # --- Write any workspace files provided by the backend ---
 
-WORKSPACE_DIR="/home/openclaw/.openclaw/agentbox"
+WORKSPACE_DIR="/home/openclaw/.openclaw/workspace"
 mkdir -p "$WORKSPACE_DIR"
 echo "$CONFIG_JSON" | jq -r '.workspaceFiles // {} | to_entries[] | @base64' | while read entry; do
   FILENAME=$(echo "$entry" | base64 -d | jq -r '.key')
