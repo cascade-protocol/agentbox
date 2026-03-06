@@ -127,6 +127,14 @@ export function explorerUrl(net: string, tx: string): string {
   return `https://solscan.io/tx/${tx}`;
 }
 
+/** Strip provider prefix and OpenRouter date suffixes from model IDs.
+ *  e.g. "minimax/minimax-m2.5-20260211" -> "minimax-m2.5"
+ *       "moonshotai/kimi-k2.5-0127" -> "kimi-k2.5" */
+function shortModel(model: string): string {
+  const name = model.includes("/") ? model.split("/").pop()! : model;
+  return name.replace(/-\d{6,8}$/, "").replace(/-\d{4}$/, "");
+}
+
 export function formatTxLine(r: TxRecord): string {
   const time = new Date(r.t).toLocaleTimeString("en-US", {
     hour: "2-digit",
@@ -135,7 +143,8 @@ export function formatTxLine(r: TxRecord): string {
     timeZone: "UTC",
   });
   const timeStr = r.tx ? `[${time}](${explorerUrl(r.net, r.tx)})` : time;
-  const action = r.kind === "x402_inference" && r.model ? r.model : (KIND_LABELS[r.kind] ?? r.kind);
+  const action =
+    r.kind === "x402_inference" && r.model ? shortModel(r.model) : (KIND_LABELS[r.kind] ?? r.kind);
   const parts = [action];
   if (r.label) parts.push(r.label);
   if (r.ok && r.amount != null && r.token) {

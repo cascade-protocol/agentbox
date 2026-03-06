@@ -2,12 +2,13 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
-## [0.11.1] - 2026-03-06
+## [0.11.2] - 2026-03-06
 
 ### Fixed
 
 - `/x_wallet` in status footer is now plain text (tappable in Telegram), not a codeblock
 - Today's spend in `/x_status` shows 3 decimal places for small amounts
+- Transaction history shows clean model names (strip OpenRouter date suffixes and provider prefix)
 
 ## [0.11.0] - 2026-03-06
 
