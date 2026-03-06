@@ -259,14 +259,6 @@ export async function refreshChainGauges(): Promise<void> {
           logger.warn(`Chain gauge facilitator SOL: ${String(err)}`);
         }),
     );
-    fetches.push(
-      getUsdcBalance(rpc, facilitatorAddress, USDC_MINT)
-        .then((micro) => walletUsdcMicro.set({ wallet: "facilitator" }, micro))
-        .catch((err: unknown) => {
-          logger.warn(`Chain gauge facilitator USDC: ${String(err)}`);
-        }),
-    );
-
     // Hot wallet (only if configured)
     try {
       const hotWallet = await getHotWallet();

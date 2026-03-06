@@ -354,32 +354,6 @@
     },
     {
       "type": "stat",
-      "title": "Facilitator USDC",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [
-        {
-          "expr": "agentbox_wallet_usdc_micro{wallet=\"facilitator\"} / 1e6",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "decimals": 2,
-          "thresholds": {
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 10 },
-              { "color": "green", "value": 50 }
-            ]
-          }
-        }
-      },
-      "options": { "postfix": " USDC" },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 41 }
-    },
-    {
-      "type": "stat",
       "title": "Hot Wallet SOL",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
@@ -402,7 +376,7 @@
         }
       },
       "options": { "postfix": " SOL" },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 41 }
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 41 }
     },
     {
       "type": "stat",
@@ -428,7 +402,7 @@
         }
       },
       "options": { "postfix": " USDC" },
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 41 }
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 41 }
     },
     {
       "type": "stat",
@@ -454,7 +428,7 @@
         }
       },
       "options": { "postfix": " SOL" },
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 41 }
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 41 }
     },
     {
       "type": "stat",
@@ -480,7 +454,7 @@
         }
       },
       "options": { "postfix": " USDC" },
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 41 }
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 41 }
     },
     {
       "type": "stat",
