@@ -123,7 +123,6 @@ export const OPENCLAW_BASE_CONFIG = {
   agents: {
     defaults: {
       model: { primary: "agentbox/moonshotai/kimi-k2.5" },
-      thinkingLevel: "off",
       skipBootstrap: true,
       verboseDefault: "on",
       timeoutSeconds: 120,
