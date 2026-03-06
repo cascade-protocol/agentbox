@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { generateMnemonic } from "@scure/bip39";
@@ -44,6 +44,7 @@ const PLUGIN_VERSION = JSON.parse(
   readFileSync(join(dirname(new URL(import.meta.url).pathname), "../package.json"), "utf-8"),
 ).version as string;
 const SOL_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+const UPDATE_MARKER = join(homedir(), ".openclaw/.x402-updated");
 
 // --- Types ---
 
@@ -273,7 +274,20 @@ export function register(api: OpenClawPluginApi): void {
           ? `update available: v${latestVersion}`
           : "up to date";
 
-      const lines: string[] = [`x402 v${PLUGIN_VERSION} · ${updateStatus}`];
+      const lines: string[] = [];
+
+      // Check if we just restarted after an update
+      if (existsSync(UPDATE_MARKER)) {
+        try {
+          const prev = readFileSync(UPDATE_MARKER, "utf-8").trim();
+          lines.push(`Updated ${prev} -> v${PLUGIN_VERSION}`);
+          unlinkSync(UPDATE_MARKER);
+        } catch {
+          unlinkSync(UPDATE_MARKER);
+        }
+      }
+
+      lines.push(`x402 v${PLUGIN_VERSION} · ${updateStatus}`);
 
       // Skills update check
       try {
@@ -396,8 +410,12 @@ export function register(api: OpenClawPluginApi): void {
       if (needsRestart) {
         lines.push(
           "",
-          "Restarting gateway - cold start takes ~60-90s. You'll see a confirmation when I'm back.",
+          "Restarting gateway - cold start takes ~60-90s. Run `/x_status` after to confirm.",
         );
+        // Write marker so /x_status can confirm the update after restart
+        try {
+          writeFileSync(UPDATE_MARKER, `v${PLUGIN_VERSION}`);
+        } catch {}
         // Exit after response is sent - systemd Restart=always handles the restart
         setTimeout(() => process.exit(0), 2000);
       }

@@ -2,7 +2,11 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
-## [0.10.4] - 2026-03-06
+## [0.10.5] - 2026-03-06
+
+### Added
+
+- `/x_status` shows "Updated vX -> vY" confirmation after a plugin update and gateway restart
 
 ### Fixed
 
