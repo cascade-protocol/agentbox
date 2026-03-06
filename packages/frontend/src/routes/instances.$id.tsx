@@ -896,6 +896,12 @@ function InstanceDetail() {
       } else if (confirmAction === "rebuild") {
         await api.instances.rebuild(name);
         toast.success("Rebuilding agent with fresh VM");
+        if (instance?.telegramBotUsername) {
+          toast.info(
+            `After rebuild, send /start to @${instance.telegramBotUsername} to reconnect`,
+            { duration: 10000 },
+          );
+        }
         await fetchDetail({ showErrorToast: true });
       } else {
         await api.instances.delete(name);
@@ -1351,7 +1357,7 @@ function InstanceDetail() {
               {confirmAction === "restart"
                 ? "This will reboot the VM. Active sessions will disconnect."
                 : confirmAction === "rebuild"
-                  ? "This will create a fresh VM with the latest configuration. Chat history, agent memory, workspace files, and trading history will NOT be preserved. Only your wallet, funds, and identity carry over. The agent will be temporarily unavailable during provisioning (~2-4 min)."
+                  ? `This will create a fresh VM with the latest configuration. Chat history, agent memory, workspace files, and trading history will NOT be preserved. Only your wallet, funds, and identity carry over. The agent will be temporarily unavailable during provisioning (~2-4 min).${instance.telegramBotUsername ? `\n\nAfter rebuild, send /start to @${instance.telegramBotUsername} to reconnect.` : ""}`
                   : "This will permanently destroy the instance. This action cannot be undone."}
             </DialogDescription>
           </DialogHeader>
