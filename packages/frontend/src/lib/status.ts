@@ -4,6 +4,7 @@ export const statusVariant: Record<string, BadgeVariant> = {
   provisioning: "info",
   minting: "info",
   running: "success",
+  rebuilding: "info",
   stopped: "secondary",
   error: "destructive",
   deleting: "warning",
@@ -15,6 +16,7 @@ export const provisioningStepOrder = [
   "vm_created",
   "configuring",
   "wallet_created",
+  "dns_propagation",
   "openclaw_ready",
   "services_starting",
 ] as const;
@@ -23,6 +25,7 @@ const provisioningStepLabels: Record<(typeof provisioningStepOrder)[number], str
   vm_created: "Starting VM",
   configuring: "Configuring",
   wallet_created: "Creating wallet",
+  dns_propagation: "Waiting for DNS",
   openclaw_ready: "Starting agent",
   services_starting: "Finishing up",
 };

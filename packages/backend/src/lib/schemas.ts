@@ -4,6 +4,7 @@ export const instanceStatusSchema = z.enum([
   "provisioning",
   "minting",
   "running",
+  "rebuilding",
   "stopped",
   "error",
   "deleting",
@@ -13,11 +14,12 @@ export const instanceStatusSchema = z.enum([
 export const provisioningStepSchema = z.string().min(1).max(64);
 
 export const instanceSchema = z.object({
-  id: z.number(),
+  id: z.string().uuid(),
+  serverId: z.number().nullable().optional(),
   name: z.string(),
   ownerWallet: z.string(),
   status: instanceStatusSchema,
-  ip: z.string(),
+  ip: z.string().nullable(),
   nftMint: z.string().nullable().optional(),
   vmWallet: z.string().nullable().optional(),
   gatewayToken: z.string(),
@@ -54,9 +56,9 @@ export const authInputSchema = z.object({
 
 export const callbackInputSchema = z.object({
   serverId: z.number(),
-  solanaWalletAddress: z.string().min(32).max(44),
-  gatewayToken: z.string().min(1).max(256).optional(),
   secret: z.string().min(1).max(256),
+  /** @deprecated Backend generates wallets at provision time. Kept for backward compat with old VM images. */
+  solanaWalletAddress: z.string().min(32).max(44).optional(),
 });
 
 export const provisioningUpdateInputSchema = z.object({

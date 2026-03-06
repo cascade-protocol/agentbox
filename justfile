@@ -18,7 +18,7 @@ start-monitoring:
   ssh agentbox 'cd /opt/agentbox/ops/lgtm && docker compose --env-file ../../.env up -d --remove-orphans'
 
 deploy:
-  ssh agentbox 'cd /opt/agentbox && git pull && pnpm install --frozen-lockfile && just start-server'
+  ssh agentbox 'cd /opt/agentbox && git pull && pnpm install --frozen-lockfile && just start-server && docker compose exec backend pnpm db:migrate'
 
 # Build a new Packer golden image (timestamp-named, no version to bump)
 build-image:

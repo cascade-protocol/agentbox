@@ -238,13 +238,23 @@ const cleanupInterval = setInterval(
         const entity = { type: "instance", id: String(row.id) };
         const cron = { type: "cron", id: "expiry_cleanup" };
         logger.info(`Cleaning up expired instance ${row.id} (${row.name})`);
-        recordEvent("instance.expired", cron, entity, {});
+        recordEvent("instance.expired", cron, entity, {}, row.id);
         await db.update(instances).set({ status: "deleting" }).where(eq(instances.id, row.id));
 
-        try {
-          await hetzner.deleteServer(row.id);
-        } catch (err) {
-          logger.error(`Failed to delete Hetzner server ${row.id}: ${String(err)}`);
+        if (row.serverId) {
+          try {
+            await hetzner.deleteServer(row.serverId);
+          } catch (err) {
+            logger.error(`Failed to delete Hetzner server ${row.serverId}: ${String(err)}`);
+          }
+        }
+
+        if (row.primaryIpId) {
+          try {
+            await hetzner.deletePrimaryIp(row.primaryIpId);
+          } catch (err) {
+            logger.error(`Failed to delete primary IP ${row.primaryIpId}: ${String(err)}`);
+          }
         }
 
         if (env.CF_API_TOKEN) {
@@ -259,7 +269,7 @@ const cleanupInterval = setInterval(
           .update(instances)
           .set({ status: "deleted", deletedAt: new Date() })
           .where(eq(instances.id, row.id));
-        recordEvent("instance.deleted", cron, entity, {});
+        recordEvent("instance.deleted", cron, entity, {}, row.id);
       }
 
       if (expired.length > 0) {

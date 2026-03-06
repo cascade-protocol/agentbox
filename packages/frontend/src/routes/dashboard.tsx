@@ -282,7 +282,7 @@ function CreateInstanceDialog({
               </a>
             </div>
             <DialogFooter>
-              <Link to="/instances/$id" params={{ id: String(createdInstance.id) }}>
+              <Link to="/instances/$id" params={{ id: createdInstance.name }}>
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -712,14 +712,14 @@ function Home() {
                             onClick={() =>
                               navigate({
                                 to: "/instances/$id",
-                                params: { id: String(instance.id) },
+                                params: { id: instance.name },
                               })
                             }
                           >
                             <TableCell className="max-w-[240px] pl-3">
                               <Link
                                 to="/instances/$id"
-                                params={{ id: String(instance.id) }}
+                                params={{ id: instance.name }}
                                 className="truncate text-sm font-medium transition-colors group-hover/row:text-primary"
                                 onClick={(e) => e.stopPropagation()}
                               >
@@ -871,7 +871,7 @@ function Home() {
                         onClick={() =>
                           navigate({
                             to: "/instances/$id",
-                            params: { id: String(instance.id) },
+                            params: { id: instance.name },
                           })
                         }
                       >
@@ -880,7 +880,7 @@ function Home() {
                             <div className="flex min-w-0 items-center gap-1">
                               <Link
                                 to="/instances/$id"
-                                params={{ id: String(instance.id) }}
+                                params={{ id: instance.name }}
                                 className="truncate text-sm font-semibold"
                                 onClick={(e) => e.stopPropagation()}
                               >

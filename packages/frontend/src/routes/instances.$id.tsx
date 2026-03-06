@@ -30,6 +30,7 @@ import {
   Loader2,
   MessageSquare,
   Pencil,
+  RefreshCw,
   RotateCw,
   Send,
   TerminalSquare,
@@ -99,7 +100,7 @@ function WithdrawDialog({
   token: "SOL" | "USDC";
   balance: number;
   usdcBalance: number;
-  instanceId: number;
+  instanceId: string;
   ownerWallet: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -222,7 +223,7 @@ function WalletBalanceCard({
   vmWallet,
   ownerWallet,
 }: {
-  instanceId: number;
+  instanceId: string;
   vmWallet: string;
   ownerWallet: string;
 }) {
@@ -408,7 +409,7 @@ function GettingStartedCard({ telegramBotUsername }: { telegramBotUsername?: str
   );
 }
 
-function PairingCard({ instanceId }: { instanceId: number }) {
+function PairingCard({ instanceId }: { instanceId: string }) {
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [approved, setApproved] = useState(false);
@@ -769,9 +770,8 @@ function DetailSkeleton() {
 }
 
 function InstanceDetail() {
-  const { id } = Route.useParams();
+  const { id: name } = Route.useParams();
   const navigate = useNavigate();
-  const numId = Number(id);
   const session = useWalletSession();
   const signer: TransactionSigner | null = useMemo(
     () => (session ? createWalletTransactionSigner(session).signer : null),
@@ -787,7 +787,7 @@ function InstanceDetail() {
   const [nameValue, setNameValue] = useState("");
   const [nameSaving, setNameSaving] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
-  const [confirmAction, setConfirmAction] = useState<"restart" | "delete" | null>(null);
+  const [confirmAction, setConfirmAction] = useState<"restart" | "rebuild" | "delete" | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
   const [telegramSetupOpen, setTelegramSetupOpen] = useState(false);
   const [agentName, setAgentName] = useState("");
@@ -805,8 +805,8 @@ function InstanceDetail() {
     } = {}) => {
       try {
         const [access, healthData] = await Promise.all([
-          api.instances.access(numId),
-          api.instances.health(numId).catch(() => null),
+          api.instances.access(name),
+          api.instances.health(name).catch(() => null),
         ]);
         setInstance(access);
         setHealth(healthData);
@@ -821,7 +821,7 @@ function InstanceDetail() {
         }
       }
     },
-    [numId],
+    [name],
   );
 
   useEffect(() => {
@@ -838,7 +838,11 @@ function InstanceDetail() {
   }, [editingName]);
 
   const pollIntervalMs =
-    instance?.status === "provisioning" || instance?.status === "minting" ? 10_000 : 30_000;
+    instance?.status === "provisioning" ||
+    instance?.status === "minting" ||
+    instance?.status === "rebuilding"
+      ? 10_000
+      : 30_000;
 
   useEffect(() => {
     if (!instance) {
@@ -867,7 +871,7 @@ function InstanceDetail() {
 
     setNameSaving(true);
     try {
-      const updated = await api.instances.update(numId, { name: trimmed });
+      const updated = await api.instances.update(name, { name: trimmed });
       setInstance((prev) => (prev ? { ...prev, name: updated.name } : prev));
       toast.success("Agent renamed");
       setEditingName(false);
@@ -886,11 +890,15 @@ function InstanceDetail() {
     setActionLoading(confirmAction);
     try {
       if (confirmAction === "restart") {
-        await api.instances.restart(numId);
+        await api.instances.restart(name);
         toast.success("Agent restarting");
         await fetchDetail({ showErrorToast: true });
+      } else if (confirmAction === "rebuild") {
+        await api.instances.rebuild(name);
+        toast.success("Rebuilding agent with fresh VM");
+        await fetchDetail({ showErrorToast: true });
       } else {
-        await api.instances.delete(numId);
+        await api.instances.delete(name);
         toast.success("Agent deleted");
         navigate({ to: "/dashboard" });
         return;
@@ -906,7 +914,7 @@ function InstanceDetail() {
   async function handleMint() {
     setActionLoading("mint");
     try {
-      await api.instances.mint(numId);
+      await api.instances.mint(name);
       toast.success("Minting started");
       await fetchDetail({ showErrorToast: true });
     } catch (err) {
@@ -920,7 +928,7 @@ function InstanceDetail() {
     if (!signer) return;
     setActionLoading("extend");
     try {
-      const updated = await api.instances.extend(numId, signer);
+      const updated = await api.instances.extend(name, signer);
       setInstance((prev) => (prev ? { ...prev, ...updated } : prev));
       toast.success("Extended by 7 days");
     } catch (err) {
@@ -931,13 +939,13 @@ function InstanceDetail() {
   }
 
   async function handleAgentMetadataSave() {
-    const name = agentName.trim() || undefined;
+    const newName = agentName.trim() || undefined;
     const description = agentDescription.trim() || undefined;
-    if (!name && !description) return;
+    if (!newName && !description) return;
 
     setAgentSaving(true);
     try {
-      await api.instances.updateAgent(numId, { name, description });
+      await api.instances.updateAgent(name, { name: newName, description });
       toast.success("Agent metadata updated");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Metadata update failed");
@@ -1157,12 +1165,12 @@ function InstanceDetail() {
         </Card>
 
         {instance.status === "running" && instance.telegramBotUsername && (
-          <PairingCard instanceId={instance.id} />
+          <PairingCard instanceId={instance.name} />
         )}
 
         {instance.status === "running" && instance.vmWallet && (
           <WalletBalanceCard
-            instanceId={instance.id}
+            instanceId={instance.name}
             vmWallet={instance.vmWallet}
             ownerWallet={instance.ownerWallet}
           />
@@ -1170,7 +1178,7 @@ function InstanceDetail() {
 
         {instance.status === "running" && (
           <TelegramSetupDialog
-            instanceId={instance.id}
+            instanceId={instance.name}
             instanceName={instance.name}
             open={telegramSetupOpen}
             onOpenChange={setTelegramSetupOpen}
@@ -1286,6 +1294,14 @@ function InstanceDetail() {
             </Button>
             <Button
               variant="outline"
+              onClick={() => setConfirmAction("rebuild")}
+              disabled={actionLoading !== null || instance.status !== "running"}
+            >
+              <RefreshCw className="size-4" />
+              Rebuild
+            </Button>
+            <Button
+              variant="outline"
               onClick={() => void handleExtend()}
               disabled={actionLoading !== null || !signer}
             >
@@ -1325,12 +1341,18 @@ function InstanceDetail() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {confirmAction === "restart" ? "Restart Agent" : "Delete Agent"}
+              {confirmAction === "restart"
+                ? "Restart Agent"
+                : confirmAction === "rebuild"
+                  ? "Rebuild Agent"
+                  : "Delete Agent"}
             </DialogTitle>
             <DialogDescription>
               {confirmAction === "restart"
                 ? "This will reboot the VM. Active sessions will disconnect."
-                : "This will permanently destroy the instance. This action cannot be undone."}
+                : confirmAction === "rebuild"
+                  ? "This will create a fresh VM with the latest configuration. Chat history, agent memory, workspace files, and trading history will NOT be preserved. Only your wallet, funds, and identity carry over. The agent will be temporarily unavailable during provisioning (~2-4 min)."
+                  : "This will permanently destroy the instance. This action cannot be undone."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1348,10 +1370,14 @@ function InstanceDetail() {
               {actionLoading
                 ? confirmAction === "restart"
                   ? "Restarting..."
-                  : "Deleting..."
+                  : confirmAction === "rebuild"
+                    ? "Rebuilding..."
+                    : "Deleting..."
                 : confirmAction === "restart"
                   ? "Restart"
-                  : "Delete"}
+                  : confirmAction === "rebuild"
+                    ? "Rebuild"
+                    : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1383,7 +1409,7 @@ function TelegramSetupDialog({
   onOpenChange,
   onConfigured,
 }: {
-  instanceId: number;
+  instanceId: string;
   instanceName: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;

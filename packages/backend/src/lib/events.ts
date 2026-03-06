@@ -16,9 +16,7 @@ const eventMetaSchemas = {
   }),
   "instance.create_failed": z.object({ error: z.string() }),
   "instance.step_reported": z.object({ step: z.string() }),
-  "instance.callback_received": z.object({
-    vmWallet: z.string(),
-  }),
+  "instance.callback_received": empty,
   "instance.funded": z.object({
     asset: z.enum(["SOL", "USDC"]),
     amount: z.string(),
@@ -53,6 +51,7 @@ const eventMetaSchemas = {
   "instance.extended": z.object({ newExpiresAt: z.string() }),
   "instance.expired": empty,
   "instance.claimed": z.object({ previousOwner: z.string() }),
+  "instance.rebuilt": empty,
   "instance.recovered": z.object({ mint: z.string() }),
   "auth.signed_in": empty,
   "sync.requested": z.object({ claimed: z.number(), recovered: z.number() }),
@@ -72,6 +71,7 @@ export function recordEvent<T extends EventType>(
   actor: { type: string; id: string },
   entity: { type: string; id: string } | null,
   metadata: EventMeta<T>,
+  instanceId?: string,
 ): void {
   db.insert(events)
     .values({
@@ -80,6 +80,7 @@ export function recordEvent<T extends EventType>(
       actorId: actor.id,
       entityType: entity?.type ?? null,
       entityId: entity?.id ?? null,
+      instanceId: instanceId ?? null,
       metadata: metadata as Record<string, unknown>,
     })
     .then(() => {})

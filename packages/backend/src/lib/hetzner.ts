@@ -24,8 +24,9 @@ type HetznerServer = {
   name: string;
   status: string;
   public_net: {
-    ipv4: { ip: string };
+    ipv4: { ip: string; id: number };
   };
+  datacenter: { name: string };
 };
 
 type CreateServerResponse = {
@@ -121,4 +122,64 @@ export async function restartServer(id: number): Promise<ActionResponse> {
   }
 
   return (await res.json()) as ActionResponse;
+}
+
+export async function setPrimaryIpAutoDelete(
+  primaryIpId: number,
+  autoDelete: boolean,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/primary_ips/${primaryIpId}`, {
+    method: "PUT",
+    headers: headers(),
+    body: JSON.stringify({ auto_delete: autoDelete }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    logger.error(`Hetzner set primary IP auto_delete failed (${res.status}): ${body}`);
+    throw new Error(`Hetzner set primary IP auto_delete failed (${res.status})`);
+  }
+}
+
+export async function deletePrimaryIp(primaryIpId: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/primary_ips/${primaryIpId}`, {
+    method: "DELETE",
+    headers: headers(),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    logger.error(`Hetzner delete primary IP failed (${res.status}): ${body}`);
+    throw new Error(`Hetzner delete primary IP failed (${res.status})`);
+  }
+}
+
+export async function createServerWithIp(
+  name: string,
+  userData: string,
+  location: string,
+  primaryIpId: number,
+): Promise<CreateServerResponse> {
+  const res = await fetch(`${API_BASE}/servers`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      name,
+      server_type: HETZNER_SERVER_TYPE,
+      image: Number(HETZNER_SNAPSHOT_ID),
+      location,
+      start_after_create: true,
+      user_data: userData,
+      ssh_keys: HETZNER_SSH_KEY_IDS,
+      public_net: { enable_ipv4: true, ipv4: primaryIpId },
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    logger.error(`Hetzner create server with IP failed (${res.status}): ${body}`);
+    throw new Error(`Hetzner create server with IP failed (${res.status})`);
+  }
+
+  return (await res.json()) as CreateServerResponse;
 }

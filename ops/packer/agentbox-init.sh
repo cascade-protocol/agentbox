@@ -164,12 +164,17 @@ if ! command -v openclaw >/dev/null 2>&1; then
 fi
 echo "Using preloaded OpenClaw $(openclaw --version)"
 
-# --- Create wallet keypairs (before gateway - x402 plugin reads them on start) ---
+# --- Write wallet files from backend config (generated at provision time) ---
 
-echo "Creating wallet keypairs..."
+echo "Writing wallet files from config..."
 WALLET_DIR=/home/openclaw/.openclaw/agentbox
-SOLANA_WALLET_ADDRESS=$(openclaw-x402 generate --output "$WALLET_DIR")
+mkdir -p "$WALLET_DIR"
+echo "$CONFIG_JSON" | jq -r '.wallet.solanaKeypairJson' > "$WALLET_DIR/wallet-sol.json"
+echo "$CONFIG_JSON" | jq -r '.wallet.evmPrivateKeyHex' > "$WALLET_DIR/wallet-evm.key"
+echo "$CONFIG_JSON" | jq -r '.wallet.mnemonic' > "$WALLET_DIR/mnemonic"
+chmod 600 "$WALLET_DIR/wallet-sol.json" "$WALLET_DIR/wallet-evm.key" "$WALLET_DIR/mnemonic"
 chown -R openclaw:openclaw "$WALLET_DIR"
+SOLANA_WALLET_ADDRESS=$(echo "$CONFIG_JSON" | jq -r '.wallet.solanaAddress')
 su - openclaw -c "solana config set --keypair $WALLET_DIR/wallet-sol.json" 2>&1
 report_step "wallet_created"
 
@@ -195,6 +200,31 @@ echo "Gateway token written"
 # - On shutdown: calls deleteWebhook(drop_pending_updates: false)
 # The backend still calls deleteWebhook at provision time (POST /instances)
 # to clear any stale webhook the bot token might have from a previous deployment.
+
+# --- Wait for DNS propagation before starting gateway ---
+#
+# The OpenClaw gateway calls Telegram's setWebhook() on startup, which requires
+# Telegram's servers to resolve our hostname. If DNS hasn't propagated yet,
+# Telegram caches the NXDOMAIN for up to 1800s (Cloudflare SOA minimum TTL),
+# causing all retry attempts to fail even after DNS is live.
+# Poll Google's public DNS-over-HTTPS (which Telegram's resolvers align with)
+# to ensure DNS is globally resolvable before the gateway starts.
+
+report_step "dns_propagation"
+echo "Waiting for DNS propagation of ${INSTANCE_HOSTNAME}..."
+DNS_RESOLVED=false
+for i in $(seq 1 60); do
+  RESOLVED_IP=$(curl -sf "https://dns.google/resolve?name=${INSTANCE_HOSTNAME}&type=A" | jq -r '.Answer[0].data // empty' 2>/dev/null) || true
+  if [[ -n "$RESOLVED_IP" ]]; then
+    echo "DNS resolved to ${RESOLVED_IP} after $((i * 5))s"
+    DNS_RESOLVED=true
+    break
+  fi
+  sleep 5
+done
+if [[ "$DNS_RESOLVED" != "true" ]]; then
+  echo "WARNING: DNS propagation timed out after 300s, proceeding anyway"
+fi
 
 oc_systemctl daemon-reload
 oc_systemctl enable openclaw-gateway
@@ -232,9 +262,8 @@ done
 echo "Calling back to API..."
 PAYLOAD=$(jq -n \
   --argjson serverId "$SERVER_ID" \
-  --arg solanaWalletAddress "$SOLANA_WALLET_ADDRESS" \
   --arg secret "$CALLBACK_SECRET" \
-  '{serverId: $serverId, solanaWalletAddress: $solanaWalletAddress, secret: $secret}')
+  '{serverId: $serverId, secret: $secret}')
 
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$CALLBACK_URL" \
   -H "Content-Type: application/json" \

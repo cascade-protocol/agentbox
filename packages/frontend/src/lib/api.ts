@@ -4,11 +4,12 @@ import { ExactSvmScheme } from "@x402/svm/exact/client";
 import { toast } from "sonner";
 
 export type Instance = {
-  id: number;
+  id: string;
+  serverId?: number | null;
   name: string;
   ownerWallet: string;
   status: string;
-  ip: string;
+  ip: string | null;
   nftMint?: string | null;
   vmWallet?: string | null;
   gatewayToken?: string;
@@ -135,7 +136,7 @@ export const api = {
   instances: {
     list: (all?: boolean) =>
       request<{ instances: Instance[] }>(`/instances${all ? "?all=true" : ""}`),
-    get: (id: number) => request<Instance>(`/instances/${id}`),
+    get: (name: string) => request<Instance>(`/instances/${name}`),
     create: async (
       signer: TransactionSigner,
       opts?: { name?: string; telegramBotToken?: string; arenaEnabled?: boolean },
@@ -157,23 +158,24 @@ export const api = {
       }
       return res.json() as Promise<Instance>;
     },
-    update: (id: number, data: { name: string }) =>
-      request<Instance>(`/instances/${id}`, {
+    update: (name: string, data: { name: string }) =>
+      request<Instance>(`/instances/${name}`, {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
-    updateAgent: (id: number, data: { name?: string; description?: string }) =>
-      request<{ ok: boolean }>(`/instances/${id}/agent`, {
+    updateAgent: (name: string, data: { name?: string; description?: string }) =>
+      request<{ ok: boolean }>(`/instances/${name}/agent`, {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
-    delete: (id: number) => request<{ ok: boolean }>(`/instances/${id}`, { method: "DELETE" }),
-    mint: (id: number) => request<{ ok: boolean }>(`/instances/${id}/mint`, { method: "POST" }),
-    restart: (id: number) =>
-      request<{ ok: boolean }>(`/instances/${id}/restart`, { method: "POST" }),
-    extend: async (id: number, signer: TransactionSigner) => {
+    delete: (name: string) => request<{ ok: boolean }>(`/instances/${name}`, { method: "DELETE" }),
+    mint: (name: string) => request<{ ok: boolean }>(`/instances/${name}/mint`, { method: "POST" }),
+    restart: (name: string) =>
+      request<{ ok: boolean }>(`/instances/${name}/restart`, { method: "POST" }),
+    rebuild: (name: string) => request<Instance>(`/instances/${name}/rebuild`, { method: "POST" }),
+    extend: async (name: string, signer: TransactionSigner) => {
       const payFetch = createPaymentFetch(signer);
-      const res = await payFetch(`${API_URL}/instances/${id}/extend`, {
+      const res = await payFetch(`${API_URL}/instances/${name}/extend`, {
         method: "POST",
         headers: authHeaders(),
       });
@@ -184,32 +186,35 @@ export const api = {
       }
       return res.json() as Promise<Instance>;
     },
-    access: (id: number) => request<InstanceAccess>(`/instances/${id}/access`),
-    health: (id: number) => request<InstanceHealth>(`/instances/${id}/health`),
+    access: (name: string) => request<InstanceAccess>(`/instances/${name}/access`),
+    health: (name: string) => request<InstanceHealth>(`/instances/${name}/health`),
     expiring: (days?: number) =>
       request<{ instances: Instance[] }>(`/instances/expiring${days ? `?days=${days}` : ""}`),
     sync: () =>
       request<{ claimed: number; recovered: number; instances: Instance[] }>(`/instances/sync`, {
         method: "POST",
       }),
-    telegram: (id: number, telegramBotToken: string) =>
-      request<{ ok: boolean; botUsername?: string; status?: string }>(`/instances/${id}/telegram`, {
-        method: "POST",
-        body: JSON.stringify({ telegramBotToken }),
-      }),
-    telegramStatus: (id: number) =>
+    telegram: (name: string, telegramBotToken: string) =>
+      request<{ ok: boolean; botUsername?: string; status?: string }>(
+        `/instances/${name}/telegram`,
+        {
+          method: "POST",
+          body: JSON.stringify({ telegramBotToken }),
+        },
+      ),
+    telegramStatus: (name: string) =>
       request<{
         status: "live" | "starting" | "error" | "not_configured";
         botUsername?: string;
         error?: string;
-      }>(`/instances/${id}/telegram/status`),
-    withdraw: (id: number, data: { token: "SOL" | "USDC"; amount: string }) =>
-      request<{ ok: boolean; signature: string }>(`/instances/${id}/withdraw`, {
+      }>(`/instances/${name}/telegram/status`),
+    withdraw: (name: string, data: { token: "SOL" | "USDC"; amount: string }) =>
+      request<{ ok: boolean; signature: string }>(`/instances/${name}/withdraw`, {
         method: "POST",
         body: JSON.stringify(data),
       }),
-    pairing: (id: number, code: string) =>
-      request<{ ok: boolean }>(`/instances/${id}/pairing`, {
+    pairing: (name: string, code: string) =>
+      request<{ ok: boolean }>(`/instances/${name}/pairing`, {
         method: "POST",
         body: JSON.stringify({ code }),
       }),

@@ -15,6 +15,7 @@ import * as hetzner from "../lib/hetzner";
 import { generateAgentName } from "../lib/names";
 import { payerStore } from "../lib/payer-store";
 import { provisionInputSchema, provisionListQuerySchema } from "../lib/schemas";
+import { generateWallet } from "../lib/wallet";
 import { logger } from "../logger";
 import { buildUserData, toInstanceResponse } from "./instances";
 
@@ -22,7 +23,7 @@ export const provisionRoutes = new Hono();
 
 async function signAccessToken(
   wallet: string,
-  instanceId: number,
+  instanceId: string,
   expiresAt: Date,
 ): Promise<string> {
   const secret = new TextEncoder().encode(env.JWT_SECRET);
@@ -35,7 +36,7 @@ async function signAccessToken(
 
 async function verifyAccessToken(
   token: string,
-  expectedInstanceId: number,
+  expectedInstanceId: string,
 ): Promise<{ wallet: string } | null> {
   try {
     const secret = new TextEncoder().encode(env.JWT_SECRET);
@@ -125,6 +126,10 @@ provisionRoutes.post("/provision", async (c) => {
   const terminalToken = randomUUID();
   const gatewayToken = randomBytes(32).toString("hex");
 
+  // Generate wallet at provision time
+  const walletData = generateWallet();
+  const encryptedMnemonic = encrypt(walletData.mnemonic);
+
   const userData = buildUserData({
     apiBaseUrl: env.API_BASE_URL,
     callbackToken,
@@ -142,6 +147,13 @@ provisionRoutes.post("/provision", async (c) => {
     return c.json({ error: "Failed to provision server" }, 502);
   }
 
+  // Preserve primary IP across rebuilds
+  try {
+    await hetzner.setPrimaryIpAutoDelete(result.server.public_net.ipv4.id, false);
+  } catch (err) {
+    logger.warn(`Failed to set primary IP auto_delete=false: ${String(err)}`);
+  }
+
   if (env.CF_API_TOKEN) {
     try {
       await cloudflare.createDnsRecord(hostname, result.server.public_net.ipv4.ip);
@@ -156,11 +168,15 @@ provisionRoutes.post("/provision", async (c) => {
   const [row] = await db
     .insert(instances)
     .values({
-      id: result.server.id,
+      serverId: result.server.id,
+      primaryIpId: result.server.public_net.ipv4.id,
+      location: result.server.datacenter.name,
       name,
       ownerWallet: payer,
       status: "provisioning",
       ip: result.server.public_net.ipv4.ip,
+      vmWallet: walletData.solana.address,
+      encryptedMnemonic,
       gatewayToken: encrypt(gatewayToken),
       callbackToken,
       terminalToken,
@@ -168,7 +184,6 @@ provisionRoutes.post("/provision", async (c) => {
       telegramBotUsername: telegramBotUsername ?? null,
       snapshotId: HETZNER_SNAPSHOT_ID,
       nftMint: null,
-      vmWallet: null,
       provisioningStep: "vm_created",
       expiresAt,
     })
@@ -181,9 +196,10 @@ provisionRoutes.post("/provision", async (c) => {
     {
       name: row.name,
       ownerWallet: payer,
-      ip: row.ip,
+      ip: row.ip ?? "",
       expiresAt: row.expiresAt.toISOString(),
     },
+    row.id,
   );
 
   const accessToken = await signAccessToken(payer, row.id, expiresAt);
@@ -193,7 +209,7 @@ provisionRoutes.post("/provision", async (c) => {
 
 // GET /provision/:id - Poll instance status + access URLs
 provisionRoutes.get("/provision/:id", async (c) => {
-  const id = Number(c.req.param("id"));
+  const id = c.req.param("id");
   const token = c.req.header("Authorization")?.replace("Bearer ", "");
   if (!token) {
     return c.json({ error: "Missing access token" }, 401);
@@ -268,7 +284,7 @@ provisionRoutes.get("/provision", async (c) => {
 
 // POST /provision/:id/extend - Extend instance (x402 payment + access token)
 provisionRoutes.post("/provision/:id/extend", async (c) => {
-  const id = Number(c.req.param("id"));
+  const id = c.req.param("id");
   const token = c.req.header("Authorization")?.replace("Bearer ", "");
   if (!token) {
     return c.json({ error: "Missing access token" }, 401);
@@ -306,6 +322,7 @@ provisionRoutes.post("/provision/:id/extend", async (c) => {
     { type: "wallet", id: auth.wallet },
     { type: "instance", id: String(id) },
     { newExpiresAt: newExpiry.toISOString() },
+    row.id,
   );
 
   const accessToken = await signAccessToken(auth.wallet, id, newExpiry);

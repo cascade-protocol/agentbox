@@ -41,7 +41,7 @@ type MintAgentNftInput = {
   vmWalletAddress: string;
   instanceName: string;
   hostname: string;
-  serverId: number;
+  instanceId: string;
 };
 
 export type SyncResult = {
@@ -273,7 +273,7 @@ export async function mintAgentNft(input: MintAgentNftInput): Promise<{ mint: st
     uri,
     nonTransferable: false,
     mintKeypair,
-    additionalMetadata: [{ key: "agentbox:serverId", value: String(input.serverId) }],
+    additionalMetadata: [{ key: "agentbox:instanceId", value: input.instanceId }],
   });
 
   const ownerAddr = address(input.ownerWallet);
@@ -292,8 +292,9 @@ export async function mintAgentNft(input: MintAgentNftInput): Promise<{ mint: st
       recordEvent(
         "instance.nft_transfer_failed",
         { type: "system", id: "backend" },
-        { type: "instance", id: String(input.serverId) },
+        { type: "instance", id: input.instanceId },
         { mint: result.mint, error: String(err) },
+        input.instanceId,
       );
     }
   }
@@ -429,24 +430,37 @@ export async function syncWalletInstances(walletAddress: string): Promise<SyncRe
       continue;
     }
 
+    // Try new UUID-based metadata first, fall back to legacy serverId
+    const instanceId = agent.additionalMetadata["agentbox:instanceId"];
     const serverIdRaw = agent.additionalMetadata["agentbox:serverId"];
-    if (!serverIdRaw || !/^\d+$/.test(serverIdRaw)) {
+
+    if (!instanceId && !serverIdRaw) {
       continue;
     }
 
-    const serverId = Number.parseInt(serverIdRaw, 10);
-    if (!Number.isSafeInteger(serverId)) {
-      continue;
-    }
+    let instance: { id: string; ownerWallet: string; nftMint: string | null } | undefined;
 
-    const [instance] = await db
-      .select({
-        id: instances.id,
-        ownerWallet: instances.ownerWallet,
-        nftMint: instances.nftMint,
-      })
-      .from(instances)
-      .where(and(eq(instances.id, serverId), isNull(instances.deletedAt)));
+    if (instanceId) {
+      [instance] = await db
+        .select({
+          id: instances.id,
+          ownerWallet: instances.ownerWallet,
+          nftMint: instances.nftMint,
+        })
+        .from(instances)
+        .where(and(eq(instances.id, instanceId), isNull(instances.deletedAt)));
+    } else if (serverIdRaw && /^\d+$/.test(serverIdRaw)) {
+      const serverId = Number.parseInt(serverIdRaw, 10);
+      if (!Number.isSafeInteger(serverId)) continue;
+      [instance] = await db
+        .select({
+          id: instances.id,
+          ownerWallet: instances.ownerWallet,
+          nftMint: instances.nftMint,
+        })
+        .from(instances)
+        .where(and(eq(instances.serverId, serverId), isNull(instances.deletedAt)));
+    }
 
     if (!instance) {
       continue;
@@ -461,12 +475,13 @@ export async function syncWalletInstances(walletAddress: string): Promise<SyncRe
         nftMint: mint,
         ownerWallet: walletAddress,
       })
-      .where(eq(instances.id, serverId));
+      .where(eq(instances.id, instance.id));
     recordEvent(
       "instance.recovered",
       { type: "wallet", id: walletAddress },
-      { type: "instance", id: String(serverId) },
+      { type: "instance", id: instance.id },
       { mint },
+      instance.id,
     );
     recovered += 1;
   }

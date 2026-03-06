@@ -40,6 +40,7 @@ import {
   withdrawInputSchema,
 } from "../lib/schemas";
 import { withVM } from "../lib/ssh";
+import { deriveWallet, generateWallet } from "../lib/wallet";
 import { logger } from "../logger";
 
 /** Derive a per-instance Telegram webhook secret from the instance's callbackToken via HMAC. */
@@ -86,6 +87,15 @@ function isOwner(row: typeof instances.$inferSelect, wallet: string): boolean {
   return isAdmin(wallet) || row.ownerWallet === wallet;
 }
 
+/** Find active instance by name. */
+async function findInstance(name: string) {
+  const [row] = await db
+    .select()
+    .from(instances)
+    .where(and(eq(instances.name, name), isNull(instances.deletedAt)));
+  return row;
+}
+
 export function toInstanceResponse(row: typeof instances.$inferSelect) {
   let gatewayToken = row.gatewayToken;
   try {
@@ -95,6 +105,7 @@ export function toInstanceResponse(row: typeof instances.$inferSelect) {
   }
   return {
     id: row.id,
+    serverId: row.serverId,
     name: row.name,
     ownerWallet: row.ownerWallet,
     status: row.status,
@@ -149,7 +160,7 @@ export async function mintAndFinalize(row: typeof instances.$inferSelect): Promi
   if (!row.vmWallet) {
     logger.error(`Instance ${row.id} missing vmWallet for SATI minting`);
     await db.update(instances).set({ status: "running" }).where(eq(instances.id, row.id));
-    recordEvent("instance.running", system, entity, {});
+    recordEvent("instance.running", system, entity, {}, row.id);
     return;
   }
 
@@ -163,17 +174,23 @@ export async function mintAndFinalize(row: typeof instances.$inferSelect): Promi
   ]);
   if (solResult.status === "rejected") {
     logger.error(`Failed to fund VM wallet SOL ${row.vmWallet}: ${String(solResult.reason)}`);
-    recordEvent("instance.funding_failed", system, entity, {
-      asset: "SOL",
-      error: String(solResult.reason),
-    });
+    recordEvent(
+      "instance.funding_failed",
+      system,
+      entity,
+      { asset: "SOL", error: String(solResult.reason) },
+      row.id,
+    );
   }
   if (usdcResult.status === "rejected") {
     logger.error(`Failed to fund VM wallet USDC ${row.vmWallet}: ${String(usdcResult.reason)}`);
-    recordEvent("instance.funding_failed", system, entity, {
-      asset: "USDC",
-      error: String(usdcResult.reason),
-    });
+    recordEvent(
+      "instance.funding_failed",
+      system,
+      entity,
+      { asset: "USDC", error: String(usdcResult.reason) },
+      row.id,
+    );
   }
 
   try {
@@ -182,7 +199,7 @@ export async function mintAndFinalize(row: typeof instances.$inferSelect): Promi
       vmWalletAddress: row.vmWallet,
       instanceName: row.name,
       hostname,
-      serverId: row.id,
+      instanceId: row.id,
     });
 
     await db
@@ -194,8 +211,8 @@ export async function mintAndFinalize(row: typeof instances.$inferSelect): Promi
       .where(eq(instances.id, row.id));
 
     logger.info(`Minted SATI NFT for instance ${row.id}: ${mint}`);
-    recordEvent("instance.minted", system, entity, { mint, ownerWallet: row.ownerWallet });
-    recordEvent("instance.running", system, entity, {});
+    recordEvent("instance.minted", system, entity, { mint, ownerWallet: row.ownerWallet }, row.id);
+    recordEvent("instance.running", system, entity, {}, row.id);
   } catch (err) {
     logger.error(`SATI mint failed for instance ${row.id}`, {
       error: err instanceof Error ? err.message : String(err),
@@ -203,10 +220,14 @@ export async function mintAndFinalize(row: typeof instances.$inferSelect): Promi
         err instanceof Error ? JSON.stringify(err, Object.getOwnPropertyNames(err)) : undefined,
     });
     await db.update(instances).set({ status: "running" }).where(eq(instances.id, row.id));
-    recordEvent("instance.mint_failed", system, entity, {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    recordEvent("instance.running", system, entity, {});
+    recordEvent(
+      "instance.mint_failed",
+      system,
+      entity,
+      { error: err instanceof Error ? err.message : String(err) },
+      row.id,
+    );
+    recordEvent("instance.running", system, entity, {}, row.id);
   }
 }
 
@@ -319,6 +340,10 @@ instanceRoutes.post("/instances", auth, async (c) => {
   const terminalToken = randomUUID();
   const gatewayToken = randomBytes(32).toString("hex");
 
+  // Generate wallet at provision time
+  const walletData = generateWallet();
+  const encryptedMnemonic = encrypt(walletData.mnemonic);
+
   const userData = buildUserData({
     apiBaseUrl: env.API_BASE_URL,
     callbackToken,
@@ -336,6 +361,13 @@ instanceRoutes.post("/instances", auth, async (c) => {
     return c.json({ error: "Failed to provision server" }, 502);
   }
 
+  // Preserve primary IP across rebuilds
+  try {
+    await hetzner.setPrimaryIpAutoDelete(result.server.public_net.ipv4.id, false);
+  } catch (err) {
+    logger.warn(`Failed to set primary IP auto_delete=false: ${String(err)}`);
+  }
+
   if (env.CF_API_TOKEN) {
     try {
       await cloudflare.createDnsRecord(hostname, result.server.public_net.ipv4.ip);
@@ -350,11 +382,15 @@ instanceRoutes.post("/instances", auth, async (c) => {
   const [row] = await db
     .insert(instances)
     .values({
-      id: result.server.id,
+      serverId: result.server.id,
+      primaryIpId: result.server.public_net.ipv4.id,
+      location: result.server.datacenter.name,
       name,
       ownerWallet: wallet,
       status: "provisioning",
       ip: result.server.public_net.ipv4.ip,
+      vmWallet: walletData.solana.address,
+      encryptedMnemonic,
       gatewayToken: encrypt(gatewayToken),
       callbackToken,
       terminalToken,
@@ -363,7 +399,6 @@ instanceRoutes.post("/instances", auth, async (c) => {
       arenaEnabled: input.data.arenaEnabled ?? false,
       snapshotId: HETZNER_SNAPSHOT_ID,
       nftMint: null,
-      vmWallet: null,
       provisioningStep: "vm_created",
       expiresAt,
     })
@@ -376,9 +411,10 @@ instanceRoutes.post("/instances", auth, async (c) => {
     {
       name: row.name,
       ownerWallet: wallet,
-      ip: row.ip,
+      ip: row.ip ?? "",
       expiresAt: row.expiresAt.toISOString(),
     },
+    row.id,
   );
 
   return c.json(toInstanceResponse(row), 201);
@@ -428,7 +464,7 @@ instanceRoutes.post("/instances/callback/step", async (c) => {
     })
     .where(
       and(
-        eq(instances.id, input.data.serverId),
+        eq(instances.serverId, input.data.serverId),
         eq(instances.status, "provisioning"),
         eq(instances.callbackToken, input.data.secret),
       ),
@@ -442,8 +478,9 @@ instanceRoutes.post("/instances/callback/step", async (c) => {
   recordEvent(
     "instance.step_reported",
     { type: "vm", id: String(input.data.serverId) },
-    { type: "instance", id: String(input.data.serverId) },
+    { type: "instance", id: String(row.id) },
     { step: input.data.step },
+    row.id,
   );
 
   return c.json({ ok: true });
@@ -460,14 +497,13 @@ instanceRoutes.post("/instances/callback", async (c) => {
   const [row] = await db
     .update(instances)
     .set({
-      vmWallet: input.data.solanaWalletAddress,
       status: "minting",
       provisioningStep: null,
       callbackToken: null,
     })
     .where(
       and(
-        eq(instances.id, input.data.serverId),
+        eq(instances.serverId, input.data.serverId),
         eq(instances.status, "provisioning"),
         eq(instances.callbackToken, input.data.secret),
       ),
@@ -482,7 +518,8 @@ instanceRoutes.post("/instances/callback", async (c) => {
     "instance.callback_received",
     { type: "vm", id: String(row.id) },
     { type: "instance", id: String(row.id) },
-    { vmWallet: input.data.solanaWalletAddress },
+    {},
+    row.id,
   );
 
   void mintAndFinalize(row).catch((err) => {
@@ -529,7 +566,7 @@ instanceRoutes.get("/instances/config", async (c) => {
     .from(instances)
     .where(
       and(
-        eq(instances.id, query.data.serverId),
+        eq(instances.serverId, query.data.serverId),
         eq(instances.status, "provisioning"),
         eq(instances.callbackToken, query.data.secret),
       ),
@@ -570,7 +607,7 @@ instanceRoutes.get("/instances/config", async (c) => {
 
   // Plugin config
   config.plugins.entries["openclaw-x402"].config.dashboardUrl =
-    `https://agentbox.fyi/instances/${row.id}`;
+    `https://agentbox.fyi/instances/${row.name}`;
   if (env.SOLANA_RPC_URL) {
     config.plugins.entries["openclaw-x402"].config.rpcUrl = env.SOLANA_RPC_URL;
   }
@@ -605,6 +642,30 @@ instanceRoutes.get("/instances/config", async (c) => {
     })
     .where(eq(instances.id, row.id));
 
+  // Derive wallet data from stored mnemonic for delivery to VM
+  let wallet:
+    | {
+        solanaKeypairJson: string;
+        evmPrivateKeyHex: string;
+        mnemonic: string;
+        solanaAddress: string;
+      }
+    | undefined;
+  if (row.encryptedMnemonic) {
+    try {
+      const mnemonic = decrypt(row.encryptedMnemonic);
+      const wd = deriveWallet(mnemonic);
+      wallet = {
+        solanaKeypairJson: wd.solana.keypairJson,
+        evmPrivateKeyHex: wd.evm.privateKeyHex,
+        mnemonic: wd.mnemonic,
+        solanaAddress: wd.solana.address,
+      };
+    } catch (err) {
+      logger.error(`Failed to derive wallet for instance ${row.id}: ${String(err)}`);
+    }
+  }
+
   return c.json({
     hostname,
     terminalToken: row.terminalToken,
@@ -612,54 +673,50 @@ instanceRoutes.get("/instances/config", async (c) => {
     telegramBotToken,
     openclawConfig: config,
     workspaceFiles,
+    wallet,
   });
 });
 
-// PATCH /instances/:id - Update instance name
-instanceRoutes.patch("/instances/:id", auth, async (c) => {
-  const id = Number(c.req.param("id"));
+// PATCH /instances/:name - Update instance name
+instanceRoutes.patch("/instances/:name", auth, async (c) => {
+  const name = c.req.param("name");
   const body = await c.req.json();
   const input = updateInstanceInputSchema.safeParse(body);
   if (!input.success) {
     return c.json({ error: "Invalid input", details: input.error.issues }, 400);
   }
 
-  const [existing] = await db
-    .select()
-    .from(instances)
-    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+  const existing = await findInstance(name);
   if (!existing) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(existing, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
   const [row] = await db
     .update(instances)
     .set({ name: input.data.name })
-    .where(eq(instances.id, id))
+    .where(eq(instances.id, existing.id))
     .returning();
 
   recordEvent(
     "instance.renamed",
     { type: "wallet", id: c.get("walletAddress") },
-    { type: "instance", id: String(id) },
+    { type: "instance", id: String(existing.id) },
     { newName: input.data.name },
+    existing.id,
   );
 
   return c.json(toInstanceResponse(row));
 });
 
-// PATCH /instances/:id/agent - Update agent metadata
-instanceRoutes.patch("/instances/:id/agent", auth, async (c) => {
-  const id = Number(c.req.param("id"));
+// PATCH /instances/:name/agent - Update agent metadata
+instanceRoutes.patch("/instances/:name/agent", auth, async (c) => {
+  const name = c.req.param("name");
   const body = await c.req.json();
   const input = updateAgentMetadataInputSchema.safeParse(body);
   if (!input.success) {
     return c.json({ error: "Invalid input", details: input.error.issues }, 400);
   }
 
-  const [row] = await db
-    .select()
-    .from(instances)
-    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+  const row = await findInstance(name);
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
   if (!row.nftMint) return c.json({ error: "Agent NFT not yet minted" }, 400);
@@ -678,47 +735,52 @@ instanceRoutes.patch("/instances/:id/agent", auth, async (c) => {
     recordEvent(
       "instance.agent_updated",
       { type: "wallet", id: c.get("walletAddress") },
-      { type: "instance", id: String(id) },
+      { type: "instance", id: String(row.id) },
       { name: input.data.name, description: input.data.description },
+      row.id,
     );
     return c.json({ ok: true });
   } catch (err) {
-    logger.error(`Failed to update agent metadata for instance ${id}: ${String(err)}`);
+    logger.error(`Failed to update agent metadata for instance ${row.id}: ${String(err)}`);
     return c.json({ error: "Failed to update agent metadata" }, 500);
   }
 });
 
-// GET /instances/:id - Get instance details
-instanceRoutes.get("/instances/:id", auth, async (c) => {
-  const id = Number(c.req.param("id"));
-  const [row] = await db
-    .select()
-    .from(instances)
-    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+// GET /instances/:name - Get instance details
+instanceRoutes.get("/instances/:name", auth, async (c) => {
+  const name = c.req.param("name");
+  const row = await findInstance(name);
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
   return c.json(toInstanceResponse(row));
 });
 
-// DELETE /instances/:id - Delete instance
-instanceRoutes.delete("/instances/:id", auth, async (c) => {
-  const id = Number(c.req.param("id"));
-  const [row] = await db
-    .select()
-    .from(instances)
-    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+// DELETE /instances/:name - Delete instance
+instanceRoutes.delete("/instances/:name", auth, async (c) => {
+  const name = c.req.param("name");
+  const row = await findInstance(name);
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
   const wallet = c.get("walletAddress");
-  const delEntity = { type: "instance", id: String(id) };
-  await db.update(instances).set({ status: "deleting" }).where(eq(instances.id, id));
-  recordEvent("instance.deletion_started", { type: "wallet", id: wallet }, delEntity, {});
+  const delEntity = { type: "instance", id: String(row.id) };
+  await db.update(instances).set({ status: "deleting" }).where(eq(instances.id, row.id));
+  recordEvent("instance.deletion_started", { type: "wallet", id: wallet }, delEntity, {}, row.id);
 
-  try {
-    await hetzner.deleteServer(id);
-  } catch (err) {
-    logger.error(`Failed to delete Hetzner server ${id}: ${String(err)}`);
+  if (row.serverId) {
+    try {
+      await hetzner.deleteServer(row.serverId);
+    } catch (err) {
+      logger.error(`Failed to delete Hetzner server ${row.serverId}: ${String(err)}`);
+    }
+  }
+
+  if (row.primaryIpId) {
+    try {
+      await hetzner.deletePrimaryIp(row.primaryIpId);
+    } catch (err) {
+      logger.error(`Failed to delete primary IP ${row.primaryIpId}: ${String(err)}`);
+    }
   }
 
   if (env.CF_API_TOKEN) {
@@ -733,18 +795,15 @@ instanceRoutes.delete("/instances/:id", auth, async (c) => {
   await db
     .update(instances)
     .set({ status: "deleted", deletedAt: new Date() })
-    .where(eq(instances.id, id));
-  recordEvent("instance.deleted", { type: "wallet", id: wallet }, delEntity, {});
+    .where(eq(instances.id, row.id));
+  recordEvent("instance.deleted", { type: "wallet", id: wallet }, delEntity, {}, row.id);
   return c.json({ ok: true });
 });
 
-// POST /instances/:id/mint - Retry NFT minting
-instanceRoutes.post("/instances/:id/mint", auth, async (c) => {
-  const id = Number(c.req.param("id"));
-  const [row] = await db
-    .select()
-    .from(instances)
-    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+// POST /instances/:name/mint - Retry NFT minting
+instanceRoutes.post("/instances/:name/mint", auth, async (c) => {
+  const name = c.req.param("name");
+  const row = await findInstance(name);
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
@@ -764,6 +823,7 @@ instanceRoutes.post("/instances/:id/mint", auth, async (c) => {
     { type: "wallet", id: c.get("walletAddress") },
     { type: "instance", id: String(row.id) },
     {},
+    row.id,
   );
 
   void mintAndFinalize(row).catch((err) => {
@@ -773,40 +833,127 @@ instanceRoutes.post("/instances/:id/mint", auth, async (c) => {
   return c.json({ ok: true });
 });
 
-// POST /instances/:id/restart - Restart VM
-instanceRoutes.post("/instances/:id/restart", auth, async (c) => {
-  const id = Number(c.req.param("id"));
-  const [row] = await db
-    .select()
-    .from(instances)
-    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+// POST /instances/:name/restart - Restart VM
+instanceRoutes.post("/instances/:name/restart", auth, async (c) => {
+  const name = c.req.param("name");
+  const row = await findInstance(name);
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
+  if (!row.serverId) return c.json({ error: "No server associated" }, 400);
 
   try {
-    await hetzner.restartServer(id);
+    await hetzner.restartServer(row.serverId);
   } catch (err) {
-    logger.error(`Failed to restart Hetzner server ${id}: ${String(err)}`);
+    logger.error(`Failed to restart Hetzner server ${row.serverId}: ${String(err)}`);
     return c.json({ error: "Failed to restart server" }, 502);
   }
 
   recordEvent(
     "instance.restarted",
     { type: "wallet", id: c.get("walletAddress") },
-    { type: "instance", id: String(id) },
+    { type: "instance", id: String(row.id) },
     {},
+    row.id,
   );
 
   return c.json({ ok: true });
 });
 
-// POST /instances/:id/extend - Extend expiry
-instanceRoutes.post("/instances/:id/extend", auth, async (c) => {
-  const id = Number(c.req.param("id"));
-  const [row] = await db
-    .select()
-    .from(instances)
-    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+// POST /instances/:name/rebuild - Rebuild instance with fresh VM, preserve wallet/IP/identity
+instanceRoutes.post("/instances/:name/rebuild", auth, async (c) => {
+  const name = c.req.param("name");
+  const row = await findInstance(name);
+  if (!row) return c.json({ error: "Instance not found" }, 404);
+  if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
+
+  if (row.status !== "running") {
+    return c.json({ error: "Instance must be running to rebuild" }, 409);
+  }
+  if (!row.encryptedMnemonic) {
+    return c.json({ error: "Instance has no stored wallet (legacy instance)" }, 400);
+  }
+  if (!row.primaryIpId || !row.location) {
+    return c.json({ error: "Instance missing primary IP or location data" }, 400);
+  }
+
+  // Atomic status transition to prevent concurrent rebuilds
+  const [locked] = await db
+    .update(instances)
+    .set({ status: "rebuilding" })
+    .where(and(eq(instances.id, row.id), eq(instances.status, "running")))
+    .returning();
+  if (!locked) {
+    return c.json({ error: "Instance is no longer running" }, 409);
+  }
+
+  const callbackToken = randomUUID();
+  const terminalToken = randomUUID();
+  const gatewayToken = randomBytes(32).toString("hex");
+
+  const userData = buildUserData({
+    apiBaseUrl: env.API_BASE_URL,
+    callbackToken,
+    terminalToken,
+  });
+
+  // Delete old server - IP survives (auto_delete=false)
+  if (row.serverId) {
+    try {
+      await hetzner.deleteServer(row.serverId);
+    } catch (err) {
+      logger.error(`Failed to delete old server ${row.serverId} during rebuild: ${String(err)}`);
+      // Set error state but preserve IP for retry
+      await db
+        .update(instances)
+        .set({ status: "error", serverId: null })
+        .where(eq(instances.id, row.id));
+      return c.json({ error: "Failed to delete old server" }, 502);
+    }
+  }
+
+  // Create new server with preserved IP
+  let result: Awaited<ReturnType<typeof hetzner.createServerWithIp>>;
+  try {
+    result = await hetzner.createServerWithIp(name, userData, row.location, row.primaryIpId);
+  } catch (err) {
+    logger.error(`Failed to create new server during rebuild: ${String(err)}`);
+    await db
+      .update(instances)
+      .set({ status: "error", serverId: null })
+      .where(eq(instances.id, row.id));
+    return c.json({ error: "Failed to create new server" }, 502);
+  }
+
+  // Update row - same UUID, name, wallet, mnemonic, IP, location, nftMint, expiry, telegram
+  const [updated] = await db
+    .update(instances)
+    .set({
+      serverId: result.server.id,
+      status: "provisioning",
+      gatewayToken: encrypt(gatewayToken),
+      callbackToken,
+      terminalToken,
+      snapshotId: HETZNER_SNAPSHOT_ID,
+      provisioningStep: "vm_created",
+    })
+    .where(eq(instances.id, row.id))
+    .returning();
+
+  recordEvent(
+    "instance.rebuilt",
+    { type: "wallet", id: c.get("walletAddress") },
+    { type: "instance", id: String(row.id) },
+    {},
+    row.id,
+  );
+
+  return c.json(toInstanceResponse(updated));
+});
+
+// POST /instances/:name/extend - Extend expiry
+instanceRoutes.post("/instances/:name/extend", auth, async (c) => {
+  const name = c.req.param("name");
+  const row = await findInstance(name);
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
@@ -823,26 +970,24 @@ instanceRoutes.post("/instances/:id/extend", auth, async (c) => {
   const [updated] = await db
     .update(instances)
     .set({ expiresAt: newExpiry })
-    .where(eq(instances.id, id))
+    .where(eq(instances.id, row.id))
     .returning();
 
   recordEvent(
     "instance.extended",
     { type: "wallet", id: c.get("walletAddress") },
-    { type: "instance", id: String(id) },
+    { type: "instance", id: String(row.id) },
     { newExpiresAt: newExpiry.toISOString() },
+    row.id,
   );
 
   return c.json(toInstanceResponse(updated));
 });
 
-// GET /instances/:id/access - Access credentials
-instanceRoutes.get("/instances/:id/access", auth, async (c) => {
-  const id = Number(c.req.param("id"));
-  const [row] = await db
-    .select()
-    .from(instances)
-    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+// GET /instances/:name/access - Access credentials
+instanceRoutes.get("/instances/:name/access", auth, async (c) => {
+  const name = c.req.param("name");
+  const row = await findInstance(name);
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
@@ -856,22 +1001,21 @@ instanceRoutes.get("/instances/:id/access", auth, async (c) => {
   });
 });
 
-// GET /instances/:id/health - Probe instance health
-instanceRoutes.get("/instances/:id/health", auth, async (c) => {
-  const id = Number(c.req.param("id"));
-  const [row] = await db
-    .select()
-    .from(instances)
-    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+// GET /instances/:name/health - Probe instance health
+instanceRoutes.get("/instances/:name/health", auth, async (c) => {
+  const name = c.req.param("name");
+  const row = await findInstance(name);
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
   let hetznerStatus = "unknown";
-  try {
-    const server = await hetzner.getServer(id);
-    hetznerStatus = server.server.status;
-  } catch {
-    // Hetzner API unavailable
+  if (row.serverId) {
+    try {
+      const server = await hetzner.getServer(row.serverId);
+      hetznerStatus = server.server.status;
+    } catch {
+      // Hetzner API unavailable
+    }
   }
 
   const healthy = hetznerStatus === "running" && row.status === "running";
@@ -884,27 +1028,27 @@ instanceRoutes.get("/instances/:id/health", auth, async (c) => {
   });
 });
 
-// POST /instances/:id/telegram - Write Telegram bot config via SSH
-instanceRoutes.post("/instances/:id/telegram", auth, async (c) => {
+// POST /instances/:name/telegram - Write Telegram bot config via SSH
+instanceRoutes.post("/instances/:name/telegram", auth, async (c) => {
   if (!env.SSH_PRIVATE_KEY) {
     return c.json({ error: "SSH access is not configured" }, 503);
   }
 
-  const id = Number(c.req.param("id"));
+  const name = c.req.param("name");
   const body = await c.req.json();
   const input = telegramSetupInputSchema.safeParse(body);
   if (!input.success) {
     return c.json({ error: "Invalid input", details: input.error.issues }, 400);
   }
 
-  const [row] = await db
-    .select()
-    .from(instances)
-    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+  const row = await findInstance(name);
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
   if (row.status !== "running") {
     return c.json({ error: "Instance is not running" }, 409);
+  }
+  if (!row.ip) {
+    return c.json({ error: "Instance has no IP address" }, 400);
   }
 
   const token = input.data.telegramBotToken;
@@ -926,7 +1070,7 @@ instanceRoutes.post("/instances/:id/telegram", auth, async (c) => {
   try {
     await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`);
   } catch {
-    logger.warn(`Failed to delete webhook for instance ${id}, proceeding anyway`);
+    logger.warn(`Failed to delete webhook for instance ${row.id}, proceeding anyway`);
   }
 
   if (!row.callbackToken) {
@@ -956,7 +1100,7 @@ instanceRoutes.post("/instances/:id/telegram", auth, async (c) => {
       await vm.restart("openclaw-gateway");
     });
   } catch (err) {
-    logger.error(`Telegram SSH config failed for instance ${id}`, {
+    logger.error(`Telegram SSH config failed for instance ${row.id}`, {
       error: err instanceof Error ? err.message : String(err),
     });
     return c.json({ error: "Failed to configure Telegram on instance" }, 500);
@@ -966,25 +1110,23 @@ instanceRoutes.post("/instances/:id/telegram", auth, async (c) => {
   await db
     .update(instances)
     .set({ telegramBotToken: encrypt(token), telegramBotUsername: botUsername ?? null })
-    .where(eq(instances.id, id));
+    .where(eq(instances.id, row.id));
 
   recordEvent(
     "instance.telegram_configured",
     { type: "wallet", id: c.get("walletAddress") },
-    { type: "instance", id: String(id) },
+    { type: "instance", id: String(row.id) },
     {},
+    row.id,
   );
 
   return c.json({ ok: true, botUsername, status: "starting" });
 });
 
-// GET /instances/:id/telegram/status - Check if Telegram bot is actively polling
-instanceRoutes.get("/instances/:id/telegram/status", auth, async (c) => {
-  const id = Number(c.req.param("id"));
-  const [row] = await db
-    .select()
-    .from(instances)
-    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+// GET /instances/:name/telegram/status - Check if Telegram bot is actively polling
+instanceRoutes.get("/instances/:name/telegram/status", auth, async (c) => {
+  const name = c.req.param("name");
+  const row = await findInstance(name);
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
 
@@ -996,7 +1138,7 @@ instanceRoutes.get("/instances/:id/telegram/status", auth, async (c) => {
   try {
     token = decrypt(row.telegramBotToken);
   } catch {
-    logger.error(`Failed to decrypt telegram token for instance ${id}`);
+    logger.error(`Failed to decrypt telegram token for instance ${row.id}`);
     return c.json({ status: "error", error: "Stored token is corrupted" });
   }
 
@@ -1043,27 +1185,27 @@ instanceRoutes.get("/instances/:id/telegram/status", auth, async (c) => {
 
 const USDC_MINT_ADDRESS = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
-// POST /instances/:id/withdraw - Withdraw SOL or USDC from VM wallet to owner
-instanceRoutes.post("/instances/:id/withdraw", auth, async (c) => {
+// POST /instances/:name/withdraw - Withdraw SOL or USDC from VM wallet to owner
+instanceRoutes.post("/instances/:name/withdraw", auth, async (c) => {
   if (!env.SSH_PRIVATE_KEY) {
     return c.json({ error: "SSH access is not configured" }, 503);
   }
 
-  const id = Number(c.req.param("id"));
+  const name = c.req.param("name");
   const body = await c.req.json();
   const input = withdrawInputSchema.safeParse(body);
   if (!input.success) {
     return c.json({ error: "Invalid input", details: input.error.issues }, 400);
   }
 
-  const [row] = await db
-    .select()
-    .from(instances)
-    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+  const row = await findInstance(name);
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
   if (row.status !== "running") {
     return c.json({ error: "Instance is not running" }, 409);
+  }
+  if (!row.ip) {
+    return c.json({ error: "Instance has no IP address" }, 400);
   }
 
   const { token, amount } = input.data;
@@ -1096,40 +1238,41 @@ instanceRoutes.post("/instances/:id/withdraw", auth, async (c) => {
     recordEvent(
       "instance.withdrawal",
       { type: "wallet", id: c.get("walletAddress") },
-      { type: "instance", id: String(id) },
+      { type: "instance", id: String(row.id) },
       { token, amount, destination: dest },
+      row.id,
     );
 
     return c.json({ ok: true, signature: result.signature });
   } catch (err) {
-    logger.error(`Withdrawal failed for instance ${id}`, {
+    logger.error(`Withdrawal failed for instance ${row.id}`, {
       error: err instanceof Error ? err.message : String(err),
     });
     return c.json({ error: err instanceof Error ? err.message : "Withdrawal failed" }, 500);
   }
 });
 
-// POST /instances/:id/pairing - Approve Telegram pairing code via SSH
-instanceRoutes.post("/instances/:id/pairing", auth, async (c) => {
+// POST /instances/:name/pairing - Approve Telegram pairing code via SSH
+instanceRoutes.post("/instances/:name/pairing", auth, async (c) => {
   if (!env.SSH_PRIVATE_KEY) {
     return c.json({ error: "SSH access is not configured" }, 503);
   }
 
-  const id = Number(c.req.param("id"));
+  const name = c.req.param("name");
   const body = await c.req.json();
   const input = pairingApproveInputSchema.safeParse(body);
   if (!input.success) {
     return c.json({ error: "Invalid input", details: input.error.issues }, 400);
   }
 
-  const [row] = await db
-    .select()
-    .from(instances)
-    .where(and(eq(instances.id, id), isNull(instances.deletedAt)));
+  const row = await findInstance(name);
   if (!row) return c.json({ error: "Instance not found" }, 404);
   if (!isOwner(row, c.get("walletAddress"))) return c.json({ error: "Forbidden" }, 403);
   if (row.status !== "running") {
     return c.json({ error: "Instance is not running" }, 409);
+  }
+  if (!row.ip) {
+    return c.json({ error: "Instance has no IP address" }, 400);
   }
 
   const code = input.data.code;
@@ -1158,8 +1301,9 @@ instanceRoutes.post("/instances/:id/pairing", auth, async (c) => {
     recordEvent(
       "instance.pairing_approved",
       { type: "wallet", id: c.get("walletAddress") },
-      { type: "instance", id: String(id) },
+      { type: "instance", id: String(row.id) },
       {},
+      row.id,
     );
 
     return c.json({ ok: true });
@@ -1168,7 +1312,7 @@ instanceRoutes.post("/instances/:id/pairing", auth, async (c) => {
     if (msg.includes("No pending pairing request")) {
       return c.json({ error: msg }, 400);
     }
-    logger.error(`Pairing approval failed for instance ${id}`, { error: msg });
+    logger.error(`Pairing approval failed for instance ${row.id}`, { error: msg });
     return c.json({ error: "Pairing approval failed" }, 500);
   }
 });
