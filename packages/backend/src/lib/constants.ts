@@ -1,5 +1,5 @@
 /** Hetzner snapshot ID for VM provisioning. Update after `just build-image`. */
-export const HETZNER_SNAPSHOT_ID = "364225395";
+export const HETZNER_SNAPSHOT_ID = "364266903";
 
 export const CF_ZONE_ID = "fda671fa572b4c2d26de8aedcbf94f6e";
 export const FACILITATOR_URL = "https://facilitator.cascade.fyi";
@@ -41,131 +41,6 @@ const X402_PROVIDERS = {
       },
     ],
   },
-  blockrun: {
-    baseUrl: "https://sol.blockrun.ai/api/v1",
-    models: [
-      // Sonnet 4.6 disabled: verbose, burns tokens, worse instruction following than 4.5
-      // {
-      //   id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", maxTokens: 2048,
-      //   reasoning: true, input: ["text", "image"],
-      //   cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-      //   contextWindow: 200000,
-      // },
-      {
-        id: "anthropic/claude-sonnet-4.5",
-        name: "Claude Sonnet 4.5",
-        maxTokens: 2048,
-        reasoning: true,
-        input: ["text", "image"],
-        cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-        contextWindow: 200000,
-      },
-      {
-        id: "anthropic/claude-opus-4.6",
-        name: "Claude Opus 4.6",
-        maxTokens: 2048,
-        reasoning: true,
-        input: ["text", "image"],
-        cost: { input: 10, output: 37.5, cacheRead: 1, cacheWrite: 12.5 },
-        contextWindow: 200000,
-      },
-      {
-        id: "openai/gpt-5.2",
-        name: "GPT-5.2",
-        maxTokens: 2048,
-        reasoning: true,
-        input: ["text", "image"],
-        cost: { input: 1.75, output: 14, cacheRead: 0.44, cacheWrite: 1.75 },
-        contextWindow: 400000,
-      },
-      {
-        id: "moonshot/kimi-k2.5",
-        name: "Kimi K2.5",
-        maxTokens: 4096,
-        reasoning: false,
-        input: ["text", "image"],
-        cost: { input: 0.6, output: 3, cacheRead: 0.3, cacheWrite: 0.6 },
-        contextWindow: 262144,
-      },
-      {
-        id: "deepseek/deepseek-chat",
-        name: "DeepSeek V3.2",
-        maxTokens: 4096,
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0.23, output: 0.34, cacheRead: 0.12, cacheWrite: 0.23 },
-        contextWindow: 163840,
-      },
-    ],
-  },
-  aimo: {
-    baseUrl: "https://beta.aimo.network/api/v1",
-    models: [
-      {
-        id: "anthropic/claude-sonnet-4.5",
-        name: "Claude Sonnet 4.5",
-        maxTokens: 2048,
-        reasoning: true,
-        input: ["text", "image"],
-        cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-        contextWindow: 200000,
-      },
-      {
-        id: "anthropic/claude-opus-4.6",
-        name: "Claude Opus 4.6",
-        maxTokens: 2048,
-        reasoning: true,
-        input: ["text", "image"],
-        cost: { input: 10, output: 37.5, cacheRead: 1, cacheWrite: 12.5 },
-        contextWindow: 200000,
-      },
-      {
-        id: "deepseek/deepseek-v3.2",
-        name: "DeepSeek V3.2",
-        maxTokens: 4096,
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0.23, output: 0.34, cacheRead: 0.12, cacheWrite: 0.23 },
-        contextWindow: 163840,
-      },
-      {
-        id: "moonshot/kimi-k2.5",
-        name: "Kimi K2.5",
-        maxTokens: 4096,
-        reasoning: false,
-        input: ["text", "image"],
-        cost: { input: 0.6, output: 3, cacheRead: 0.3, cacheWrite: 0.6 },
-        contextWindow: 262144,
-      },
-      {
-        id: "openai/gpt-5.2",
-        name: "GPT-5.2",
-        maxTokens: 2048,
-        reasoning: true,
-        input: ["text", "image"],
-        cost: { input: 1.75, output: 14, cacheRead: 0.44, cacheWrite: 1.75 },
-        contextWindow: 400000,
-      },
-      {
-        id: "zai-org/glm-5",
-        name: "GLM-5",
-        maxTokens: 4096,
-        reasoning: true,
-        input: ["text"],
-        cost: { input: 1.02, output: 2.98, cacheRead: 0.51, cacheWrite: 1.02 },
-        contextWindow: 203000,
-      },
-      {
-        id: "zai-org/glm-4.7-flash",
-        name: "GLM-4.7 Flash",
-        maxTokens: 4096,
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0.09, output: 0.37, cacheRead: 0.05, cacheWrite: 0.09 },
-        contextWindow: 203000,
-      },
-    ],
-  },
 };
 
 /**
@@ -201,22 +76,13 @@ export const OPENCLAW_BASE_CONFIG = {
   },
   update: { auto: { enabled: false }, checkOnStart: false },
   logging: { maxFileBytes: 104857600 },
-  tools: { profile: "full" },
+  tools: { profile: "full", deny: ["web_search"] },
+  browser: { enabled: true, headless: true, noSandbox: true, defaultProfile: "openclaw" },
   models: {
     mode: "replace",
     providers: {
       agentbox: {
         ...X402_PROVIDERS.agentbox,
-        apiKey: "x402-payment",
-        api: "openai-completions",
-      },
-      blockrun: {
-        ...X402_PROVIDERS.blockrun,
-        apiKey: "x402-payment",
-        api: "openai-completions",
-      },
-      aimo: {
-        ...X402_PROVIDERS.aimo,
         apiKey: "x402-payment",
         api: "openai-completions",
       },

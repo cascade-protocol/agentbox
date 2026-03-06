@@ -157,6 +157,19 @@ echo "==> Installing AgentBox skills"
 su - openclaw -c "INSTALL_INTERNAL_SKILLS=1 npx -y skills add -g --yes cascade-protocol/agentbox"
 echo "    AgentBox skills installed to ~/.openclaw/skills/"
 
+# --- Chromium + Playwright (browser tool) ---
+#
+# Chromium: headless browser for OpenClaw's `browser` tool (snapshots, actions, PDFs).
+# Playwright: provides the CDP bridge OpenClaw uses for advanced browser operations.
+# Installed under openclaw user so the gateway process can launch it.
+
+echo ""
+echo "==> Installing Chromium and Playwright"
+apt-get install -y chromium-browser || apt-get install -y chromium
+echo "    Chromium $(chromium-browser --version 2>/dev/null || chromium --version 2>/dev/null)"
+su - openclaw -c "npx -y playwright install --with-deps chromium"
+echo "    Playwright chromium installed"
+
 # --- Solana CLI + SATI identity CLI ---
 #
 # Solana CLI: used by agentbox-init.sh to create a per-instance keypair on boot.
