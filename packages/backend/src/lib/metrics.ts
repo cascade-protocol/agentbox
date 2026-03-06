@@ -1,11 +1,25 @@
 import { address } from "@solana/kit";
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
-import { and, count, countDistinct, gte, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  countDistinct,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  sql,
+} from "drizzle-orm";
 import client from "prom-client";
 import { db } from "../db/connection";
 import { events, instances } from "../db/schema";
 import { logger } from "../logger";
-import { PAY_TO_ADDRESS } from "./constants";
+import { FACILITATOR_WALLET, PAY_TO_ADDRESS } from "./constants";
+import { recordEvent } from "./events";
+import * as hetzner from "./hetzner";
 
 export const register = client.register;
 
@@ -63,6 +77,11 @@ const provisioningAvgSeconds = new client.Gauge({
 const eventsTotal = new client.Gauge({
   name: "agentbox_events_total",
   help: "Total events recorded",
+});
+
+const reconciledOrphans = new client.Counter({
+  name: "agentbox_reconciled_orphans_total",
+  help: "Cumulative count of DB records reconciled (server gone from Hetzner)",
 });
 
 // --- Wallet health (chain-backed, refreshed every 5min) ---
@@ -161,6 +180,41 @@ export async function refreshDbGauges(): Promise<void> {
     // Total events
     const [eventsResult] = await db.select({ value: count() }).from(events);
     eventsTotal.set(eventsResult?.value ?? 0);
+
+    // Hetzner reconciliation: mark DB records as deleted if their server no longer exists
+    const hetznerIds = await hetzner.listServerIds();
+    if (hetznerIds.size > 0) {
+      const activeStatuses = ["running", "provisioning", "minting", "stopped", "error"];
+      const dbActive = await db
+        .select({ id: instances.id, serverId: instances.serverId, name: instances.name })
+        .from(instances)
+        .where(
+          and(
+            isNotNull(instances.serverId),
+            isNull(instances.deletedAt),
+            inArray(instances.status, activeStatuses),
+          ),
+        );
+
+      const orphans = dbActive.filter((r) => r.serverId && !hetznerIds.has(r.serverId));
+      for (const orphan of orphans) {
+        logger.warn(
+          `Reconciliation: instance ${orphan.name} (server ${orphan.serverId}) not found in Hetzner, marking deleted`,
+        );
+        await db
+          .update(instances)
+          .set({ status: "deleted", deletedAt: new Date() })
+          .where(eq(instances.id, orphan.id));
+        recordEvent(
+          "instance.reconciled",
+          { type: "system", id: "reconciliation" },
+          { type: "instance", id: String(orphan.id) },
+          { reason: "server_not_found", serverId: orphan.serverId },
+          orphan.id,
+        );
+        reconciledOrphans.inc();
+      }
+    }
   } catch (err) {
     logger.warn(`Failed to refresh DB gauges: ${String(err)}`);
   }
@@ -191,6 +245,25 @@ export async function refreshChainGauges(): Promise<void> {
         .then((micro) => walletUsdcMicro.set({ wallet: "treasury" }, micro))
         .catch((err: unknown) => {
           logger.warn(`Chain gauge treasury USDC: ${String(err)}`);
+        }),
+    );
+
+    // Facilitator wallet (pays gas for x402 settlements)
+    const facilitatorAddress = address(FACILITATOR_WALLET);
+    fetches.push(
+      rpc
+        .getBalance(facilitatorAddress)
+        .send()
+        .then(({ value }) => walletSolLamports.set({ wallet: "facilitator" }, Number(value)))
+        .catch((err: unknown) => {
+          logger.warn(`Chain gauge facilitator SOL: ${String(err)}`);
+        }),
+    );
+    fetches.push(
+      getUsdcBalance(rpc, facilitatorAddress, USDC_MINT)
+        .then((micro) => walletUsdcMicro.set({ wallet: "facilitator" }, micro))
+        .catch((err: unknown) => {
+          logger.warn(`Chain gauge facilitator USDC: ${String(err)}`);
         }),
     );
 

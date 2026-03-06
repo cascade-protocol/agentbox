@@ -3,6 +3,7 @@ export const HETZNER_SNAPSHOT_ID = "364225395";
 
 export const CF_ZONE_ID = "fda671fa572b4c2d26de8aedcbf94f6e";
 export const FACILITATOR_URL = "https://facilitator.cascade.fyi";
+export const FACILITATOR_WALLET = "F2vVvFwrbGHtsBEqFkSkLvsM6SJmDMm7KqhiW2P64WxY";
 export const PAY_TO_ADDRESS = "7NetKx8TuRMBpqYFKZCVetkNuvWCPTrgekmGrsJwTmfN";
 export const INSTANCE_BASE_DOMAIN = "agentbox.fyi";
 export const HETZNER_LOCATIONS = ["nbg1", "fsn1"];

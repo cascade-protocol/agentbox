@@ -268,6 +268,35 @@
     },
     {
       "type": "table",
+      "title": "Live Instances",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT name AS \"Name\", owner_wallet AS \"Owner\", status AS \"Status\", ip AS \"IP\", telegram_bot_username AS \"Telegram\", created_at AS \"Created\", expires_at AS \"Expires\" FROM instances WHERE deleted_at IS NULL AND status NOT IN ('deleted', 'deleting') ORDER BY created_at DESC",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Owner" },
+            "properties": [{ "id": "custom.width", "value": 380 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Created" },
+            "properties": [{ "id": "unit", "value": "dateTimeAsIso" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Expires" },
+            "properties": [{ "id": "unit", "value": "dateTimeAsIso" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 }
+    },
+    {
+      "type": "table",
       "title": "Recent Instance Creations",
       "datasource": { "type": "postgres", "uid": "postgres" },
       "targets": [
@@ -289,13 +318,65 @@
           }
         ]
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 }
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 }
     },
     {
       "type": "row",
       "title": "On-chain Wallets",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 40 },
       "collapsed": false
+    },
+    {
+      "type": "stat",
+      "title": "Facilitator SOL",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "agentbox_wallet_sol_lamports{wallet=\"facilitator\"} / 1e9",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 4,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.05 },
+              { "color": "green", "value": 0.5 }
+            ]
+          }
+        }
+      },
+      "options": { "postfix": " SOL" },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 41 }
+    },
+    {
+      "type": "stat",
+      "title": "Facilitator USDC",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "agentbox_wallet_usdc_micro{wallet=\"facilitator\"} / 1e6",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "green", "value": 50 }
+            ]
+          }
+        }
+      },
+      "options": { "postfix": " USDC" },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 41 }
     },
     {
       "type": "stat",
@@ -321,7 +402,7 @@
         }
       },
       "options": { "postfix": " SOL" },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 33 }
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 41 }
     },
     {
       "type": "stat",
@@ -347,7 +428,7 @@
         }
       },
       "options": { "postfix": " USDC" },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 33 }
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 41 }
     },
     {
       "type": "stat",
@@ -373,7 +454,7 @@
         }
       },
       "options": { "postfix": " SOL" },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 33 }
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 41 }
     },
     {
       "type": "stat",
@@ -399,12 +480,35 @@
         }
       },
       "options": { "postfix": " USDC" },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 33 }
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 41 }
+    },
+    {
+      "type": "stat",
+      "title": "Reconciled Orphans",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "agentbox_reconciled_orphans_total",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 45 }
     },
     {
       "type": "row",
       "title": "HTTP",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 49 },
       "collapsed": false
     },
     {
@@ -424,7 +528,7 @@
           "unit": "reqps"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 38 }
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 50 }
     },
     {
       "type": "timeseries",
@@ -453,7 +557,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 38 }
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 50 }
     },
     {
       "type": "timeseries",
@@ -473,12 +577,12 @@
           "color": { "fixedColor": "red", "mode": "fixed" }
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 38 }
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 50 }
     },
     {
       "type": "row",
       "title": "System (Node.js)",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 46 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 58 },
       "collapsed": false
     },
     {
@@ -503,7 +607,7 @@
           "unit": "bytes"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 47 }
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 59 }
     },
     {
       "type": "timeseries",
@@ -522,7 +626,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 47 }
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 59 }
     },
     {
       "type": "timeseries",
@@ -541,7 +645,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 47 }
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 59 }
     }
   ],
   "schemaVersion": 39,

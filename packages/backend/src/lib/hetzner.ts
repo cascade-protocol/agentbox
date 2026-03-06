@@ -143,6 +143,29 @@ export async function rebuildServer(serverId: number, userData: string): Promise
   return (await res.json()) as ActionResponse;
 }
 
+export async function listServerIds(): Promise<Set<number>> {
+  if (!env.HETZNER_API_TOKEN) return new Set();
+  const ids = new Set<number>();
+  let page = 1;
+  for (;;) {
+    const res = await fetch(`${API_BASE}/servers?per_page=50&page=${page}`, {
+      headers: headers(),
+    });
+    if (!res.ok) {
+      logger.warn(`Hetzner list servers failed (${res.status})`);
+      return ids;
+    }
+    const data = (await res.json()) as {
+      servers: { id: number }[];
+      meta: { pagination: { next_page: number | null } };
+    };
+    for (const s of data.servers) ids.add(s.id);
+    if (!data.meta.pagination.next_page) break;
+    page = data.meta.pagination.next_page;
+  }
+  return ids;
+}
+
 export async function deletePrimaryIp(primaryIpId: number): Promise<void> {
   const res = await fetch(`${API_BASE}/primary_ips/${primaryIpId}`, {
     method: "DELETE",

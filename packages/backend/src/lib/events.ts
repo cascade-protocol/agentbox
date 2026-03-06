@@ -50,6 +50,7 @@ const eventMetaSchemas = {
   }),
   "instance.extended": z.object({ newExpiresAt: z.string() }),
   "instance.expired": empty,
+  "instance.reconciled": z.object({ reason: z.string(), serverId: z.number().nullable() }),
   "instance.claimed": z.object({ previousOwner: z.string() }),
   "instance.rebuilt": empty,
   "instance.recovered": z.object({ mint: z.string() }),

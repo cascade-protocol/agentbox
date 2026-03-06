@@ -21,6 +21,10 @@
 		resolvers 1.1.1.1
 	}
 
+	handle /metrics {
+		respond 403
+	}
+
 	handle {
 		reverse_proxy backend:8080
 	}
