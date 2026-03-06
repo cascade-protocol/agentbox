@@ -2,6 +2,16 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.11.0] - 2026-03-06
+
+### Changed
+
+- Redesigned `/x_status`: compact layout, no wallet duplication, inline update CTA with ⬆ indicator
+- `/x_wallet` header "Wallet" links to Solscan account page
+- Transaction history shows model name instead of generic "inference"
+- Removed blockrun and aimo providers (agentbox only)
+- Simplified `/x_wallet` footer to just `/x_wallet history`
+
 ## [0.10.5] - 2026-03-06
 
 ### Added

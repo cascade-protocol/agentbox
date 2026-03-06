@@ -206,8 +206,9 @@ export function register(api: OpenClawPluginApi): void {
       try {
         const snap = await getWalletSnapshot(walletAddress);
 
+        const solscanUrl = `https://solscan.io/account/${walletAddress}`;
         const lines: string[] = [
-          "**Wallet**",
+          `**[Wallet](${solscanUrl})**`,
           `\`${walletAddress}\``,
           "",
           `  ${snap.sol} SOL`,
@@ -247,14 +248,7 @@ export function register(api: OpenClawPluginApi): void {
           }
         }
 
-        // Footer
-        const footer: string[] = [];
-        footer.push("History: `/x_wallet history`");
-        footer.push(`[Solscan](https://solscan.io/account/${walletAddress})`);
-        if (dashboardUrl) {
-          footer.push(`[Dashboard](${dashboardUrl})`);
-        }
-        lines.push("", footer.join(" · "));
+        lines.push("", "History: `/x_wallet history`");
 
         return { text: lines.join("\n") };
       } catch (err) {
@@ -265,15 +259,10 @@ export function register(api: OpenClawPluginApi): void {
 
   api.registerCommand({
     name: "x_status",
-    description: "System overview: version, model, balance, recent activity",
+    description: "System overview: version, model, wallet",
     acceptsArgs: false,
     handler: async () => {
       const latestVersion = await checkNpmLatestVersion("openclaw-x402");
-      const updateStatus =
-        latestVersion && latestVersion !== PLUGIN_VERSION
-          ? `update available: v${latestVersion}`
-          : "up to date";
-
       const lines: string[] = [];
 
       // Check if we just restarted after an update
@@ -287,9 +276,12 @@ export function register(api: OpenClawPluginApi): void {
         }
       }
 
-      lines.push(`x402 v${PLUGIN_VERSION} · ${updateStatus}`);
+      // Version line
+      const hasPluginUpdate = latestVersion && latestVersion !== PLUGIN_VERSION;
+      lines.push(`x402 v${PLUGIN_VERSION}`);
 
       // Skills update check
+      let hasSkillsUpdate = false;
       try {
         const checkOutput = execSync("npx skills check", {
           timeout: 15_000,
@@ -298,59 +290,51 @@ export function register(api: OpenClawPluginApi): void {
         })
           .toString()
           .trim();
-        const hasUpdates =
+        hasSkillsUpdate =
           checkOutput.includes("update available") || checkOutput.includes("Update");
-        lines.push(`Skills   ${hasUpdates ? "updates available" : "up to date"}`);
       } catch {
-        lines.push("Skills   check failed");
+        // ignore - treat as no update
       }
 
-      // Current model
+      // Show update line only when something needs updating
+      if (hasPluginUpdate || hasSkillsUpdate) {
+        const parts: string[] = [];
+        if (hasPluginUpdate) parts.push(`plugin v${latestVersion}`);
+        if (hasSkillsUpdate) parts.push("skills");
+        lines.push(`⬆ Update available: ${parts.join(" + ")} · \`/x_update\``);
+      }
+
+      // Current model + switch options
       const defaultModel = allModels[0];
       if (defaultModel) {
         lines.push("", `**Model** · ${defaultModel.name} (${defaultModel.provider})`);
-      }
-
-      // Models by provider (only show agentbox + blockrun)
-      const showProviders = ["agentbox", "blockrun"];
-      for (const provName of showProviders) {
-        const provModels = allModels.filter((m) => m.provider === provName);
-        if (provModels.length === 0) continue;
-        lines.push("", `**${provName}**`);
-        for (const m of provModels) {
-          lines.push(`\`/model ${provName}/${m.id}\``);
+        const others = allModels.filter(
+          (m) => m.id !== defaultModel.id || m.provider !== defaultModel.provider,
+        );
+        for (const m of others) {
+          lines.push(`  switch: \`/model ${m.provider}/${m.id}\``);
         }
       }
 
-      // Wallet summary
+      // Wallet one-liner with Solscan link
+      const walletParts: string[] = [];
       if (walletAddress) {
+        const solscanUrl = `https://solscan.io/account/${walletAddress}`;
         try {
           const snap = await getWalletSnapshot(walletAddress);
-          lines.push("", "**Wallet**", `\`${walletAddress}\``, `${snap.sol} SOL · ${snap.ui} USDC`);
-
-          // Recent transactions
-          const reversed = [...snap.records].reverse();
-          const recentRecords = reversed.slice(0, STATUS_HISTORY_COUNT);
-          if (recentRecords.length > 0) {
-            lines.push("", "**Recent**");
-            for (const r of recentRecords) {
-              lines.push(formatTxLine(r));
-            }
-          }
+          walletParts.push(`[Wallet](${solscanUrl})`, `${snap.ui} USDC`);
+          if (snap.spend.today > 0)
+            walletParts.push(`-${snap.spend.today.toFixed(2)} USDC spent today`);
         } catch {
-          lines.push("", "**Wallet**", `\`${walletAddress}\``, "Balance unavailable");
+          walletParts.push(`[Wallet](${solscanUrl})`);
         }
+        lines.push("", walletParts.join(" · "));
+        const linkParts = ["`/x_wallet`"];
+        if (dashboardUrl) linkParts.push(`[Dashboard](${dashboardUrl})`);
+        lines.push(linkParts.join(" · "));
       } else {
         lines.push("", "Wallet not loaded yet");
       }
-
-      // Commands
-      lines.push(
-        "",
-        "`/x_wallet` · full balance and send",
-        "`/x_wallet history` · transaction history",
-        "`/x_update` · update plugin + skills",
-      );
 
       return { text: lines.join("\n") };
     },

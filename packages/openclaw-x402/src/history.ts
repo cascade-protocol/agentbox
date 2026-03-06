@@ -135,7 +135,7 @@ export function formatTxLine(r: TxRecord): string {
     timeZone: "UTC",
   });
   const timeStr = r.tx ? `[${time}](${explorerUrl(r.net, r.tx)})` : time;
-  const action = KIND_LABELS[r.kind] ?? r.kind;
+  const action = r.kind === "x402_inference" && r.model ? r.model : (KIND_LABELS[r.kind] ?? r.kind);
   const parts = [action];
   if (r.label) parts.push(r.label);
   if (r.ok && r.amount != null && r.token) {
