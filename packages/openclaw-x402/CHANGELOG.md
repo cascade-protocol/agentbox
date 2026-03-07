@@ -2,6 +2,15 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.12.0] - 2026-03-07
+
+### Added
+
+- Bags.fm token launching via `x_launch_token` (set `platform: "bags"` for Meteora DLMM, creator earns 1% of all volume forever)
+- Bags.fm swap fallback in `x_swap` (Jupiter -> Bags -> PumpPortal)
+- AgentBox partner fee sharing on Bags launches (25% of platform trading fees)
+- `bagsApiKey` plugin config for Bags.fm API authentication
+
 ## [0.11.2] - 2026-03-06
 
 ### Fixed

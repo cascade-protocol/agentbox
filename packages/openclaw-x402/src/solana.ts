@@ -1,3 +1,4 @@
+import { base58 } from "@scure/base";
 import {
   type Address,
   address,
@@ -29,6 +30,10 @@ export const SOL_MINT = "So11111111111111111111111111111111111111112";
 
 const JUPITER_QUOTE_URL = "https://lite-api.jup.ag/swap/v1/quote";
 const JUPITER_SWAP_URL = "https://lite-api.jup.ag/swap/v1/swap";
+
+const BAGS_API_BASE = "https://public-api-v2.bags.fm/api/v1";
+const BAGS_PARTNER_WALLET = "BM4cfeoL9CYsdmPwhrRZ86AK1shEwTBAcQeuZqDNeVfq";
+const BAGS_PARTNER_CONFIG = "9eqHvAYh99CpTTa6E3JzaN6BQFrSAMURnK4EkwrL2uT";
 
 export type UsdcBalance = { raw: bigint; ui: string };
 export type TokenHolding = { mint: string; amount: string; decimals: number };
@@ -349,4 +354,215 @@ export async function swapViaJupiter(
     inAmount: quote.inAmount,
     outAmount: quote.outAmount,
   };
+}
+
+// --- Bags.fm ---
+
+export class BagsNoRouteError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BagsNoRouteError";
+  }
+}
+
+/**
+ * Sign and submit a Base58-encoded transaction from an external API.
+ * Same pattern as signAndSendPumpPortalTx/swapViaJupiter but decodes Base58.
+ */
+async function signAndSendBase58Tx(
+  signer: KeyPairSigner,
+  rpcUrl: string,
+  base58Tx: string,
+): Promise<string> {
+  const txBytes = base58.decode(base58Tx);
+  const decoded = getTransactionDecoder().decode(txBytes);
+  const compiledMsg = getCompiledTransactionMessageDecoder().decode(decoded.messageBytes);
+  const lifetimeConstraint =
+    await getTransactionLifetimeConstraintFromCompiledTransactionMessage(compiledMsg);
+  const signed = await signTransaction([signer.keyPair], decoded);
+  assertIsSendableTransaction(signed);
+  const signedWithLifetime = { ...signed, lifetimeConstraint };
+  assertIsTransactionWithBlockhashLifetime(signedWithLifetime);
+
+  const rpc = createSolanaRpc(rpcUrl);
+  const wsUrl = rpcUrl.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
+  const rpcSubscriptions = createSolanaRpcSubscriptions(wsUrl);
+  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
+
+  try {
+    await sendAndConfirm(signedWithLifetime, {
+      commitment: "confirmed",
+      skipPreflight: true,
+      abortSignal: AbortSignal.timeout(15_000),
+    });
+  } catch (e) {
+    if (!(e instanceof DOMException)) throw e;
+  }
+  return getSignatureFromTransaction(signedWithLifetime);
+}
+
+/**
+ * Launch a new token on Bags.fm. Three-step flow:
+ * 1. Upload token info (name, symbol, description, image)
+ * 2. Create fee share config (with AgentBox partner key for revenue)
+ * 3. Create and submit launch transaction
+ *
+ * Trust assumption identical to PumpPortal/Jupiter: Bags constructs the
+ * transaction, we sign whatever it returns.
+ */
+export async function launchOnBags(
+  signer: KeyPairSigner,
+  rpcUrl: string,
+  apiKey: string,
+  params: {
+    name: string;
+    symbol: string;
+    description: string;
+    imageBlob: Blob;
+    initialBuyLamports: number;
+  },
+): Promise<{ signature: string; mint: string }> {
+  const headers = { "x-api-key": apiKey };
+
+  // Step 1: Create token info
+  const form = new FormData();
+  form.append("name", params.name);
+  form.append("symbol", params.symbol);
+  form.append("description", params.description);
+  form.append("image", params.imageBlob, "token.png");
+
+  const infoRes = await globalThis.fetch(`${BAGS_API_BASE}/token-launch/create-token-info`, {
+    method: "POST",
+    headers,
+    body: form,
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!infoRes.ok) {
+    const text = await infoRes.text();
+    throw new Error(`Bags token info failed: ${infoRes.status} ${text}`);
+  }
+  const infoData = (await infoRes.json()) as {
+    success: boolean;
+    response: { tokenMint: string; tokenMetadata: string };
+  };
+  const mint = infoData.response.tokenMint;
+  const ipfs = infoData.response.tokenMetadata;
+
+  // Step 2: Fee share config - agent gets 100%, AgentBox partner earns platform fees
+  const feeShareRes = await globalThis.fetch(`${BAGS_API_BASE}/fee-share/config`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      payer: signer.address,
+      baseMint: mint,
+      claimersArray: [signer.address],
+      basisPointsArray: [10000],
+      partner: BAGS_PARTNER_WALLET,
+      partnerConfig: BAGS_PARTNER_CONFIG,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!feeShareRes.ok) {
+    const text = await feeShareRes.text();
+    throw new Error(`Bags fee share failed: ${feeShareRes.status} ${text}`);
+  }
+  const feeShareData = (await feeShareRes.json()) as {
+    success: boolean;
+    response: {
+      needsCreation: boolean;
+      meteoraConfigKey: string;
+      transactions: Array<{ transaction: string }>;
+    };
+  };
+
+  // Sign fee share config txs if creation is needed
+  if (feeShareData.response.needsCreation) {
+    for (const tx of feeShareData.response.transactions) {
+      await signAndSendBase58Tx(signer, rpcUrl, tx.transaction);
+    }
+  }
+
+  // Step 3: Create and submit launch transaction
+  const launchRes = await globalThis.fetch(
+    `${BAGS_API_BASE}/token-launch/create-launch-transaction`,
+    {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ipfs,
+        tokenMint: mint,
+        wallet: signer.address,
+        initialBuyLamports: params.initialBuyLamports,
+        configKey: feeShareData.response.meteoraConfigKey,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+  if (!launchRes.ok) {
+    const text = await launchRes.text();
+    throw new Error(`Bags launch tx failed: ${launchRes.status} ${text}`);
+  }
+  const launchData = (await launchRes.json()) as { success: boolean; response: string };
+  const signature = await signAndSendBase58Tx(signer, rpcUrl, launchData.response);
+
+  return { signature, mint };
+}
+
+/**
+ * Swap tokens via Bags.fm trade API. For tokens on Meteora DLMM pools.
+ */
+export async function swapViaBags(
+  signer: KeyPairSigner,
+  rpcUrl: string,
+  apiKey: string,
+  inputMint: string,
+  outputMint: string,
+  amountRaw: string,
+  slippageBps: number,
+): Promise<{ signature: string; inAmount: string; outAmount: string }> {
+  const headers = { "x-api-key": apiKey };
+
+  const quoteUrl = new URL(`${BAGS_API_BASE}/trade/quote`);
+  quoteUrl.searchParams.set("baseMint", inputMint);
+  quoteUrl.searchParams.set("quoteMint", outputMint);
+  quoteUrl.searchParams.set("amount", amountRaw);
+  quoteUrl.searchParams.set("swapMode", "ExactIn");
+  quoteUrl.searchParams.set("slippageBps", String(slippageBps));
+
+  const quoteRes = await globalThis.fetch(quoteUrl.toString(), {
+    headers,
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!quoteRes.ok) {
+    const body = await quoteRes.json().catch(() => ({}) as Record<string, unknown>);
+    const msg = (body as { error?: string }).error || `HTTP ${quoteRes.status}`;
+    throw new BagsNoRouteError(msg);
+  }
+  const quoteData = (await quoteRes.json()) as {
+    success: boolean;
+    response: { inAmount: string; outAmount: string };
+  };
+  if (!quoteData.success) throw new BagsNoRouteError("quote failed");
+  const quote = quoteData.response;
+
+  const swapRes = await globalThis.fetch(`${BAGS_API_BASE}/trade/swap`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      quoteResponse: quote,
+      userPublicKey: signer.address,
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!swapRes.ok) {
+    const text = await swapRes.text();
+    throw new BagsNoRouteError(`Bags swap failed: ${swapRes.status} ${text}`);
+  }
+  const swapData = (await swapRes.json()) as {
+    success: boolean;
+    response: { swapTransaction: string };
+  };
+  const signature = await signAndSendBase58Tx(signer, rpcUrl, swapData.response.swapTransaction);
+
+  return { signature, inAmount: quote.inAmount, outAmount: quote.outAmount };
 }

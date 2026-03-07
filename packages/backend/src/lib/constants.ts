@@ -110,6 +110,7 @@ export const OPENCLAW_BASE_CONFIG = {
         config: {
           keypairPath: "/home/openclaw/.openclaw/agentbox/wallet-sol.json",
           providers: X402_PROVIDERS,
+          bagsApiKey: "", // set via BAGS_API_KEY env var
         },
       },
       telegram: { enabled: true },

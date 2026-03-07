@@ -30,6 +30,7 @@ const envSchema = z.object({
     }, "Must be a Solana CLI keypair JSON array (64 bytes, e.g. output of solana-keygen)")
     .optional(),
   SOLANA_RPC_URL: z.string().url().optional(),
+  BAGS_API_KEY: z.string().optional(),
   PORT: z.string().default("8080").transform(Number),
   LOG_LEVEL: z.string().default("info"),
 });

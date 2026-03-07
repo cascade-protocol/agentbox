@@ -614,6 +614,9 @@ instanceRoutes.get("/instances/config", async (c) => {
   if (env.SOLANA_RPC_URL) {
     config.plugins.entries["openclaw-x402"].config.rpcUrl = env.SOLANA_RPC_URL;
   }
+  if (env.BAGS_API_KEY) {
+    config.plugins.entries["openclaw-x402"].config.bagsApiKey = env.BAGS_API_KEY;
+  }
 
   // Telegram (webhook mode - OpenClaw switches from long-polling to webhook when webhookUrl is set)
   if (telegramBotToken) {

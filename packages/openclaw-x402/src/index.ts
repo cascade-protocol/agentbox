@@ -25,14 +25,17 @@ import {
   STATUS_HISTORY_COUNT,
 } from "./history.js";
 import {
+  BagsNoRouteError,
   checkAtaExists,
   getSolBalance,
   getTokenAccounts,
   getTokenDecimals,
   getUsdcBalance,
   JupiterNoRouteError,
+  launchOnBags,
   SOL_MINT,
   signAndSendPumpPortalTx,
+  swapViaBags,
   swapViaJupiter,
   transferUsdc,
 } from "./solana.js";
@@ -121,6 +124,7 @@ export function register(api: OpenClawPluginApi): void {
     : rawKeypairPath;
   const rpcUrl = (config.rpcUrl as string) || "https://api.mainnet-beta.solana.com";
   const dashboardUrl = (config.dashboardUrl as string) || "";
+  const bagsApiKey = (config.bagsApiKey as string) || "";
   const { models: allModels, x402Urls } = parseProviders(config);
   const historyPath = join(dirname(keypairPath), "history.jsonl");
 
@@ -580,6 +584,7 @@ export function register(api: OpenClawPluginApi): void {
     description:
       "Swap any Solana token for another. Provide mint addresses for both tokens. " +
       "Works for SOL, USDC, meme tokens, and any SPL token with DEX liquidity. " +
+      "Routes through Jupiter, Bags.fm (Meteora DLMM), or PumpPortal automatically. " +
       "Use x_token_info to look up mint addresses. " +
       `SOL mint: ${SOL_MINT}  USDC mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`,
     parameters: Type.Object({
@@ -628,37 +633,58 @@ export function register(api: OpenClawPluginApi): void {
         } catch (err) {
           if (!(err instanceof JupiterNoRouteError)) throw err;
 
-          // PumpPortal fallback: only works for SOL <-> token pairs
-          const isBuy = params.inputMint === SOL_MINT;
-          const isSell = params.outputMint === SOL_MINT;
-          if (!isBuy && !isSell) {
-            throw new Error("No swap route found for this token pair");
-          }
+          // Bags fallback: try Bags.fm trade API (Meteora DLMM pools)
+          try {
+            if (!bagsApiKey) throw new BagsNoRouteError("not configured");
+            const result = await swapViaBags(
+              signerRef,
+              rpcUrl,
+              bagsApiKey,
+              params.inputMint,
+              params.outputMint,
+              amountRaw,
+              slippageBps,
+            );
+            signature = result.signature;
+            const outDecimals = await getTokenDecimals(rpcUrl, params.outputMint);
+            outAmountDisplay = (Number(result.outAmount) / 10 ** outDecimals).toFixed(
+              Math.min(outDecimals, 6),
+            );
+          } catch (bagsErr) {
+            if (!(bagsErr instanceof BagsNoRouteError)) throw bagsErr;
 
-          const tokenMint = isBuy ? params.outputMint : params.inputMint;
-          const pumpParams: Record<string, unknown> = {
-            action: isBuy ? "buy" : "sell",
-            mint: tokenMint,
-            slippage: Math.max(slippageBps / 100, 10),
-            priorityFee: 0.0005,
-            pool: "pump",
-          };
-
-          if (isBuy) {
-            pumpParams.amount = params.amount;
-            pumpParams.denominatedInSol = "true";
-          } else {
-            const holdings = await getTokenAccounts(rpcUrl, walletAddress);
-            const holding = holdings.find((h) => h.mint === tokenMint);
-            if (!holding || Number.parseFloat(holding.amount) === 0) {
-              throw new Error(`No holdings found for token ${tokenMint}`);
+            // PumpPortal fallback: only works for SOL <-> token pairs
+            const isBuy = params.inputMint === SOL_MINT;
+            const isSell = params.outputMint === SOL_MINT;
+            if (!isBuy && !isSell) {
+              throw new Error("No swap route found for this token pair");
             }
-            const pct = Math.min(100, (params.amount / Number.parseFloat(holding.amount)) * 100);
-            pumpParams.amount = `${Math.round(pct)}%`;
-            pumpParams.denominatedInSol = "false";
-          }
 
-          signature = await signAndSendPumpPortalTx(signerRef, rpcUrl, pumpParams);
+            const tokenMint = isBuy ? params.outputMint : params.inputMint;
+            const pumpParams: Record<string, unknown> = {
+              action: isBuy ? "buy" : "sell",
+              mint: tokenMint,
+              slippage: Math.max(slippageBps / 100, 10),
+              priorityFee: 0.0005,
+              pool: "pump",
+            };
+
+            if (isBuy) {
+              pumpParams.amount = params.amount;
+              pumpParams.denominatedInSol = "true";
+            } else {
+              const holdings = await getTokenAccounts(rpcUrl, walletAddress);
+              const holding = holdings.find((h) => h.mint === tokenMint);
+              if (!holding || Number.parseFloat(holding.amount) === 0) {
+                throw new Error(`No holdings found for token ${tokenMint}`);
+              }
+              const pct = Math.min(100, (params.amount / Number.parseFloat(holding.amount)) * 100);
+              pumpParams.amount = `${Math.round(pct)}%`;
+              pumpParams.denominatedInSol = "false";
+            }
+
+            signature = await signAndSendPumpPortalTx(signerRef, rpcUrl, pumpParams);
+          }
         }
 
         appendHistory(historyPath, {
@@ -695,7 +721,9 @@ export function register(api: OpenClawPluginApi): void {
     name: "x_launch_token",
     label: "Launch Token",
     description:
-      "Launch a new token on pump.fun with an initial dev buy. Requires name, symbol, and description.",
+      "Launch a new token with an initial dev buy. " +
+      "Defaults to pump.fun. " +
+      'Set platform to "bags" for Bags.fm (Meteora DLMM, creator earns 1% of all volume forever).',
     parameters: Type.Object({
       name: Type.String({ description: "Token name" }),
       symbol: Type.String({ description: "Token ticker symbol" }),
@@ -709,7 +737,10 @@ export function register(api: OpenClawPluginApi): void {
         Type.Number({ description: "SOL for initial dev buy (default: 0.05)" }),
       ),
       slippage: Type.Optional(
-        Type.Number({ description: "Slippage tolerance in % (default: 10)" }),
+        Type.Number({ description: "Slippage tolerance in % (default: 10, pump only)" }),
+      ),
+      platform: Type.Optional(
+        Type.String({ description: 'Launch platform: "pump" (default) or "bags"' }),
       ),
     }),
     async execute(_id, params) {
@@ -717,6 +748,7 @@ export function register(api: OpenClawPluginApi): void {
         return toolResult("Wallet not loaded yet. Wait for gateway startup.");
       }
 
+      const platform = params.platform === "bags" ? "bags" : "pump";
       const initialBuy = params.initial_buy ?? 0.05;
       const sol = await getSolBalance(rpcUrl, walletAddress);
       if (Number.parseFloat(sol) < initialBuy + 0.02) {
@@ -725,22 +757,64 @@ export function register(api: OpenClawPluginApi): void {
         );
       }
 
+      let imageBlob: Blob;
+      if (params.image_url) {
+        const imgRes = await globalThis.fetch(params.image_url);
+        if (!imgRes.ok) return toolResult(`Failed to fetch image: ${imgRes.status}`);
+        imageBlob = await imgRes.blob();
+      } else {
+        const png = Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
+          "base64",
+        );
+        imageBlob = new Blob([png], { type: "image/png" });
+      }
+
+      if (platform === "bags") {
+        if (!bagsApiKey) {
+          return toolResult('Bags.fm API key not configured. Use platform: "pump" instead.');
+        }
+        try {
+          const { signature, mint } = await launchOnBags(signerRef, rpcUrl, bagsApiKey, {
+            name: params.name,
+            symbol: params.symbol,
+            description: params.description,
+            imageBlob,
+            initialBuyLamports: Math.round(initialBuy * 1e9),
+          });
+
+          appendHistory(historyPath, {
+            t: Date.now(),
+            ok: true,
+            kind: "mint",
+            net: SOL_MAINNET,
+            from: walletAddress,
+            tx: signature,
+            label: mint,
+            amount: initialBuy,
+            token: "SOL",
+          });
+
+          return toolResult(
+            `Token launched on Bags.fm\nName: ${params.name} (${params.symbol})\nMint: ${mint}\nInitial buy: ${initialBuy} SOL\nhttps://bags.fm/token/${mint}\nhttps://solscan.io/tx/${signature}`,
+          );
+        } catch (err) {
+          appendHistory(historyPath, {
+            t: Date.now(),
+            ok: false,
+            kind: "mint",
+            net: SOL_MAINNET,
+            from: walletAddress,
+            error: String(err).substring(0, 200),
+          });
+          return toolResult(`Bags.fm launch failed: ${String(err)}`);
+        }
+      }
+
+      // pump.fun via PumpPortal
       try {
         const mintKeyPair = await generateKeyPair();
         const mintAddress = await getAddressFromPublicKey(mintKeyPair.publicKey);
-
-        let imageBlob: Blob;
-        if (params.image_url) {
-          const imgRes = await globalThis.fetch(params.image_url);
-          if (!imgRes.ok) throw new Error(`Failed to fetch image: ${imgRes.status}`);
-          imageBlob = await imgRes.blob();
-        } else {
-          const png = Buffer.from(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
-            "base64",
-          );
-          imageBlob = new Blob([png], { type: "image/png" });
-        }
 
         const form = new FormData();
         form.append("file", imageBlob, "token.png");
@@ -788,7 +862,7 @@ export function register(api: OpenClawPluginApi): void {
         });
 
         return toolResult(
-          `Token launched\nName: ${params.name} (${params.symbol})\nMint: ${mintAddress}\nInitial buy: ${initialBuy} SOL\nhttps://pump.fun/${mintAddress}\nhttps://solscan.io/tx/${signature}`,
+          `Token launched on pump.fun\nName: ${params.name} (${params.symbol})\nMint: ${mintAddress}\nInitial buy: ${initialBuy} SOL\nhttps://pump.fun/${mintAddress}\nhttps://solscan.io/tx/${signature}`,
         );
       } catch (err) {
         appendHistory(historyPath, {
