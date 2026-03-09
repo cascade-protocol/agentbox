@@ -1,6 +1,4 @@
-import { createWalletTransactionSigner, type WalletSession } from "@solana/client";
-import type { TransactionSigner } from "@solana/kit";
-import { useSplToken, useWalletSession } from "@solana/react-hooks";
+import type { ConnectedStandardSolanaWallet } from "@privy-io/react-auth/solana";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   Activity,
@@ -20,7 +18,7 @@ import {
   TerminalSquare,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -48,6 +46,7 @@ import { env } from "../env";
 import { api, getIsAdmin, type Instance, instanceUrls } from "../lib/api";
 import { formatDate, relativeTime, shortDate, truncateAddress } from "../lib/format";
 import { generateAgentName } from "../lib/names";
+import { useActiveWallet, usePrivySigner, useSplTokenBalance } from "../lib/solana";
 import { getProvisioningStepLabel, getStatusVariant } from "../lib/status";
 
 export const Route = createFileRoute("/dashboard")({
@@ -177,21 +176,18 @@ function CopyChip({ value }: { value: string }) {
 }
 
 function CreateInstanceDialog({
-  session,
+  wallet,
   open,
   onOpenChange,
   onCreated,
 }: {
-  session: WalletSession;
+  wallet: ConnectedStandardSolanaWallet;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: () => Promise<void>;
 }) {
-  const signer: TransactionSigner = useMemo(
-    () => createWalletTransactionSigner(session).signer,
-    [session],
-  );
-  const { balance } = useSplToken(USDC_MINT);
+  const signer = usePrivySigner(wallet);
+  const { balance } = useSplTokenBalance(USDC_MINT, wallet.address);
   const usdcBalance = Number(balance?.uiAmount ?? 0);
   const hasEnough = usdcBalance >= USDC_PRICE;
   const [creating, setCreating] = useState(false);
@@ -218,6 +214,7 @@ function CreateInstanceDialog({
   }
 
   async function handleCreate() {
+    if (!signer) return;
     setCreating(true);
     try {
       const opts: { name: string; telegramBotToken?: string; arenaEnabled?: boolean } = { name };
@@ -462,7 +459,7 @@ function CreateInstanceDialog({
 
 function Home() {
   const navigate = useNavigate();
-  const session = useWalletSession();
+  const activeWallet = useActiveWallet();
   const instanceCreationEnabled = env.enableInstanceCreation;
   const admin = getIsAdmin();
   const [showAll, setShowAll] = useState(false);
@@ -604,9 +601,9 @@ function Home() {
                 <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
                 Refresh
               </Button>
-              {instanceCreationEnabled && session ? (
+              {instanceCreationEnabled && activeWallet ? (
                 <CreateInstanceDialog
-                  session={session}
+                  wallet={activeWallet}
                   open={createOpen}
                   onOpenChange={setCreateOpen}
                   onCreated={() => fetchInstances()}

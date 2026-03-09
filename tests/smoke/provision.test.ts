@@ -12,7 +12,7 @@ const WALLET_PATH = process.env.WALLET_PATH;
 if (!WALLET_PATH) {
   console.error("Missing WALLET_PATH. Set it in tests/smoke/.env");
 }
-const API = process.env.SMOKE_API_URL || "https://dev-api.agentbox.fyi";
+const API = process.env.SMOKE_API_URL || "https://local-be.agentbox.fyi";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const POLL_INTERVAL = 15_000;
 const POLL_TIMEOUT_S = 600;

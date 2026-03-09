@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import * as ed from "@noble/ed25519";
+import { PrivyClient } from "@privy-io/node";
 import bs58 from "bs58";
 import { and, eq, isNull, lte } from "drizzle-orm";
 import { Hono } from "hono";
@@ -13,6 +14,7 @@ import {
   INSTANCE_BASE_DOMAIN,
   OPENCLAW_BASE_CONFIG,
   PAY_TO_ADDRESS,
+  PRIVY_APP_ID,
   WORKSPACE_FILES,
 } from "../lib/constants";
 import { decrypt, encrypt } from "../lib/crypto";
@@ -33,6 +35,7 @@ import {
   createInstanceInputSchema,
   instanceConfigQuerySchema,
   pairingApproveInputSchema,
+  privyAuthInputSchema,
   provisioningUpdateInputSchema,
   telegramSetupInputSchema,
   updateAgentMetadataInputSchema,
@@ -47,6 +50,11 @@ import { logger } from "../logger";
 function deriveWebhookSecret(callbackToken: string): string {
   return createHmac("sha256", callbackToken).update("telegram-webhook").digest("hex").slice(0, 64);
 }
+
+const privy = new PrivyClient({
+  appId: PRIVY_APP_ID,
+  appSecret: env.PRIVY_APP_SECRET,
+});
 
 type AppEnv = { Variables: { walletAddress: string } };
 
@@ -241,9 +249,43 @@ export async function mintAndFinalize(row: typeof instances.$inferSelect): Promi
   }
 }
 
-// POST /instances/auth - Wallet sign-in (no bearer auth)
+// POST /instances/auth - Sign-in via Privy token or wallet signature (no bearer auth)
 instanceRoutes.post("/instances/auth", async (c) => {
   const body = await c.req.json();
+
+  // Path 1: Privy token auth (no wallet signature needed)
+  const privyInput = privyAuthInputSchema.safeParse(body);
+  if (privyInput.success) {
+    try {
+      const { user_id } = await privy.utils().auth().verifyAccessToken(privyInput.data.privyToken);
+      const user = await privy.users()._get(user_id);
+      const walletAddress = privyInput.data.solanaWalletAddress;
+
+      const hasWallet = user.linked_accounts.some((a) => {
+        if (!("chain_type" in a) || !("address" in a)) return false;
+        return a.chain_type === "solana" && a.address === walletAddress;
+      });
+      if (!hasWallet) {
+        return c.json({ error: "Wallet not linked to this account" }, 401);
+      }
+
+      const secret = new TextEncoder().encode(env.JWT_SECRET);
+      const token = await new SignJWT({ sub: walletAddress })
+        .setProtectedHeader({ alg: "HS256" })
+        .setExpirationTime("24h")
+        .setIssuedAt()
+        .sign(secret);
+
+      recordEvent("auth.signed_in", { type: "wallet", id: walletAddress }, null, {});
+
+      return c.json({ token, isAdmin: walletAddress === PAY_TO_ADDRESS });
+    } catch (err) {
+      logger.warn("Privy auth failed", { error: err instanceof Error ? err.message : String(err) });
+      return c.json({ error: "Invalid Privy token" }, 401);
+    }
+  }
+
+  // Path 2: Ed25519 signature auth (backward compat)
   const input = authInputSchema.safeParse(body);
   if (!input.success) {
     return c.json({ error: "Invalid input", details: input.error.issues }, 400);

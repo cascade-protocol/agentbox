@@ -8,6 +8,7 @@ export const PAY_TO_ADDRESS = "7NetKx8TuRMBpqYFKZCVetkNuvWCPTrgekmGrsJwTmfN";
 export const INSTANCE_BASE_DOMAIN = "agentbox.fyi";
 export const HETZNER_LOCATIONS = ["nbg1", "fsn1"];
 export const HETZNER_SERVER_TYPE = "cx33";
+export const PRIVY_APP_ID = "cmmi1ag9e03jd0dl8zmussizw";
 
 /**
  * x402 provider catalog - single source of truth for model metadata.

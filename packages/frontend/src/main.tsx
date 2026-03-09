@@ -1,6 +1,5 @@
-import { backpack, createDefaultClient, metamask, phantom, solflare } from "@solana/client";
-import type { ClusterUrl } from "@solana/kit";
-import { SolanaProvider } from "@solana/react-hooks";
+import { PrivyProvider } from "@privy-io/react-auth";
+import { toSolanaWalletConnectors } from "@privy-io/react-auth/solana";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
 
@@ -24,21 +23,30 @@ declare module "@tanstack/react-router" {
   }
 }
 
-const rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${env.heliusApiKey}` as ClusterUrl;
-const wsUrl = `wss://mainnet.helius-rpc.com/?api-key=${env.heliusApiKey}` as ClusterUrl;
-
-const client = createDefaultClient({
-  cluster: "mainnet-beta",
-  rpc: rpcUrl,
-  websocket: wsUrl,
-  walletConnectors: [...phantom(), ...solflare(), ...backpack(), ...metamask()],
-});
+const solanaConnectors = toSolanaWalletConnectors();
 
 const rootElement = document.getElementById("app");
 if (rootElement && !rootElement.innerHTML) {
   createRoot(rootElement).render(
-    <SolanaProvider client={client} walletPersistence={{ autoConnect: true }}>
+    <PrivyProvider
+      appId={env.privyAppId}
+      config={{
+        loginMethods: ["wallet"],
+        appearance: {
+          showWalletLoginFirst: true,
+          walletChainType: "solana-only",
+          walletList: ["phantom", "detected_solana_wallets"],
+          theme: "dark",
+        },
+        externalWallets: {
+          solana: { connectors: solanaConnectors },
+        },
+        embeddedWallets: {
+          solana: { createOnLogin: "all-users" },
+        },
+      }}
+    >
       <RouterProvider router={router} />
-    </SolanaProvider>,
+    </PrivyProvider>,
   );
 }

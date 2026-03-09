@@ -54,6 +54,11 @@ export const authInputSchema = z.object({
   timestamp: z.number(),
 });
 
+export const privyAuthInputSchema = z.object({
+  privyToken: z.string().min(1),
+  solanaWalletAddress: z.string().min(32).max(44),
+});
+
 export const callbackInputSchema = z.object({
   serverId: z.number(),
   secret: z.string().min(1).max(256),

@@ -32,6 +32,7 @@ const envSchema = z.object({
   SOLANA_RPC_URL: z.string().url().optional(),
   BAGS_API_KEY: z.string().optional(),
   PORT: z.string().default("8080").transform(Number),
+  PRIVY_APP_SECRET: z.string().min(1),
   LOG_LEVEL: z.string().default("info"),
 });
 

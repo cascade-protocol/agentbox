@@ -6,13 +6,22 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   envDir: "../..",
-  plugins: [tailwindcss(), TanStackRouterVite({ autoCodeSplitting: true }), react()],
+  plugins: [
+    tailwindcss(),
+    TanStackRouterVite({ autoCodeSplitting: true }),
+    react({
+      babel: {
+        plugins: [["babel-plugin-react-compiler", {}]],
+      },
+    }),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
   },
   server: {
+    allowedHosts: ["local-fe.agentbox.fyi"],
     proxy: {
       "/health": "http://localhost:8080",
     },

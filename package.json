@@ -10,6 +10,8 @@
     "lint": "biome check --write",
     "docker-build": "docker compose --profile server build",
     "dev": "turbo run dev",
+    "dev-with-tunnel": "turbo run dev tunnel",
+    "tunnel": "cloudflared tunnel --config ~/.cloudflared/agentbox-dev.yml run agentbox-dev",
     "build": "turbo run build",
     "test": "vitest --project backend --project frontend --project openclaw-x402",
     "test:smoke": "vitest run --project smoke"
@@ -25,8 +27,10 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "@discordjs/opus",
+      "@reown/appkit",
       "@whiskeysockets/baileys",
       "esbuild",
+      "keccak",
       "koffi",
       "node-llama-cpp",
       "protobufjs",

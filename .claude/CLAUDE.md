@@ -104,20 +104,20 @@
 - Drizzle tracks applied migrations in its own `__drizzle_migrations` table - do not manually insert into or modify it
 
 ## Local Testing
-- `just tunnel` starts a Cloudflare tunnel exposing the local backend at the URL configured in `API_BASE_URL` (.env)
+- `just tunnel` starts a Cloudflare tunnel exposing: `local-be.agentbox.fyi` (backend :8080) and `local-fe.agentbox.fyi` (frontend :5173)
 - Full end-to-end VM testing works locally: `pnpm dev` + `just tunnel` + `just build-image` + provision a VM
 - The VM calls back to the local backend through the tunnel - no need to deploy to test provisioning flow
 
 ### Pre-push e2e verification (MANDATORY)
 Before committing/pushing changes that affect VM provisioning, boot flow, or the provision API (ops/packer/*, backend provisioning routes, constants affecting VMs), run a full e2e test locally:
 
-1. User starts `pnpm dev` and `just tunnel` (exposes local backend at `dev-api.agentbox.fyi`)
+1. User starts `pnpm dev` and `just tunnel` (exposes local backend at `local-be.agentbox.fyi`)
 2. If image changes: `just build-image`, update `HETZNER_SNAPSHOT_ID` in `constants.ts`
 3. Run: `pnpm test:smoke` (requires `WALLET_PATH` in `tests/smoke/.env`)
    - Provisions a real VM via x402 payment against local backend through tunnel
    - Polls until running (~2-4 min)
    - Tests `/v1/chat/completions` with the gateway token
-   - `SMOKE_API_URL` in `.env` overrides API URL (defaults to `https://dev-api.agentbox.fyi`)
+   - `SMOKE_API_URL` in `.env` overrides API URL (defaults to `https://local-be.agentbox.fyi`)
 4. All 3 steps must pass (provision 201, poll to running, chat completions 200) before pushing
 
 ## Release & Deploy

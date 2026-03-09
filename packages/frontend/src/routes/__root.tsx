@@ -1,5 +1,4 @@
-import type { WalletSession } from "@solana/client";
-import { useDisconnectWallet, useWallet, useWalletConnection } from "@solana/react-hooks";
+import { useLogin, usePrivy, type WalletWithMetadata } from "@privy-io/react-auth";
 import { createRootRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   ArrowRight,
@@ -14,7 +13,7 @@ import {
   Wallet,
   WalletCards,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useEffect, useState } from "react";
 import { ErrorBoundary } from "../components/error-boundary";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -22,6 +21,7 @@ import { Toaster } from "../components/ui/sonner";
 import { env } from "../env";
 import { API_URL, clearToken, getToken, getTokenWallet, setIsAdmin, setToken } from "../lib/api";
 import { truncateAddress } from "../lib/format";
+import { useActiveWallet } from "../lib/solana";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -30,9 +30,12 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   const [token, setTokenState] = useState(() => getToken());
-  const walletStatus = useWallet();
-  const { connectors, connect, isReady, connecting } = useWalletConnection();
-  const disconnectWallet = useDisconnectWallet();
+  const {
+    ready,
+    authenticated: privyAuthenticated,
+    logout: privyLogout,
+    getAccessToken,
+  } = usePrivy();
   const navigate = useNavigate();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
@@ -44,30 +47,31 @@ function RootLayout() {
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const session = walletStatus.status === "connected" ? walletStatus.session : undefined;
-  const authenticated = token && session && getTokenWallet() === String(session.account.address);
+  const activeWallet = useActiveWallet();
+  const walletAddress = activeWallet?.address ?? null;
+  const authenticated = token && walletAddress && getTokenWallet() === walletAddress;
 
-  const signIn = useCallback(async (walletSession: WalletSession) => {
-    if (!walletSession.signMessage) {
-      throw new Error("Connected wallet does not support message signing");
+  // Clear our JWT if Privy session expired
+  useEffect(() => {
+    if (ready && !privyAuthenticated && token) {
+      clearToken();
+      setTokenState(null);
     }
+  }, [ready, privyAuthenticated, token]);
 
+  async function signIn(address: string) {
     setSigningIn(true);
     setError(null);
     try {
-      const timestamp = Date.now();
-      const message = `Sign in to AgentBox\nTimestamp: ${timestamp}`;
-      const encoded = new TextEncoder().encode(message);
-      const signature = await walletSession.signMessage(encoded);
-      const sig = btoa(String.fromCharCode(...new Uint8Array(signature)));
+      const privyToken = await getAccessToken();
+      if (!privyToken) throw new Error("No Privy session");
 
       const res = await fetch(`${API_URL}/instances/auth`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          solanaWalletAddress: String(walletSession.account.address),
-          signature: sig,
-          timestamp,
+          privyToken,
+          solanaWalletAddress: address,
         }),
       });
 
@@ -77,60 +81,61 @@ function RootLayout() {
       }
 
       const data = await res.json();
-      const walletAddr = String(walletSession.account.address);
-      setToken(data.token, walletAddr);
+      setToken(data.token, address);
       setIsAdmin(data.isAdmin ?? false);
       setTokenState(data.token);
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Sign-in failed";
       setError(msg);
-      throw err instanceof Error ? err : new Error(msg);
+      return false;
     } finally {
       setSigningIn(false);
     }
-  }, []);
+  }
 
-  const handleConnect = useCallback(
-    async (connectorId: string) => {
-      setError(null);
-      try {
-        const walletSession = await connect(connectorId, {
-          autoConnect: true,
-          allowInteractiveFallback: true,
-        });
-        await signIn(walletSession);
-        void navigate({ to: "/dashboard" });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Wallet connection failed");
-      }
+  const { login } = useLogin({
+    onComplete: async ({ user }) => {
+      const solanaWallets = user.linkedAccounts.filter(
+        (a): a is WalletWithMetadata => a.type === "wallet" && a.chainType === "solana",
+      );
+      const wallet = solanaWallets.find((w) => w.walletClientType !== "privy") ?? solanaWallets[0];
+      if (!wallet) return;
+
+      const ok = await signIn(wallet.address);
+      if (ok) void navigate({ to: "/dashboard" });
     },
-    [connect, navigate, signIn],
-  );
+  });
 
-  const logout = useCallback(() => {
+  // Restore session on page reload when Privy session exists but JWT is missing
+  useEffect(() => {
+    if (!privyAuthenticated || !activeWallet || token || signingIn) return;
+    void signIn(activeWallet.address);
+  }, [privyAuthenticated, activeWallet, token, signingIn]);
+
+  async function logout() {
     clearToken();
     setTokenState(null);
-    void disconnectWallet();
+    await privyLogout();
     void navigate({ to: "/" });
-  }, [disconnectWallet, navigate]);
+  }
 
-  const walletError =
-    walletStatus.status === "error"
-      ? walletStatus.error instanceof Error
-        ? walletStatus.error.message
-        : String(walletStatus.error)
-      : null;
-  const activeError = error ?? walletError;
+  // Privy not ready yet
+  if (!ready) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="size-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
-  // Auto-connecting or signing in - show loading (only block dashboard routes)
-  if (inDashboard && (walletStatus.status === "connecting" || signingIn)) {
+  // Auto-signing in - show loading (only block dashboard routes)
+  if (inDashboard && signingIn) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="size-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">
-            {signingIn ? "Signing in..." : "Connecting wallet..."}
-          </p>
+          <p className="text-sm text-muted-foreground">Signing in...</p>
         </div>
       </div>
     );
@@ -181,14 +186,14 @@ function RootLayout() {
                 </svg>
                 <span className="sr-only">X</span>
               </a>
-              {session && (
+              {walletAddress && (
                 <span className="rounded-md bg-muted/70 px-2 py-1 font-mono text-xs text-muted-foreground">
-                  {truncateAddress(String(session.account.address))}
+                  {truncateAddress(walletAddress)}
                 </span>
               )}
               <button
                 type="button"
-                onClick={logout}
+                onClick={() => void logout()}
                 className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
               >
                 <LogOut className="size-3.5" />
@@ -207,41 +212,7 @@ function RootLayout() {
     );
   }
 
-  // Wallet connected but no valid JWT - compact sign-in
-  if (inDashboard && session) {
-    return (
-      <div className="flex min-h-screen flex-col bg-background">
-        <div className="flex flex-1 items-center justify-center p-4">
-          <Card className="w-full max-w-sm">
-            <CardHeader className="text-center">
-              <CardTitle className="text-xl font-semibold tracking-tight">
-                Sign in to AgentBox
-              </CardTitle>
-              <p className="mt-1 font-mono text-xs text-muted-foreground">
-                {truncateAddress(String(session.account.address))}
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {activeError && <p className="text-sm text-destructive">{activeError}</p>}
-              <Button onClick={() => void signIn(session)} className="w-full">
-                <Wallet className="size-4" />
-                Sign Message & Continue
-              </Button>
-              <Button variant="outline" onClick={logout} className="w-full">
-                <LogOut className="size-4" />
-                Disconnect Wallet
-              </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                Sign a message to prove wallet ownership.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-        <Footer />
-      </div>
-    );
-  }
-
+  // Dashboard but not authenticated - show login
   if (inDashboard) {
     return (
       <div className="flex min-h-screen flex-col bg-background">
@@ -251,49 +222,13 @@ function RootLayout() {
               <CardTitle className="text-xl font-semibold tracking-tight">Open Dashboard</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {activeError && <p className="text-sm text-destructive">{activeError}</p>}
-              {!isReady ? (
-                <p className="rounded-md border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
-                  Loading wallet connectors...
-                </p>
-              ) : connectors.length ? (
-                connectors.map((connector) => (
-                  <Button
-                    key={connector.id}
-                    onClick={() => void handleConnect(connector.id)}
-                    variant="outline"
-                    className="w-full"
-                    disabled={connecting}
-                  >
-                    <Wallet className="size-4" />
-                    Connect {connector.name}
-                  </Button>
-                ))
-              ) : (
-                <p className="rounded-md border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
-                  No compatible wallet detected. Install{" "}
-                  <a
-                    href="https://phantom.app"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline"
-                  >
-                    Phantom
-                  </a>{" "}
-                  or{" "}
-                  <a
-                    href="https://solflare.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline"
-                  >
-                    Solflare
-                  </a>{" "}
-                  to continue.
-                </p>
-              )}
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Button onClick={login} className="w-full">
+                <Wallet className="size-4" />
+                Login
+              </Button>
               <p className="text-center text-xs text-muted-foreground">
-                Connect your wallet, sign once, and continue to your dashboard.
+                Connect your Solana wallet to continue.
               </p>
             </CardContent>
           </Card>
@@ -303,7 +238,7 @@ function RootLayout() {
     );
   }
 
-  // Disconnected - full landing page
+  // Landing page
   return (
     <div className="relative min-h-screen">
       <header className="sticky top-0 z-10 border-b border-border/70 bg-background/75 backdrop-blur">
@@ -349,8 +284,8 @@ function RootLayout() {
                 <Link to="/dashboard">Dashboard</Link>
               </Button>
             ) : env.enableInstanceCreation ? (
-              <Button asChild size="sm">
-                <a href="#connect-wallet">Launch for 5 USDC</a>
+              <Button size="sm" onClick={login}>
+                Launch for 5 USDC
               </Button>
             ) : (
               <Button size="sm" disabled>
@@ -385,11 +320,9 @@ function RootLayout() {
                   </Link>
                 </Button>
               ) : env.enableInstanceCreation ? (
-                <Button asChild size="lg">
-                  <a href="#connect-wallet">
-                    Launch for 5 USDC
-                    <ArrowRight className="size-4" />
-                  </a>
+                <Button size="lg" onClick={login}>
+                  Launch for 5 USDC
+                  <ArrowRight className="size-4" />
                 </Button>
               ) : (
                 <Button size="lg" disabled>
@@ -585,10 +518,10 @@ function RootLayout() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {authenticated && session ? (
+              {authenticated && walletAddress ? (
                 <>
                   <p className="font-mono text-xs text-muted-foreground">
-                    {truncateAddress(String(session.account.address))}
+                    {truncateAddress(walletAddress)}
                   </p>
                   <Button asChild className="w-full">
                     <Link to="/dashboard">
@@ -599,50 +532,14 @@ function RootLayout() {
                 </>
               ) : (
                 <>
-                  {activeError && <p className="text-sm text-destructive">{activeError}</p>}
-                  {!isReady ? (
-                    <p className="rounded-md border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
-                      Loading wallet connectors...
-                    </p>
-                  ) : connectors.length ? (
-                    connectors.map((connector) => (
-                      <Button
-                        key={connector.id}
-                        onClick={() => void handleConnect(connector.id)}
-                        variant="outline"
-                        className="w-full"
-                        disabled={connecting}
-                      >
-                        <Wallet className="size-4" />
-                        Connect {connector.name}
-                      </Button>
-                    ))
-                  ) : (
-                    <p className="rounded-md border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
-                      No compatible wallet detected. Install{" "}
-                      <a
-                        href="https://phantom.app"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        Phantom
-                      </a>{" "}
-                      or{" "}
-                      <a
-                        href="https://solflare.com"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        Solflare
-                      </a>{" "}
-                      to continue.
-                    </p>
-                  )}
+                  {error && <p className="text-sm text-destructive">{error}</p>}
+                  <Button onClick={login} className="w-full">
+                    <Wallet className="size-4" />
+                    {env.enableInstanceCreation ? "Launch for 5 USDC" : "Login"}
+                  </Button>
                   <p className="text-xs text-muted-foreground">
                     {env.enableInstanceCreation
-                      ? "You'll sign a message to prove ownership, then complete a single 5 USDC transaction."
+                      ? "Connect your Solana wallet, then complete a single 5 USDC transaction."
                       : "Wallet connection is live. Instance creation is temporarily disabled while we finish the product."}
                   </p>
                 </>

@@ -1,4 +1,3 @@
-import { createWalletTransactionSigner } from "@solana/client";
 import {
   address,
   appendTransactionMessageInstruction,
@@ -11,7 +10,6 @@ import {
   signTransactionMessageWithSigners,
   type TransactionSigner,
 } from "@solana/kit";
-import { useBalance, useSplToken, useWalletSession } from "@solana/react-hooks";
 import {
   findAssociatedTokenPda as findAta2022,
   getCreateAssociatedTokenIdempotentInstruction as getCreateAta2022,
@@ -38,7 +36,7 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Accordion,
@@ -62,6 +60,7 @@ import { Skeleton } from "../components/ui/skeleton";
 import { env } from "../env";
 import { api, type InstanceAccess, type InstanceHealth } from "../lib/api";
 import { formatDate, relativeTime } from "../lib/format";
+import { useActiveWallet, usePrivySigner, useSolBalance, useSplTokenBalance } from "../lib/solana";
 import {
   getProvisioningStepIndex,
   getProvisioningStepLabel,
@@ -227,12 +226,12 @@ function WalletBalanceCard({
   vmWallet: string;
   ownerWallet: string;
 }) {
-  const { lamports, fetching: solFetching } = useBalance(vmWallet);
+  const { lamports, fetching: solFetching } = useSolBalance(vmWallet);
   const {
     balance: usdcData,
     isFetching: usdcFetching,
     refresh: refreshUsdc,
-  } = useSplToken(USDC_MINT, { owner: vmWallet });
+  } = useSplTokenBalance(USDC_MINT, vmWallet);
   const [withdrawToken, setWithdrawToken] = useState<"SOL" | "USDC" | null>(null);
 
   const sol = lamports !== null ? Number(lamports) / 1e9 : null;
@@ -772,11 +771,8 @@ function DetailSkeleton() {
 function InstanceDetail() {
   const { id: name } = Route.useParams();
   const navigate = useNavigate();
-  const session = useWalletSession();
-  const signer: TransactionSigner | null = useMemo(
-    () => (session ? createWalletTransactionSigner(session).signer : null),
-    [session],
-  );
+  const activeWallet = useActiveWallet();
+  const signer = usePrivySigner(activeWallet);
 
   const [instance, setInstance] = useState<InstanceAccess | null>(null);
   const [health, setHealth] = useState<InstanceHealth | null>(null);
