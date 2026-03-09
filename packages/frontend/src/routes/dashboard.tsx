@@ -101,7 +101,7 @@ function StatusDisplay({ instance }: { instance: Instance }) {
 
 function HomeSkeleton() {
   return (
-    <main className="container mx-auto flex-1 max-w-6xl px-4 py-6 md:py-8">
+    <div className="flex-1 px-4 py-6 lg:px-6">
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div className="space-y-2">
@@ -111,7 +111,7 @@ function HomeSkeleton() {
           <Skeleton className="h-8 w-28" />
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 @xl/main:grid-cols-3">
           {["total", "running", "expiring"].map((item) => (
             <Card key={item}>
               <CardHeader className="pb-2">
@@ -129,12 +129,12 @@ function HomeSkeleton() {
             <Skeleton className="h-6 w-32" />
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="hidden space-y-2 md:block">
+            <div className="hidden space-y-2 @xl/main:block">
               {["row-1", "row-2", "row-3", "row-4", "row-5"].map((item) => (
                 <Skeleton key={item} className="h-10 w-full" />
               ))}
             </div>
-            <div className="space-y-3 md:hidden">
+            <div className="space-y-3 @xl/main:hidden">
               {["card-1", "card-2", "card-3"].map((item) => (
                 <Skeleton key={item} className="h-28 w-full" />
               ))}
@@ -142,7 +142,7 @@ function HomeSkeleton() {
           </CardContent>
         </Card>
       </div>
-    </main>
+    </div>
   );
 }
 
@@ -565,7 +565,7 @@ function Home() {
   }
 
   return (
-    <main className="container mx-auto flex-1 max-w-6xl px-4 py-6 md:py-8">
+    <div className="flex-1 px-4 py-6 lg:px-6">
       <div className="space-y-6">
         <div className="rounded-xl border border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur md:p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -618,7 +618,7 @@ function Home() {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 @xl/main:grid-cols-3">
           <Card className="shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -682,7 +682,7 @@ function Home() {
               </div>
             ) : (
               <>
-                <div className="hidden md:block">
+                <div className="hidden @xl/main:block">
                   <Table>
                     <TableHeader className="bg-muted/35">
                       <TableRow className="hover:bg-muted/50">
@@ -854,7 +854,7 @@ function Home() {
                   </Table>
                 </div>
 
-                <div className="space-y-3 md:hidden">
+                <div className="space-y-3 @xl/main:hidden">
                   {instances.map((instance) => {
                     const urls = instanceUrls(
                       instance.name,
@@ -1061,6 +1061,6 @@ function Home() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </main>
+    </div>
   );
 }

@@ -16,10 +16,9 @@ import {
   getTransferCheckedInstruction as getTransferChecked2022,
   TOKEN_2022_PROGRAM_ADDRESS,
 } from "@solana-program/token-2022";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,
-  ArrowLeft,
   ArrowRightLeft,
   BookOpen,
   Check,
@@ -539,7 +538,7 @@ function ProvisioningStepper({
   return (
     <Card className="shadow-sm">
       <CardHeader className="pb-2">
-        <div className="flex items-baseline justify-between">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
           <CardTitle className="flex items-center gap-2">
             <Loader2 className="size-4 animate-spin text-info" />
             Provisioning - {elapsed}
@@ -548,7 +547,50 @@ function ProvisioningStepper({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="flex items-start">
+        {/* Vertical stepper on mobile, horizontal on sm+ */}
+        <div className="flex flex-col gap-3 sm:hidden">
+          {provisioningStepOrder.map((item, index) => {
+            const label = getProvisioningStepLabel(item);
+            const completed = index < current;
+            const active = index === current;
+            const isLast = index === provisioningStepOrder.length - 1;
+
+            return (
+              <div key={item} className="flex items-start gap-3">
+                <div className="flex flex-col items-center">
+                  <span
+                    className={`inline-flex size-7 shrink-0 items-center justify-center rounded-full border-2 ${
+                      completed
+                        ? "border-success bg-success/10"
+                        : active
+                          ? "animate-pulse border-info bg-info/10"
+                          : "border-border bg-background"
+                    }`}
+                  >
+                    {completed ? (
+                      <Check className="size-3.5 text-success" />
+                    ) : active ? (
+                      <Loader2 className="size-3.5 animate-spin text-info" />
+                    ) : (
+                      <span className="size-2 rounded-full bg-muted-foreground/40" />
+                    )}
+                  </span>
+                  {!isLast && <div className="mt-1 h-4 w-0.5 rounded bg-border" />}
+                </div>
+                <span
+                  className={`pt-1 text-sm leading-tight ${
+                    active ? "font-medium text-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  {label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Horizontal stepper on sm+ */}
+        <div className="hidden items-start sm:flex">
           {provisioningStepOrder.map((item, index) => {
             const label = getProvisioningStepLabel(item);
             const completed = index < current;
@@ -730,7 +772,7 @@ function TransferDialog({
 
 function DetailSkeleton() {
   return (
-    <main className="container mx-auto flex-1 max-w-4xl px-4 py-6 md:py-8">
+    <div className="mx-auto w-full flex-1 max-w-4xl px-4 py-6 lg:px-6">
       <div className="space-y-6">
         <div className="space-y-3">
           <Skeleton className="h-4 w-16" />
@@ -764,7 +806,7 @@ function DetailSkeleton() {
           </CardContent>
         </Card>
       </div>
-    </main>
+    </div>
   );
 }
 
@@ -962,34 +1004,22 @@ function InstanceDetail() {
 
   if (fatalError || !instance) {
     return (
-      <main className="container mx-auto flex-1 max-w-4xl px-4 py-6 md:py-8">
-        <Link
-          to="/dashboard"
-          className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" /> Back
-        </Link>
+      <div className="mx-auto w-full flex-1 max-w-4xl px-4 py-6 lg:px-6">
         <p className="text-sm text-destructive">{fatalError ?? "Instance not found"}</p>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="container mx-auto flex-1 max-w-4xl px-4 py-6 md:py-8">
+    <div className="mx-auto w-full flex-1 max-w-4xl px-4 py-6 lg:px-6">
       <div className="space-y-6">
         <div className="rounded-xl border border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur md:p-5">
-          <Link
-            to="/dashboard"
-            className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ArrowLeft className="size-4" /> Back
-          </Link>
-          <div className="flex items-start gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-3">
             {editingName ? (
               <div className="flex items-center gap-2">
                 <input
                   ref={nameInputRef}
-                  className="rounded border border-input bg-muted px-2 py-0.5 text-2xl font-bold tracking-tight outline-none focus:ring-1 focus:ring-ring md:text-3xl"
+                  className="min-w-0 flex-1 rounded border border-input bg-muted px-2 py-0.5 text-2xl font-bold tracking-tight outline-none focus:ring-1 focus:ring-ring md:text-3xl"
                   value={nameValue}
                   onChange={(e) => setNameValue(e.target.value)}
                   onKeyDown={(e) => {
@@ -1036,7 +1066,7 @@ function InstanceDetail() {
             )}
             <StatusDisplay instance={instance} />
           </div>
-          <p className="mt-1 rounded-md bg-muted/60 px-2 py-1 font-mono text-xs text-muted-foreground">
+          <p className="mt-2 truncate rounded-md bg-muted/60 px-2 py-1 font-mono text-xs text-muted-foreground">
             {instance.ownerWallet}
           </p>
         </div>
@@ -1057,7 +1087,7 @@ function InstanceDetail() {
             </button>
           </CardHeader>
           <CardContent>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
+            <dl className="grid gap-3 text-sm sm:grid-cols-[auto_1fr] sm:gap-x-6 sm:gap-y-3">
               {showAdvanced && (
                 <>
                   <dt className="text-muted-foreground">IP Address</dt>
@@ -1069,11 +1099,19 @@ function InstanceDetail() {
               )}
 
               <dt className="text-muted-foreground">Owner Wallet</dt>
-              <dd className="font-mono">{instance.ownerWallet}</dd>
+              <dd className="flex min-w-0 items-center gap-1 font-mono">
+                <span className="truncate">{instance.ownerWallet}</span>
+                <CopyButton value={instance.ownerWallet} />
+              </dd>
 
               <dt className="text-muted-foreground">VM Wallet</dt>
-              <dd className="font-mono">
-                {instance.vmWallet ?? (
+              <dd className="flex min-w-0 items-center gap-1 font-mono">
+                {instance.vmWallet ? (
+                  <>
+                    <span className="truncate">{instance.vmWallet}</span>
+                    <CopyButton value={instance.vmWallet} />
+                  </>
+                ) : (
                   <span className="animate-pulse italic text-muted-foreground">
                     Initializing...
                   </span>
@@ -1081,16 +1119,16 @@ function InstanceDetail() {
               </dd>
 
               <dt className="text-muted-foreground">Agent NFT</dt>
-              <dd className="break-all font-mono">
+              <dd className="min-w-0 font-mono">
                 {instance.nftMint ? (
                   <a
                     href={getSolscanTokenUrl(instance.nftMint)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                    className="flex items-center gap-1 text-primary hover:underline"
                   >
-                    {instance.nftMint}
-                    <ExternalLink className="size-3" />
+                    <span className="truncate">{instance.nftMint}</span>
+                    <ExternalLink className="size-3 shrink-0" />
                   </a>
                 ) : instance.status === "minting" ? (
                   <span className="animate-pulse italic text-muted-foreground">
@@ -1250,21 +1288,20 @@ function InstanceDetail() {
           </Card>
         )}
 
-        <div className="flex flex-wrap gap-3 rounded-xl border border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
-          <div className="flex flex-wrap gap-3">
+        <div className="space-y-3 rounded-xl border border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-3">
             {instance.status === "running" ? (
               <Button asChild variant="outline">
                 <a href={instance.chatUrl} target="_blank" rel="noopener noreferrer">
                   <MessageSquare className="size-4" />
-                  Open Chat
-                  <ExternalLink className="ml-1 size-3" />
+                  Chat
+                  <ExternalLink className="ml-1 size-3 hidden sm:block" />
                 </a>
               </Button>
             ) : (
               <Button variant="outline" disabled>
                 <MessageSquare className="size-4" />
-                Open Chat
-                <ExternalLink className="ml-1 size-3" />
+                Chat
               </Button>
             )}
 
@@ -1272,20 +1309,19 @@ function InstanceDetail() {
               <Button asChild variant="outline">
                 <a href={instance.terminalUrl} target="_blank" rel="noopener noreferrer">
                   <TerminalSquare className="size-4" />
-                  Open Terminal
-                  <ExternalLink className="ml-1 size-3" />
+                  Terminal
+                  <ExternalLink className="ml-1 size-3 hidden sm:block" />
                 </a>
               </Button>
             ) : (
               <Button variant="outline" disabled>
                 <TerminalSquare className="size-4" />
-                Open Terminal
-                <ExternalLink className="ml-1 size-3" />
+                Terminal
               </Button>
             )}
           </div>
 
-          <div className="ml-auto flex flex-wrap gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-3">
             <Button
               variant="outline"
               onClick={() => setConfirmAction("restart")}
@@ -1394,7 +1430,7 @@ function InstanceDetail() {
           onTransferred={() => navigate({ to: "/dashboard" })}
         />
       )}
-    </main>
+    </div>
   );
 }
 

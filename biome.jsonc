@@ -35,7 +35,7 @@
   },
   "overrides": [
     {
-      "includes": ["**/routeTree.gen.ts", "**/drizzle/**"],
+      "includes": ["**/routeTree.gen.ts", "**/drizzle/**", "**/components/ui/**"],
       "linter": { "enabled": false },
       "formatter": { "enabled": false }
     }
