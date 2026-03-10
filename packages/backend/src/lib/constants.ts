@@ -20,7 +20,8 @@ export const PRIVY_APP_ID = "cmmi1ag9e03jd0dl8zmussizw";
  */
 const X402_PROVIDERS = {
   agentbox: {
-    baseUrl: "https://inference.x402.agentbox.fyi/v1",
+    baseUrl: "http://127.0.0.1:18789/x402/v1",
+    upstreamUrl: "https://inference.surf.cascade.fyi",
     models: [
       {
         id: "moonshotai/kimi-k2.5",
@@ -103,10 +104,10 @@ export const OPENCLAW_BASE_CONFIG = {
   },
   plugins: {
     installs: {
-      "openclaw-x402": { source: "npm", spec: "openclaw-x402@latest" },
+      "openclaw-agentbox": { source: "npm", spec: "openclaw-agentbox@latest" },
     },
     entries: {
-      "openclaw-x402": {
+      "openclaw-agentbox": {
         enabled: true,
         config: {
           keypairPath: "/home/openclaw/.openclaw/agentbox/wallet-sol.json",

@@ -1,0 +1,32 @@
+{
+  "id": "openclaw-agentbox",
+  "name": "AgentBox Plugin",
+  "description": "AgentBox x402 USDC payments, Solana wallet, token launching, trading, and wallet management",
+  "version": "1.0.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "providers": {
+        "type": "object",
+        "description": "Provider catalog keyed by name, each with baseUrl and models array"
+      },
+      "keypairPath": {
+        "type": "string",
+        "description": "Path to Solana keypair JSON file"
+      },
+      "rpcUrl": {
+        "type": "string",
+        "description": "Solana RPC URL"
+      },
+      "dashboardUrl": {
+        "type": "string",
+        "description": "URL to link from /x_wallet dashboard"
+      },
+      "bagsApiKey": {
+        "type": "string",
+        "description": "Bags.fm API key for token launching and trading"
+      }
+    },
+    "required": []
+  }
+}

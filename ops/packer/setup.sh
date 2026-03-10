@@ -135,15 +135,15 @@ cat > /home/openclaw/.openclaw/openclaw.json << 'OCEOF'
 }
 OCEOF
 
-# --- x402 payment plugin ---
-# Patches globalThis.fetch to handle x402 USDC payments on Solana for LLM inference.
-# Published as `openclaw-x402` on npm. Installed via OpenClaw's plugin manager which
+# --- AgentBox plugin (x402 payment + Solana trading tools) ---
+# Proxies inference requests through x402 USDC payments on Solana via registerHttpHandler.
+# Published as `openclaw-agentbox` on npm. Installed via OpenClaw's plugin manager which
 # handles placement in ~/.openclaw/extensions/ (auto-discovered, no load.paths needed).
 echo ""
-echo "==> Installing x402 payment plugin"
+echo "==> Installing AgentBox plugin"
 chown -R openclaw:openclaw /home/openclaw/.openclaw
-su - openclaw -c "openclaw plugins install openclaw-x402@latest"
-echo "    x402 plugin installed"
+su - openclaw -c "openclaw plugins install openclaw-agentbox@latest"
+echo "    AgentBox plugin installed"
 
 # --- Install AgentBox skills (managed skills via npx) ---
 #
