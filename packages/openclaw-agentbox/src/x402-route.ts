@@ -14,28 +14,25 @@ export type X402RouteOptions = {
 /**
  * Create a gateway HTTP handler that proxies requests through x402 payment.
  *
- * Uses registerHttpHandler (not registerHttpRoute) because registerHttpRoute
- * does exact path matching and we need prefix matching on /x402/*.
- *
- * The handler intercepts requests to /x402/*, strips the prefix, builds the
- * upstream URL, and forwards via the x402-wrapped fetch. For chat completions,
- * it forces stream:false (x402 payment is synchronous) and wraps the JSON
- * response as SSE for pi-ai compatibility.
+ * Registered via registerHttpRoute({ path: "/x402", match: "prefix" }) to
+ * intercept all /x402/* requests. Strips the prefix, builds the upstream URL,
+ * and forwards via the x402-wrapped fetch. For chat completions, forces
+ * stream:false (x402 payment is synchronous) and wraps the JSON response as
+ * SSE for pi-ai compatibility.
  */
 export function createX402RouteHandler(
   opts: X402RouteOptions,
-): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
+): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const { upstreamOrigin, proxy, getWalletAddress, historyPath, allModels, logger } = opts;
 
-  return async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
+  return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? "/", "http://localhost");
-    if (!url.pathname.startsWith("/x402/")) return false;
 
     const walletAddress = getWalletAddress();
     if (!walletAddress) {
       res.writeHead(503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: { message: "Wallet not loaded yet", code: "not_ready" } }));
-      return true;
+      return;
     }
 
     // Strip /x402 prefix, build upstream URL
@@ -50,9 +47,23 @@ export function createX402RouteHandler(
     let body = Buffer.concat(chunks).toString("utf-8");
 
     // Build headers, strip gateway auth and host
+    // Strip hop-by-hop and gateway-internal headers before forwarding.
+    // content-length/transfer-encoding MUST be stripped: body may be modified
+    // (stream:true->false) making original length wrong, and fetch() manages
+    // these automatically from the body argument.
+    const HOP_BY_HOP = new Set([
+      "authorization",
+      "host",
+      "connection",
+      "content-length",
+      "transfer-encoding",
+      "keep-alive",
+      "te",
+      "upgrade",
+    ]);
     const headers: Record<string, string> = {};
     for (const [key, val] of Object.entries(req.headers)) {
-      if (key === "authorization" || key === "host" || key === "connection") continue;
+      if (HOP_BY_HOP.has(key)) continue;
       if (typeof val === "string") headers[key] = val;
     }
 
@@ -118,7 +129,7 @@ export function createX402RouteHandler(
             error: { message: userMessage, type: "x402_payment_error", code: "payment_failed" },
           }),
         );
-        return true;
+        return;
       }
 
       // Upstream failed after payment settled - don't retry (would trigger another payment)
@@ -150,7 +161,7 @@ export function createX402RouteHandler(
             },
           }),
         );
-        return true;
+        return;
       }
 
       logger.info(`x402: response ${response.status}`);
@@ -222,11 +233,11 @@ export function createX402RouteHandler(
             "Cache-Control": "no-cache",
           });
           res.end(sse);
-          return true;
+          return;
         } catch {
           res.writeHead(response.status, { "Content-Type": ct });
           res.end(text);
-          return true;
+          return;
         }
       }
 
@@ -249,7 +260,7 @@ export function createX402RouteHandler(
         }
       }
       res.end();
-      return true;
+      return;
     } catch (err) {
       const msg = String(err);
       logger.error(`x402: fetch threw: ${msg}`);
@@ -281,7 +292,6 @@ export function createX402RouteHandler(
           }),
         );
       }
-      return true;
     }
   };
 }

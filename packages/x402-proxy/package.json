@@ -1,6 +1,6 @@
 {
   "name": "x402-proxy",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Generic x402 payment proxy library for Solana USDC",
   "type": "module",
   "sideEffects": false,
@@ -23,6 +23,7 @@
   },
   "peerDependencies": {
     "@solana/kit": "^6.0.0",
+    "ethers": "^6.0.0",
     "viem": "^2.0.0"
   },
   "devDependencies": {

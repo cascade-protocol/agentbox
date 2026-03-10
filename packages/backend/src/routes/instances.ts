@@ -651,13 +651,13 @@ instanceRoutes.get("/instances/config", async (c) => {
   config.gateway.controlUi.allowedOrigins = [`https://${hostname}`];
 
   // Plugin config
-  config.plugins.entries["openclaw-x402"].config.dashboardUrl =
+  config.plugins.entries["openclaw-agentbox"].config.dashboardUrl =
     `https://agentbox.fyi/instances/${row.name}`;
   if (env.SOLANA_RPC_URL) {
-    config.plugins.entries["openclaw-x402"].config.rpcUrl = env.SOLANA_RPC_URL;
+    config.plugins.entries["openclaw-agentbox"].config.rpcUrl = env.SOLANA_RPC_URL;
   }
   if (env.BAGS_API_KEY) {
-    config.plugins.entries["openclaw-x402"].config.bagsApiKey = env.BAGS_API_KEY;
+    config.plugins.entries["openclaw-agentbox"].config.bagsApiKey = env.BAGS_API_KEY;
   }
 
   // Telegram (webhook mode - OpenClaw switches from long-polling to webhook when webhookUrl is set)

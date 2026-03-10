@@ -116,7 +116,7 @@ export function register(api: OpenClawPluginApi): void {
       client.register(SOL_MAINNET, new ExactSvmScheme(signerRef, { rpcUrl }));
       proxyRef = createX402ProxyHandler({ client });
 
-      // Register HTTP handler for x402 proxy route
+      // Register HTTP route for x402 proxy (prefix match on /x402/*)
       const upstreamOrigin = upstreamOrigins[0];
       if (upstreamOrigin) {
         const handler = createX402RouteHandler({
@@ -127,8 +127,13 @@ export function register(api: OpenClawPluginApi): void {
           allModels,
           logger: ctx.logger,
         });
-        api.registerHttpHandler(handler);
-        ctx.logger.info(`x402: HTTP handler registered for ${upstreamOrigin}`);
+        api.registerHttpRoute({
+          path: "/x402",
+          match: "prefix",
+          auth: "plugin",
+          handler,
+        });
+        ctx.logger.info(`x402: HTTP route registered for ${upstreamOrigin}`);
       }
     },
     async stop() {},

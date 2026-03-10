@@ -1,5 +1,5 @@
 /** Hetzner snapshot ID for VM provisioning. Update after `just build-image`. */
-export const HETZNER_SNAPSHOT_ID = "364343552";
+export const HETZNER_SNAPSHOT_ID = "365506691";
 
 export const CF_ZONE_ID = "fda671fa572b4c2d26de8aedcbf94f6e";
 export const FACILITATOR_URL = "https://facilitator.cascade.fyi";
@@ -60,6 +60,9 @@ const X402_PROVIDERS = {
  *   ignores the extra fields; the plugin uses them for cost tracking and display.
  * - The `rpcUrl` field is merged at boot time from the env var (per-instance).
  */
+// Gateway's models.providers validates strictly - strip plugin-only fields
+const { upstreamUrl: _, ...agentboxGatewayProvider } = X402_PROVIDERS.agentbox;
+
 export const OPENCLAW_BASE_CONFIG = {
   gateway: {
     mode: "local",
@@ -83,7 +86,7 @@ export const OPENCLAW_BASE_CONFIG = {
     mode: "replace",
     providers: {
       agentbox: {
-        ...X402_PROVIDERS.agentbox,
+        ...agentboxGatewayProvider,
         apiKey: "x402-payment",
         api: "openai-completions",
       },

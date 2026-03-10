@@ -157,6 +157,25 @@ echo "==> Installing AgentBox skills"
 su - openclaw -c "INSTALL_INTERNAL_SKILLS=1 npx -y skills add -g --yes cascade-protocol/agentbox"
 echo "    AgentBox skills installed to ~/.openclaw/skills/"
 
+# --- Homebrew + gh CLI ---
+#
+# Homebrew: package manager for additional tools. Must be installed as a non-root
+# user (Homebrew refuses to run as root). Installed under openclaw user, symlinked
+# to /home/linuxbrew/.linuxbrew (Homebrew's default Linux prefix).
+# gh: GitHub CLI for repo operations, PR management, etc.
+
+echo ""
+echo "==> Installing Homebrew"
+su - openclaw -c "NONINTERACTIVE=1 /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/openclaw/.profile
+echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/openclaw/.bashrc
+echo "    Homebrew installed"
+
+echo ""
+echo "==> Installing gh CLI"
+su - openclaw -c 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" && brew install gh'
+echo "    gh CLI installed"
+
 # --- Solana CLI + SATI identity CLI ---
 #
 # Solana CLI: used by agentbox-init.sh to create a per-instance keypair on boot.
@@ -176,9 +195,9 @@ echo "    Solana $(solana --version)"
 
 echo ""
 echo "==> Installing create-sati-agent CLI"
-su - openclaw -c "npm install -g create-sati-agent@latest"
-ln -sf /home/openclaw/.npm-global/bin/create-sati-agent /usr/local/bin/create-sati-agent
-echo "    create-sati-agent $(create-sati-agent --version 2>/dev/null || echo installed)"
+su - openclaw -c "npm install -g create-sati-agent@latest" || echo "    WARN: create-sati-agent install failed (non-critical)"
+ln -sf /home/openclaw/.npm-global/bin/create-sati-agent /usr/local/bin/create-sati-agent 2>/dev/null || true
+echo "    create-sati-agent $(create-sati-agent --version 2>/dev/null || echo skipped)"
 
 # --- Pre-install systemd services ---
 #

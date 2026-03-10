@@ -1,6 +1,6 @@
 {
   "name": "openclaw-agentbox",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "OpenClaw plugin for AgentBox - x402 USDC payments, Solana wallet, token trading",
   "type": "module",
   "sideEffects": false,
@@ -28,11 +28,14 @@
     "@scure/bip39": "^1.6.0",
     "@sinclair/typebox": "^0.34.48",
     "@solana-program/token-2022": "^0.9.0",
-    "@solana/kit": "^6.0.0"
+    "@solana/kit": "^6.0.0",
+    "@solana/sysvars": "^6.0.0",
+    "ethers": "^6.0.0",
+    "viem": "^2.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "openclaw": ">=2026.2.21",
+    "openclaw": ">=2026.3.8",
     "publint": "^0.3.17",
     "tsdown": "^0.20.3",
     "typescript": "^5.9.0"
