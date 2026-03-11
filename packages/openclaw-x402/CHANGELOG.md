@@ -2,6 +2,12 @@
 
 All notable changes to `openclaw-x402` are documented here.
 
+## [0.12.1] - 2026-03-11
+
+### Fixed
+
+- Skills update uses `--copy` mode to install directly into `~/.openclaw/skills/` instead of symlinking, fixing OpenClaw's symlink path validation rejecting skills
+
 ## [0.12.0] - 2026-03-07
 
 ### Added

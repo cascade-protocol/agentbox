@@ -154,7 +154,7 @@ echo "    AgentBox plugin installed"
 
 echo ""
 echo "==> Installing AgentBox skills"
-su - openclaw -c "INSTALL_INTERNAL_SKILLS=1 npx -y skills add -g --yes cascade-protocol/agentbox"
+su - openclaw -c "INSTALL_INTERNAL_SKILLS=1 npx -y skills add -g --yes --copy cascade-protocol/agentbox"
 echo "    AgentBox skills installed to ~/.openclaw/skills/"
 
 # --- Homebrew + gh CLI ---
