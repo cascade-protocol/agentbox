@@ -11,15 +11,18 @@ import {
 import {
   BagsNoRouteError,
   getSolBalance,
+  getSolBalanceLamports,
   getTokenAccounts,
   getTokenDecimals,
   getUsdcBalance,
   JupiterNoRouteError,
   launchOnBags,
+  MIN_SOL_FOR_SWAP_LAMPORTS,
   SOL_MINT,
   signAndSendPumpPortalTx,
   swapViaBags,
   swapViaJupiter,
+  TransactionNotConfirmedError,
 } from "./solana.js";
 
 export const SOL_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
@@ -282,6 +285,18 @@ export function createSwapTool(ctx: ToolContext) {
       const outputShort = `${params.outputMint.slice(0, 4)}...${params.outputMint.slice(-4)}`;
 
       try {
+        // Swaps involving native SOL need enough SOL for wSOL ATA rent + fees
+        if (params.inputMint === SOL_MINT || params.outputMint === SOL_MINT) {
+          const lamports = await getSolBalanceLamports(ctx.rpcUrl, walletAddress);
+          if (lamports < MIN_SOL_FOR_SWAP_LAMPORTS) {
+            return toolResult(
+              `Insufficient SOL for swap transaction fees. Have ${(Number(lamports) / 1e9).toFixed(4)} SOL, ` +
+                `need ~${(Number(MIN_SOL_FOR_SWAP_LAMPORTS) / 1e9).toFixed(4)} SOL for fees + wSOL account rent. ` +
+                `Fund wallet with SOL first: ${walletAddress}`,
+            );
+          }
+        }
+
         const inputDecimals = await getTokenDecimals(ctx.rpcUrl, params.inputMint);
         const amountRaw = String(Math.round(params.amount * 10 ** inputDecimals));
 
@@ -372,15 +387,23 @@ export function createSwapTool(ctx: ToolContext) {
           `Swapped ${params.amount}${outLine}\nInput: ${params.inputMint}\nOutput: ${params.outputMint}\nhttps://solscan.io/tx/${signature}`,
         );
       } catch (err) {
+        const sig = err instanceof TransactionNotConfirmedError ? err.signature : undefined;
         appendHistory(ctx.historyPath, {
           t: Date.now(),
           ok: false,
           kind: "swap",
           net: SOL_MAINNET,
           from: walletAddress,
+          tx: sig,
           label: `${inputShort}→${outputShort}`,
           error: String(err).substring(0, 200),
         });
+        if (err instanceof TransactionNotConfirmedError) {
+          return toolResult(
+            `Swap transaction sent but not confirmed on-chain. It may have failed due to insufficient SOL for fees. ` +
+              `Check: https://solscan.io/tx/${sig}`,
+          );
+        }
         return toolResult(`Swap failed: ${String(err)}`);
       }
     },

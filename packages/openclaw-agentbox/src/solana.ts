@@ -29,6 +29,52 @@ const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const TOKEN_PROGRAM: Address = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const ASSOCIATED_TOKEN_PROGRAM: Address = address("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
+/** Minimum SOL (lamports) required to attempt a swap involving native SOL (wSOL ATA rent + fees). */
+export const MIN_SOL_FOR_SWAP_LAMPORTS = 2_500_000n; // ~0.0025 SOL
+
+export class TransactionNotConfirmedError extends Error {
+  constructor(public readonly signature: string) {
+    super(`Transaction sent but not confirmed: ${signature}`);
+    this.name = "TransactionNotConfirmedError";
+  }
+}
+
+/**
+ * Send a signed transaction and wait for confirmation. On timeout, verifies
+ * the tx status on-chain before returning. Throws if the tx was not confirmed.
+ */
+async function sendAndVerify(
+  rpcUrl: string,
+  signedWithLifetime: Parameters<ReturnType<typeof sendAndConfirmTransactionFactory>>[0],
+  signature: string,
+): Promise<void> {
+  const rpc = createSolanaRpc(rpcUrl);
+  const wsUrl = rpcUrl.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
+  const rpcSubscriptions = createSolanaRpcSubscriptions(wsUrl);
+  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
+
+  try {
+    await sendAndConfirm(signedWithLifetime, {
+      commitment: "confirmed",
+      skipPreflight: true,
+      abortSignal: AbortSignal.timeout(15_000),
+    });
+  } catch (e) {
+    if (!(e instanceof DOMException)) throw e;
+    // Timeout: verify if tx actually landed
+    const { value } = await rpc
+      .getSignatureStatuses([signature as Parameters<typeof rpc.getSignatureStatuses>[0][0]])
+      .send();
+    const status = value[0];
+    if (!status || !status.confirmationStatus) {
+      throw new TransactionNotConfirmedError(signature);
+    }
+    if (status.err) {
+      throw new Error(`Transaction failed on-chain: ${JSON.stringify(status.err)}`);
+    }
+  }
+}
+
 /** Derive the Associated Token Account address for a given owner + mint. */
 async function findAta(mint: Address, owner: Address): Promise<Address> {
   const encoder = getAddressEncoder();
@@ -116,10 +162,15 @@ export async function getUsdcBalance(rpcUrl: string, owner: string): Promise<Usd
   return { raw: 0n, ui: "0.00" };
 }
 
-export async function getSolBalance(rpcUrl: string, owner: string): Promise<string> {
+export async function getSolBalanceLamports(rpcUrl: string, owner: string): Promise<bigint> {
   const rpc = createSolanaRpc(rpcUrl);
   const { value } = await rpc.getBalance(address(owner)).send();
-  return (Number(value) / 1e9).toFixed(4);
+  return value;
+}
+
+export async function getSolBalance(rpcUrl: string, owner: string): Promise<string> {
+  const lamports = await getSolBalanceLamports(rpcUrl, owner);
+  return (Number(lamports) / 1e9).toFixed(4);
 }
 
 /**
@@ -247,23 +298,9 @@ export async function signAndSendPumpPortalTx(
   const signedWithLifetime = { ...signed, lifetimeConstraint };
   assertIsTransactionWithBlockhashLifetime(signedWithLifetime);
 
-  const rpc = createSolanaRpc(rpcUrl);
-  const wsUrl = rpcUrl.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
-  const rpcSubscriptions = createSolanaRpcSubscriptions(wsUrl);
-  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
-
-  try {
-    await sendAndConfirm(signedWithLifetime, {
-      commitment: "confirmed",
-      skipPreflight: true,
-      abortSignal: AbortSignal.timeout(15_000),
-    });
-  } catch (e) {
-    // Timeout/abort: tx was already submitted, confirmation didn't arrive in time.
-    // Re-throw everything else (send failure, on-chain error).
-    if (!(e instanceof DOMException)) throw e;
-  }
-  return getSignatureFromTransaction(signedWithLifetime);
+  const signature = getSignatureFromTransaction(signedWithLifetime);
+  await sendAndVerify(rpcUrl, signedWithLifetime, signature);
+  return signature;
 }
 
 // --- Jupiter swap ---
@@ -350,26 +387,10 @@ export async function swapViaJupiter(
   const signedWithLifetime = { ...signed, lifetimeConstraint };
   assertIsTransactionWithBlockhashLifetime(signedWithLifetime);
 
-  const rpc = createSolanaRpc(rpcUrl);
-  const wsUrl = rpcUrl.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
-  const rpcSubscriptions = createSolanaRpcSubscriptions(wsUrl);
-  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
+  const signature = getSignatureFromTransaction(signedWithLifetime);
+  await sendAndVerify(rpcUrl, signedWithLifetime, signature);
 
-  try {
-    await sendAndConfirm(signedWithLifetime, {
-      commitment: "confirmed",
-      skipPreflight: true,
-      abortSignal: AbortSignal.timeout(15_000),
-    });
-  } catch (e) {
-    if (!(e instanceof DOMException)) throw e;
-  }
-
-  return {
-    signature: getSignatureFromTransaction(signedWithLifetime),
-    inAmount: quote.inAmount,
-    outAmount: quote.outAmount,
-  };
+  return { signature, inAmount: quote.inAmount, outAmount: quote.outAmount };
 }
 
 // --- Bags.fm ---
@@ -400,21 +421,9 @@ async function signAndSendBase58Tx(
   const signedWithLifetime = { ...signed, lifetimeConstraint };
   assertIsTransactionWithBlockhashLifetime(signedWithLifetime);
 
-  const rpc = createSolanaRpc(rpcUrl);
-  const wsUrl = rpcUrl.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
-  const rpcSubscriptions = createSolanaRpcSubscriptions(wsUrl);
-  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
-
-  try {
-    await sendAndConfirm(signedWithLifetime, {
-      commitment: "confirmed",
-      skipPreflight: true,
-      abortSignal: AbortSignal.timeout(15_000),
-    });
-  } catch (e) {
-    if (!(e instanceof DOMException)) throw e;
-  }
-  return getSignatureFromTransaction(signedWithLifetime);
+  const signature = getSignatureFromTransaction(signedWithLifetime);
+  await sendAndVerify(rpcUrl, signedWithLifetime, signature);
+  return signature;
 }
 
 /**
