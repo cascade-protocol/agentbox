@@ -8,11 +8,14 @@ import {
   createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
+  getAddressEncoder,
   getBase64EncodedWireTransaction,
   getCompiledTransactionMessageDecoder,
+  getProgramDerivedAddress,
   getSignatureFromTransaction,
   getTransactionDecoder,
   getTransactionLifetimeConstraintFromCompiledTransactionMessage,
+  type Instruction,
   type KeyPairSigner,
   partiallySignTransactionMessageWithSigners,
   pipe,
@@ -21,10 +24,45 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   signTransaction,
 } from "@solana/kit";
-import { findAssociatedTokenPda, getTransferCheckedInstruction } from "@solana-program/token-2022";
 
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const TOKEN_PROGRAM: Address = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const ASSOCIATED_TOKEN_PROGRAM: Address = address("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+
+/** Derive the Associated Token Account address for a given owner + mint. */
+async function findAta(mint: Address, owner: Address): Promise<Address> {
+  const encoder = getAddressEncoder();
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: ASSOCIATED_TOKEN_PROGRAM,
+    seeds: [encoder.encode(owner), encoder.encode(TOKEN_PROGRAM), encoder.encode(mint)],
+  });
+  return pda;
+}
+
+/** Build a TransferChecked instruction (SPL Token discriminator = 12). */
+function transferCheckedIx(
+  source: Address,
+  mint: Address,
+  destination: Address,
+  authority: KeyPairSigner,
+  amount: bigint,
+  decimals: number,
+): Instruction {
+  const data = new Uint8Array(1 + 8 + 1);
+  data[0] = 12; // TransferChecked discriminator
+  new DataView(data.buffer).setBigUint64(1, amount, true);
+  data[9] = decimals;
+  return {
+    programAddress: TOKEN_PROGRAM,
+    accounts: [
+      { address: source, role: 2 /* writable */ },
+      { address: mint, role: 0 /* readonly */ },
+      { address: destination, role: 2 /* writable */ },
+      { address: authority.address, role: 1 /* readonly signer */ },
+    ],
+    data,
+  };
+}
 
 export const SOL_MINT = "So11111111111111111111111111111111111111112";
 
@@ -139,11 +177,7 @@ export async function getTransactionUsdcCost(
 }
 
 export async function checkAtaExists(rpcUrl: string, owner: string): Promise<boolean> {
-  const [ata] = await findAssociatedTokenPda({
-    mint: address(USDC_MINT),
-    owner: address(owner),
-    tokenProgram: TOKEN_PROGRAM,
-  });
+  const ata = await findAta(address(USDC_MINT), address(owner));
   const rpc = createSolanaRpc(rpcUrl);
   const { value } = await rpc.getAccountInfo(ata, { encoding: "base64" }).send();
   return value !== null;
@@ -158,28 +192,10 @@ export async function transferUsdc(
   const rpc = createSolanaRpc(rpcUrl);
   const usdcMint = address(USDC_MINT);
 
-  const [sourceAta] = await findAssociatedTokenPda({
-    mint: usdcMint,
-    owner: signer.address,
-    tokenProgram: TOKEN_PROGRAM,
-  });
-  const [destAta] = await findAssociatedTokenPda({
-    mint: usdcMint,
-    owner: address(dest),
-    tokenProgram: TOKEN_PROGRAM,
-  });
+  const sourceAta = await findAta(usdcMint, signer.address);
+  const destAta = await findAta(usdcMint, address(dest));
 
-  const transferIx = getTransferCheckedInstruction(
-    {
-      source: sourceAta,
-      mint: usdcMint,
-      destination: destAta,
-      authority: signer,
-      amount: amountRaw,
-      decimals: 6,
-    },
-    { programAddress: TOKEN_PROGRAM },
-  );
+  const transferIx = transferCheckedIx(sourceAta, usdcMint, destAta, signer, amountRaw, 6);
 
   const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
   const tx = pipe(

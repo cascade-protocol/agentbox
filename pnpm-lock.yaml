@@ -245,15 +245,9 @@ importers:
       '@sinclair/typebox':
         specifier: ^0.34.48
         version: 0.34.48
-      '@solana-program/token-2022':
-        specifier: ^0.9.0
-        version: 0.9.0(@solana/kit@6.1.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))(@solana/sysvars@6.1.0(typescript@5.9.3))
       '@solana/kit':
         specifier: ^6.0.0
         version: 6.1.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
-      '@solana/sysvars':
-        specifier: ^6.0.0
-        version: 6.1.0(typescript@5.9.3)
       ethers:
         specifier: ^6.0.0
         version: 6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
