@@ -6,7 +6,7 @@ metadata: {"openclaw": {"emoji": "🐦", "requires": {"bins": ["openclaw"]}}}
 
 # Twitter Research
 
-Paid Twitter/X data API at `https://twitter.x402.agentbox.fyi`. Costs $0.003 USDC per call via x402 on Solana or Base. Use the `x_payment` tool for all requests.
+Paid Twitter/X data API at `https://twitter.surf.cascade.fyi`. Costs $0.003 USDC per call via x402 on Solana or Base. Use the `x_payment` tool for all requests.
 
 ## Endpoints
 
@@ -16,7 +16,7 @@ Find tweets matching a query with 50+ advanced operators.
 
 ```
 x_payment({
-  "url": "https://twitter.x402.agentbox.fyi/search",
+  "url": "https://twitter.surf.cascade.fyi/search",
   "method": "GET",
   "params": "{\"q\": \"from:elonmusk AI\", \"type\": \"Latest\", \"limit\": 20}"
 })
@@ -66,7 +66,7 @@ Get tweet(s) by ID or URL with optional thread, replies, and quotes.
 
 ```
 x_payment({
-  "url": "https://twitter.x402.agentbox.fyi/tweet/1585841080431321088",
+  "url": "https://twitter.surf.cascade.fyi/tweet/1585841080431321088",
   "method": "GET",
   "params": "{\"include\": \"thread,replies\", \"limit\": 50}"
 })
@@ -98,7 +98,7 @@ Get user profile(s) with optional tweets, followers, or following.
 
 ```
 x_payment({
-  "url": "https://twitter.x402.agentbox.fyi/user/elonmusk",
+  "url": "https://twitter.surf.cascade.fyi/user/elonmusk",
   "method": "GET",
   "params": "{\"include\": \"tweets\", \"limit\": 20}"
 })
@@ -126,7 +126,7 @@ x_payment({
 
 ```
 x_payment({
-  "url": "https://twitter.x402.agentbox.fyi/search",
+  "url": "https://twitter.surf.cascade.fyi/search",
   "method": "GET",
   "params": "{\"q\": \"x402 OR \\\"402 payment\\\" min_faves:5 within_time:24h\", \"type\": \"Latest\"}"
 })
@@ -136,7 +136,7 @@ x_payment({
 
 ```
 x_payment({
-  "url": "https://twitter.x402.agentbox.fyi/tweet/1585841080431321088",
+  "url": "https://twitter.surf.cascade.fyi/tweet/1585841080431321088",
   "method": "GET",
   "params": "{\"include\": \"thread,replies,quotes\", \"limit\": 20}"
 })
@@ -146,7 +146,7 @@ x_payment({
 
 ```
 x_payment({
-  "url": "https://twitter.x402.agentbox.fyi/user/CoinbaseDev",
+  "url": "https://twitter.surf.cascade.fyi/user/CoinbaseDev",
   "method": "GET",
   "params": "{\"include\": \"tweets\", \"limit\": 50}"
 })
@@ -158,7 +158,7 @@ Use `nextCursor` from a previous response:
 
 ```
 x_payment({
-  "url": "https://twitter.x402.agentbox.fyi/search",
+  "url": "https://twitter.surf.cascade.fyi/search",
   "method": "GET",
   "params": "{\"q\": \"from:elonmusk\", \"cursor\": \"DAABCgAB...\"}"
 })

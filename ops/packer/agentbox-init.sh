@@ -249,6 +249,8 @@ for i in $(seq 1 60); do
   if oc_systemctl is-active --quiet openclaw-gateway && ss -ltn '( sport = :18789 )' | grep -q 18789; then
     echo "OpenClaw gateway healthy on :18789"
     HEALTHY=true
+    # Auto-approve device so CLI commands work without interactive prompt
+    sudo -u openclaw openclaw devices approve --latest 2>/dev/null || true
     break
   fi
   if [[ "$i" -eq 60 ]]; then

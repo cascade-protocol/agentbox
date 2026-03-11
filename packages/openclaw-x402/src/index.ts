@@ -368,7 +368,11 @@ export function register(api: OpenClawPluginApi): void {
           checkOutput.includes("update available") || checkOutput.includes("Update");
 
         if (hasSkillUpdates) {
-          execSync("npx skills update", { timeout: 30_000, stdio: "pipe", env: skillsEnv });
+          execSync("npx -y skills add -g -y --copy cascade-protocol/agentbox", {
+            timeout: 30_000,
+            stdio: "pipe",
+            env: { ...skillsEnv, INSTALL_INTERNAL_SKILLS: "1" },
+          });
           lines.push("Skills   updated");
         } else {
           lines.push("Skills   up to date");

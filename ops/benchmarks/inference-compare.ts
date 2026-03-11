@@ -161,7 +161,7 @@ const SCENARIOS: Scenario[] = [
 
 // -- Targets -----------------------------------------------------------------
 
-const X402_BASE = "https://inference.x402.agentbox.fyi/v1";
+const X402_BASE = "https://inference.surf.cascade.fyi/v1";
 const OR_BASE = "https://openrouter.ai/api/v1";
 
 const TARGETS: Target[] = [

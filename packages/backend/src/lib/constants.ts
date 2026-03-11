@@ -1,5 +1,5 @@
 /** Hetzner snapshot ID for VM provisioning. Update after `just build-image`. */
-export const HETZNER_SNAPSHOT_ID = "364343552";
+export const HETZNER_SNAPSHOT_ID = "365842161";
 
 export const CF_ZONE_ID = "fda671fa572b4c2d26de8aedcbf94f6e";
 export const FACILITATOR_URL = "https://facilitator.cascade.fyi";
@@ -20,7 +20,8 @@ export const PRIVY_APP_ID = "cmmi1ag9e03jd0dl8zmussizw";
  */
 const X402_PROVIDERS = {
   agentbox: {
-    baseUrl: "https://inference.x402.agentbox.fyi/v1",
+    baseUrl: "http://127.0.0.1:18789/x402/v1",
+    upstreamUrl: "https://inference.surf.cascade.fyi",
     models: [
       {
         id: "moonshotai/kimi-k2.5",
@@ -59,6 +60,9 @@ const X402_PROVIDERS = {
  *   ignores the extra fields; the plugin uses them for cost tracking and display.
  * - The `rpcUrl` field is merged at boot time from the env var (per-instance).
  */
+// Gateway's models.providers validates strictly - strip plugin-only fields
+const { upstreamUrl: _, ...agentboxGatewayProvider } = X402_PROVIDERS.agentbox;
+
 export const OPENCLAW_BASE_CONFIG = {
   gateway: {
     mode: "local",
@@ -82,7 +86,7 @@ export const OPENCLAW_BASE_CONFIG = {
     mode: "replace",
     providers: {
       agentbox: {
-        ...X402_PROVIDERS.agentbox,
+        ...agentboxGatewayProvider,
         apiKey: "x402-payment",
         api: "openai-completions",
       },
@@ -103,10 +107,10 @@ export const OPENCLAW_BASE_CONFIG = {
   },
   plugins: {
     installs: {
-      "openclaw-x402": { source: "npm", spec: "openclaw-x402@latest" },
+      "openclaw-agentbox": { source: "npm", spec: "openclaw-agentbox@latest" },
     },
     entries: {
-      "openclaw-x402": {
+      "openclaw-agentbox": {
         enabled: true,
         config: {
           keypairPath: "/home/openclaw/.openclaw/agentbox/wallet-sol.json",

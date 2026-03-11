@@ -91,7 +91,7 @@ const OR_PRICING: Record<string, { input: number; output: number }> = {
   "anthropic/claude-sonnet-4.5": { input: 3.0, output: 15.0 },
 };
 
-const X402_INF_BASE = "https://inference.x402.agentbox.fyi/v1";
+const X402_INF_BASE = "https://inference.surf.cascade.fyi/v1";
 
 // -- Scenarios ---------------------------------------------------------------
 

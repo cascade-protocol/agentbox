@@ -6,7 +6,7 @@ metadata: {"openclaw": {"emoji": "🧠", "requires": {"bins": ["openclaw"]}}}
 
 # LLM Inference
 
-Paid OpenAI-compatible chat completions API at `https://inference.x402.agentbox.fyi`. Costs $0.001-$0.003 USDC per call via x402 on Solana. Use the `x_payment` tool for all requests.
+Paid OpenAI-compatible chat completions API at `https://inference.surf.cascade.fyi`. Costs $0.001-$0.003 USDC per call via x402 on Solana. Use the `x_payment` tool for all requests.
 
 ## Endpoint
 
@@ -16,7 +16,7 @@ Generate a chat completion from a supported model.
 
 ```
 x_payment({
-  "url": "https://inference.x402.agentbox.fyi/v1/chat/completions",
+  "url": "https://inference.surf.cascade.fyi/v1/chat/completions",
   "method": "POST",
   "body": "{\"model\": \"moonshotai/kimi-k2.5\", \"messages\": [{\"role\": \"user\", \"content\": \"Explain x402 in one sentence\"}]}"
 })
@@ -47,7 +47,7 @@ x_payment({
 
 ```
 x_payment({
-  "url": "https://inference.x402.agentbox.fyi/v1/chat/completions",
+  "url": "https://inference.surf.cascade.fyi/v1/chat/completions",
   "method": "POST",
   "body": "{\"model\": \"moonshotai/kimi-k2.5\", \"messages\": [{\"role\": \"user\", \"content\": \"What is the x402 protocol?\"}]}"
 })
@@ -57,7 +57,7 @@ x_payment({
 
 ```
 x_payment({
-  "url": "https://inference.x402.agentbox.fyi/v1/chat/completions",
+  "url": "https://inference.surf.cascade.fyi/v1/chat/completions",
   "method": "POST",
   "body": "{\"model\": \"moonshotai/kimi-k2.5\", \"messages\": [{\"role\": \"system\", \"content\": \"You are a concise technical writer.\"}, {\"role\": \"user\", \"content\": \"Write a summary of Solana's transaction model\"}], \"max_tokens\": 500, \"temperature\": 0.7}"
 })
