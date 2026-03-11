@@ -13,7 +13,7 @@
     "dev-with-tunnel": "turbo run dev tunnel",
     "tunnel": "cloudflared tunnel --config ~/.cloudflared/agentbox-dev.yml run agentbox-dev",
     "build": "turbo run build",
-    "test": "vitest --project backend --project frontend --project x402-proxy --project openclaw-agentbox",
+    "test": "vitest --project backend --project frontend --project openclaw-agentbox",
     "test:smoke": "vitest run --project smoke"
   },
   "devDependencies": {

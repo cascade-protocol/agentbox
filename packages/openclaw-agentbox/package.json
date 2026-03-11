@@ -20,7 +20,7 @@
     "prepublishOnly": "pnpm build"
   },
   "dependencies": {
-    "x402-proxy": "workspace:*",
+    "x402-proxy": "^0.1.1",
     "@noble/curves": "^1.9.0",
     "@noble/hashes": "^1.8.0",
     "@scure/base": "^1.2.0",

@@ -253,10 +253,10 @@ importers:
         version: 6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
       viem:
         specifier: ^2.0.0
-        version: 2.46.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.3.6)
+        version: 2.46.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)
       x402-proxy:
-        specifier: workspace:*
-        version: link:../x402-proxy
+        specifier: ^0.1.1
+        version: 0.1.1(@solana/kit@6.1.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))(@solana/sysvars@6.1.0(typescript@5.9.3))(bufferutil@4.1.0)(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.9.3)(utf-8-validate@5.0.10)(viem@2.46.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76))
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -322,40 +322,6 @@ importers:
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
-
-  packages/x402-proxy:
-    dependencies:
-      '@x402/evm':
-        specifier: ^2.6.0
-        version: 2.6.0(bufferutil@4.1.0)(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.9.3)(utf-8-validate@5.0.10)
-      '@x402/fetch':
-        specifier: ^2.6.0
-        version: 2.6.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
-      '@x402/svm':
-        specifier: ^2.6.0
-        version: 2.6.0(@solana/kit@6.1.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))(@solana/sysvars@6.1.0(typescript@5.9.3))
-      ethers:
-        specifier: ^6.0.0
-        version: 6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
-    devDependencies:
-      '@solana/kit':
-        specifier: ^6.0.0
-        version: 6.1.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
-      '@types/node':
-        specifier: ^22.0.0
-        version: 22.19.11
-      publint:
-        specifier: ^0.3.17
-        version: 0.3.17
-      tsdown:
-        specifier: ^0.20.3
-        version: 0.20.3(@typescript/native-preview@7.0.0-dev.20260305.1)(publint@0.3.17)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.9.0
-        version: 5.9.3
-      viem:
-        specifier: ^2.0.0
-        version: 2.46.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.3.6)
 
   tests/smoke:
     dependencies:
@@ -9320,6 +9286,14 @@ packages:
         optional: true
       utf-8-validate:
         optional: true
+
+  x402-proxy@0.1.1:
+    resolution: {integrity: sha512-teAoNIZ2a6xdwsxoacub4ucZer5H6czsVHxjAJk/ZaIXe0qC7/EU9xbp3qxBwy3Q4DIUWrRtLugF7VPNNjm7Aw==}
+    engines: {node: '>=22.0.0'}
+    peerDependencies:
+      '@solana/kit': ^6.0.0
+      ethers: ^6.0.0
+      viem: ^2.0.0
 
   x402@0.7.3:
     resolution: {integrity: sha512-8CIZsdMTOn52PjMH/ErVke9ebeZ7ErwiZ5FL3tN3Wny7Ynxs3LkuB/0q7IoccRLdVXA7f2lueYBJ2iDrElhXnA==}
@@ -21374,6 +21348,20 @@ snapshots:
     optionalDependencies:
       bufferutil: 4.1.0
       utf-8-validate: 5.0.10
+
+  x402-proxy@0.1.1(@solana/kit@6.1.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))(@solana/sysvars@6.1.0(typescript@5.9.3))(bufferutil@4.1.0)(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.9.3)(utf-8-validate@5.0.10)(viem@2.46.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)):
+    dependencies:
+      '@solana/kit': 6.1.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
+      '@x402/evm': 2.6.0(bufferutil@4.1.0)(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.9.3)(utf-8-validate@5.0.10)
+      '@x402/fetch': 2.6.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
+      '@x402/svm': 2.6.0(@solana/kit@6.1.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))(@solana/sysvars@6.1.0(typescript@5.9.3))
+      ethers: 6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+      viem: 2.46.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)
+    transitivePeerDependencies:
+      - '@solana/sysvars'
+      - bufferutil
+      - typescript
+      - utf-8-validate
 
   x402@0.7.3(@solana/sysvars@6.1.0(typescript@5.9.3))(@tanstack/query-core@5.90.20)(@tanstack/react-query@5.90.21(react@19.2.4))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(typescript@5.9.3)(utf-8-validate@5.0.10):
     dependencies:
