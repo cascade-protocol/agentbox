@@ -1,5 +1,5 @@
 /** Hetzner snapshot ID for VM provisioning. Update after `just build-image`. */
-export const HETZNER_SNAPSHOT_ID = "365792894";
+export const HETZNER_SNAPSHOT_ID = "365842161";
 
 export const CF_ZONE_ID = "fda671fa572b4c2d26de8aedcbf94f6e";
 export const FACILITATOR_URL = "https://facilitator.cascade.fyi";
