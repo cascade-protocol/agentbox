@@ -650,6 +650,11 @@ instanceRoutes.get("/instances/config", async (c) => {
   config.gateway.remote = { token: gatewayToken };
   config.gateway.controlUi.allowedOrigins = [`https://${hostname}`];
 
+  // Device pairing (publicUrl needed because gateway binds to loopback behind Caddy)
+  config.plugins.entries["device-pair"] = {
+    config: { publicUrl: `wss://${hostname}` },
+  };
+
   // Plugin config
   config.plugins.entries["openclaw-agentbox"].config.dashboardUrl =
     `https://agentbox.fyi/instances/${row.name}`;
