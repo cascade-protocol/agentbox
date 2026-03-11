@@ -14,11 +14,10 @@ export type X402RouteOptions = {
 /**
  * Create a gateway HTTP handler that proxies requests through x402 payment.
  *
- * Registered via registerHttpRoute({ path: "/x402", match: "prefix" }) to
- * intercept all /x402/* requests. Strips the prefix, builds the upstream URL,
- * and forwards via the x402-wrapped fetch. For chat completions, forces
- * stream:false (x402 payment is synchronous) and wraps the JSON response as
- * SSE for pi-ai compatibility.
+ * Registered via registerHttpHandler to intercept all /x402/* requests.
+ * Strips the prefix, builds the upstream URL, and forwards via x402-wrapped
+ * fetch. SSE streams are piped through directly; usage is extracted from the
+ * final data chunk for history logging.
  */
 export function createX402RouteHandler(
   opts: X402RouteOptions,
@@ -46,11 +45,9 @@ export function createX402RouteHandler(
     for await (const chunk of req) chunks.push(Buffer.from(chunk));
     let body = Buffer.concat(chunks).toString("utf-8");
 
-    // Build headers, strip gateway auth and host
     // Strip hop-by-hop and gateway-internal headers before forwarding.
     // content-length/transfer-encoding MUST be stripped: body may be modified
-    // (stream:true->false) making original length wrong, and fetch() manages
-    // these automatically from the body argument.
+    // (stream_options injection) and fetch() manages these automatically.
     const HOP_BY_HOP = new Set([
       "authorization",
       "host",
@@ -67,20 +64,17 @@ export function createX402RouteHandler(
       if (typeof val === "string") headers[key] = val;
     }
 
-    // Force stream:false for chat completions (x402 payment is synchronous).
-    // OpenClaw's pi-ai layer hardcodes stream:true (not configurable),
-    // so we force stream:false here and wrap the response as SSE below.
     const isChatCompletion = pathSuffix.includes("/chat/completions");
     let thinkingMode: string | undefined;
     if (isChatCompletion && body) {
       try {
         const parsed = JSON.parse(body) as Record<string, unknown>;
-        if (parsed.stream === true) {
-          parsed.stream = false;
-          body = JSON.stringify(parsed);
-          logger.info("x402: forced stream: false in request body");
-        }
         if (parsed.reasoning_effort) thinkingMode = String(parsed.reasoning_effort);
+        // Ensure streaming responses include usage in the final SSE chunk
+        if (!parsed.stream_options) {
+          parsed.stream_options = { include_usage: true };
+          body = JSON.stringify(parsed);
+        }
       } catch {
         // not JSON body, leave as-is
       }
@@ -166,12 +160,68 @@ export function createX402RouteHandler(
 
       logger.info(`x402: response ${response.status}`);
 
-      // Non-streaming JSON response wrapped as SSE for pi-ai compatibility
+      const txSig = extractTxSignature(response);
+      const payment = proxy.shiftPayment();
+      const amount = paymentAmount(payment);
+
+      // Pipe response through, intercepting SSE usage from the final data chunk
+      const resHeaders: Record<string, string> = {};
+      for (const [key, val] of response.headers.entries()) {
+        resHeaders[key] = val;
+      }
+      res.writeHead(response.status, resHeaders);
+
+      if (!response.body) {
+        res.end();
+        appendHistory(historyPath, {
+          t: Date.now(),
+          ok: true,
+          kind: "x402_inference",
+          net: SOL_MAINNET,
+          from: walletAddress,
+          to: payment?.payTo,
+          tx: txSig,
+          amount,
+          token: "USDC",
+          ms: Date.now() - startMs,
+        });
+        return;
+      }
+
       const ct = response.headers.get("content-type") || "";
-      if (isChatCompletion && response.ok && ct.includes("application/json")) {
-        const text = await response.text();
+      const isSSE = isChatCompletion && ct.includes("text/event-stream");
+      let lastDataLine = "";
+      let residual = "";
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+
+          if (isSSE) {
+            const text = residual + decoder.decode(value, { stream: true });
+            const lines = text.split("\n");
+            residual = lines.pop() ?? "";
+            for (const line of lines) {
+              if (line.startsWith("data: ") && line !== "data: [DONE]") {
+                lastDataLine = line.slice(6);
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      res.end();
+
+      // Log history with usage extracted from the final SSE chunk
+      const durationMs = Date.now() - startMs;
+      if (isSSE && lastDataLine) {
         try {
-          const parsed = JSON.parse(text) as {
+          const parsed = JSON.parse(lastDataLine) as {
             model?: string;
             usage?: {
               prompt_tokens?: number;
@@ -182,29 +232,9 @@ export function createX402RouteHandler(
               };
               completion_tokens_details?: { reasoning_tokens?: number };
             };
-            choices?: Array<{ message?: unknown; delta?: unknown }>;
           };
-          if (parsed.choices) {
-            for (const c of parsed.choices) {
-              if (c.message && !c.delta) {
-                c.delta = c.message;
-                delete c.message;
-              }
-            }
-          }
-
           const usage = parsed.usage;
-          const inTok = usage?.prompt_tokens ?? 0;
-          const outTok = usage?.completion_tokens ?? 0;
           const model = parsed.model ?? "";
-          const txSig = extractTxSignature(response);
-          const durationMs = Date.now() - startMs;
-          const providerName = allModels.find(
-            (m) => m.id === model || `${m.provider}/${m.id}` === model,
-          )?.provider;
-
-          const payment = proxy.shiftPayment();
-          const amount = paymentAmount(payment);
           appendHistory(historyPath, {
             t: Date.now(),
             ok: true,
@@ -215,51 +245,45 @@ export function createX402RouteHandler(
             tx: txSig,
             amount,
             token: "USDC",
-            provider: providerName,
+            provider: allModels.find((m) => m.id === model || `${m.provider}/${m.id}` === model)
+              ?.provider,
             model,
-            inputTokens: inTok,
-            outputTokens: outTok,
+            inputTokens: usage?.prompt_tokens ?? 0,
+            outputTokens: usage?.completion_tokens ?? 0,
             reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens,
             cacheRead: usage?.prompt_tokens_details?.cached_tokens,
             cacheWrite: usage?.prompt_tokens_details?.cache_creation_input_tokens,
             thinking: thinkingMode,
             ms: durationMs,
           });
-
-          logger.info("x402: wrapped JSON response as SSE");
-          const sse = `data: ${JSON.stringify(parsed)}\n\ndata: [DONE]\n\n`;
-          res.writeHead(200, {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-          });
-          res.end(sse);
-          return;
         } catch {
-          res.writeHead(response.status, { "Content-Type": ct });
-          res.end(text);
-          return;
+          appendHistory(historyPath, {
+            t: Date.now(),
+            ok: true,
+            kind: "x402_inference",
+            net: SOL_MAINNET,
+            from: walletAddress,
+            to: payment?.payTo,
+            tx: txSig,
+            amount,
+            token: "USDC",
+            ms: durationMs,
+          });
         }
+      } else {
+        appendHistory(historyPath, {
+          t: Date.now(),
+          ok: true,
+          kind: "x402_inference",
+          net: SOL_MAINNET,
+          from: walletAddress,
+          to: payment?.payTo,
+          tx: txSig,
+          amount,
+          token: "USDC",
+          ms: durationMs,
+        });
       }
-
-      // Default: pipe response through
-      const resHeaders: Record<string, string> = {};
-      for (const [key, val] of response.headers.entries()) {
-        resHeaders[key] = val;
-      }
-      res.writeHead(response.status, resHeaders);
-      if (response.body) {
-        const reader = response.body.getReader();
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            res.write(value);
-          }
-        } finally {
-          reader.releaseLock();
-        }
-      }
-      res.end();
       return;
     } catch (err) {
       const msg = String(err);

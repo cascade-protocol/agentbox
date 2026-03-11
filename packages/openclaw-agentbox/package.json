@@ -1,6 +1,6 @@
 {
   "name": "openclaw-agentbox",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "OpenClaw plugin for AgentBox - x402 USDC payments, Solana wallet, token trading",
   "type": "module",
   "sideEffects": false,
