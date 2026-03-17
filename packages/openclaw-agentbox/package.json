@@ -1,7 +1,7 @@
 {
   "name": "openclaw-agentbox",
   "version": "1.0.6",
-  "description": "OpenClaw plugin for AgentBox - x402 USDC payments, Solana wallet, token trading",
+  "description": "OpenClaw plugin for pay-per-use LLM inference via x402 USDC payments on Solana. Includes wallet management, token swaps, and token launching.",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -52,12 +52,19 @@
   },
   "keywords": [
     "openclaw",
+    "openclaw-plugin",
     "agentbox",
     "x402",
     "solana",
     "usdc",
     "payment",
-    "trading"
+    "llm",
+    "inference",
+    "pay-per-use",
+    "wallet",
+    "token-swap",
+    "jupiter",
+    "pump-fun"
   ],
   "license": "Apache-2.0",
   "engines": {
