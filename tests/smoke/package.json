@@ -6,9 +6,9 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@solana/kit": "^5.5.1",
-    "@x402/fetch": "^2.5.0",
-    "@x402/svm": "^2.5.0"
+    "@solana/kit": "^6.3.1",
+    "@x402/fetch": "^2.7.0",
+    "@x402/svm": "^2.7.0"
   },
   "devDependencies": {
     "@types/node": "^25.3.3"
