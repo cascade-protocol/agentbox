@@ -1,6 +1,6 @@
 {
   "name": "openclaw-agentbox",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "OpenClaw plugin for pay-per-use LLM inference via x402 USDC payments on Solana. Includes wallet management, token swaps, and token launching.",
   "type": "module",
   "sideEffects": false,

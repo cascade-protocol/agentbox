@@ -96,45 +96,56 @@ export function register(api: OpenClawPluginApi): void {
   let walletAddress: string | null = null;
   let signerRef: KeyPairSigner | null = null;
   let proxyRef: X402ProxyHandler | null = null;
+  let walletLoading = false;
 
-  // --- Service: load wallet and create x402 proxy ---
+  // --- Wallet loader (idempotent, safe to call from both service and eager path) ---
 
+  async function ensureWalletLoaded(): Promise<void> {
+    if (walletLoading || walletAddress) return;
+    walletLoading = true;
+    try {
+      const signer = await loadSvmWallet(keypairPath);
+      walletAddress = signer.address;
+      signerRef = signer;
+      api.logger.info(`x402: wallet ${signer.address}`);
+    } catch (err) {
+      walletLoading = false;
+      api.logger.error(`x402: failed to load keypair from ${keypairPath}: ${err}`);
+      return;
+    }
+
+    const client = new x402Client();
+    client.register(SOL_MAINNET, new ExactSvmScheme(signerRef!, { rpcUrl }));
+    proxyRef = createX402ProxyHandler({ client });
+
+    const upstreamOrigin = upstreamOrigins[0];
+    if (upstreamOrigin) {
+      const handler = createX402RouteHandler({
+        upstreamOrigin,
+        proxy: proxyRef,
+        getWalletAddress: () => walletAddress,
+        historyPath,
+        allModels,
+        logger: api.logger,
+      });
+      api.registerHttpRoute({
+        path: "/x402",
+        match: "prefix",
+        auth: "plugin",
+        handler,
+      });
+      api.logger.info(`x402: HTTP route registered for ${upstreamOrigin}`);
+    }
+  }
+
+  // Eager load: survives hot-reload where service start() is not re-called
+  ensureWalletLoaded();
+
+  // Service: ensures wallet is loaded during normal boot lifecycle
   api.registerService({
     id: "x402-wallet",
-    async start(ctx) {
-      try {
-        const signer = await loadSvmWallet(keypairPath);
-        walletAddress = signer.address;
-        signerRef = signer;
-        ctx.logger.info(`x402: wallet ${signer.address}`);
-      } catch (err) {
-        ctx.logger.error(`x402: failed to load keypair from ${keypairPath}: ${err}`);
-        return;
-      }
-
-      const client = new x402Client();
-      client.register(SOL_MAINNET, new ExactSvmScheme(signerRef, { rpcUrl }));
-      proxyRef = createX402ProxyHandler({ client });
-
-      // Register HTTP route for x402 proxy (prefix match on /x402/*)
-      const upstreamOrigin = upstreamOrigins[0];
-      if (upstreamOrigin) {
-        const handler = createX402RouteHandler({
-          upstreamOrigin,
-          proxy: proxyRef,
-          getWalletAddress: () => walletAddress,
-          historyPath,
-          allModels,
-          logger: ctx.logger,
-        });
-        api.registerHttpRoute({
-          path: "/x402",
-          match: "prefix",
-          auth: "plugin",
-          handler,
-        });
-        ctx.logger.info(`x402: HTTP route registered for ${upstreamOrigin}`);
-      }
+    async start() {
+      await ensureWalletLoaded();
     },
     async stop() {},
   });

@@ -174,6 +174,7 @@ export const OPENCLAW_BASE_CONFIG: OpenClawConfig = {
     },
   },
   plugins: {
+    allow: ["openclaw-agentbox"],
     installs: {
       "openclaw-agentbox": { source: "npm", spec: "openclaw-agentbox@latest" },
     },
