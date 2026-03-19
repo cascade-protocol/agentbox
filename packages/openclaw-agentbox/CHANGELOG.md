@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2026-03-19
+
+### Changed
+
+- Bumped `x402-proxy` dependency from `^0.1.1` to `^0.5.2` (types fix + exports map)
+
 ## [1.0.7] - 2026-03-17
 
 ### Changed
@@ -67,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Token swaps via Jupiter, Bags.fm (Meteora DLMM fallback), PumpPortal (pre-graduation pump.fun)
 - Token launching on pump.fun and Bags.fm
 
+[1.0.8]: https://github.com/cascade-protocol/agentbox/compare/v1.0.7-agentbox...v1.0.8-agentbox
 [1.0.7]: https://github.com/cascade-protocol/agentbox/compare/v1.0.6-agentbox...v1.0.7-agentbox
 [1.0.6]: https://github.com/cascade-protocol/agentbox/compare/v1.0.5-agentbox...v1.0.6-agentbox
 [1.0.5]: https://github.com/cascade-protocol/agentbox/compare/v1.0.4-agentbox...v1.0.5-agentbox
