@@ -6,6 +6,14 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   envDir: "../..",
+  build: {
+    rollupOptions: {
+      onwarn(warning, defaultHandler) {
+        if (warning.code === "INVALID_ANNOTATION") return;
+        defaultHandler(warning);
+      },
+    },
+  },
   plugins: [
     tailwindcss(),
     TanStackRouterVite({ autoCodeSplitting: true }),
