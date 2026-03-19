@@ -64,7 +64,7 @@ const X402_PROVIDERS = {
       {
         id: "minimax/minimax-m2.7",
         name: "MiniMax M2.7",
-        maxTokens: 4096,
+        maxTokens: 8192,
         reasoning: false,
         input: ["text" as const],
         cost: { input: 0.3, output: 1.2, cacheRead: 0, cacheWrite: 0 },
@@ -91,7 +91,7 @@ const X402_PROVIDERS = {
       {
         id: "moonshotai/kimi-k2.5",
         name: "Kimi K2.5",
-        maxTokens: 4096,
+        maxTokens: 8192,
         reasoning: false,
         input: ["text" as const],
         cost: { input: 0.6, output: 3, cacheRead: 0, cacheWrite: 0 },
@@ -100,7 +100,7 @@ const X402_PROVIDERS = {
       {
         id: "minimax/minimax-m2.5",
         name: "MiniMax M2.5",
-        maxTokens: 4096,
+        maxTokens: 8192,
         reasoning: false,
         input: ["text" as const],
         cost: { input: 0.3, output: 1.2, cacheRead: 0, cacheWrite: 0 },
