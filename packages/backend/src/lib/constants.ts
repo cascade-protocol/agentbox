@@ -1,3 +1,5 @@
+import type { OpenClawConfig } from "openclaw/plugin-sdk";
+
 /** Hetzner snapshot ID for VM provisioning. Update after `just build-image`. */
 export const HETZNER_SNAPSHOT_ID = "365842161";
 
@@ -24,12 +26,75 @@ const X402_PROVIDERS = {
     upstreamUrl: "https://inference.surf.cascade.fyi",
     models: [
       {
+        id: "anthropic/claude-opus-4.6",
+        name: "Claude Opus 4.6",
+        maxTokens: 32768,
+        reasoning: true,
+        input: ["text" as const, "image" as const],
+        cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+        contextWindow: 1000000,
+      },
+      {
+        id: "anthropic/claude-opus-4.5",
+        name: "Claude Opus 4.5",
+        maxTokens: 16384,
+        reasoning: true,
+        input: ["text" as const, "image" as const],
+        cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+        contextWindow: 200000,
+      },
+      {
+        id: "anthropic/claude-sonnet-4.6",
+        name: "Claude Sonnet 4.6",
+        maxTokens: 65536,
+        reasoning: true,
+        input: ["text" as const, "image" as const],
+        cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+        contextWindow: 1000000,
+      },
+      {
+        id: "anthropic/claude-sonnet-4.5",
+        name: "Claude Sonnet 4.5",
+        maxTokens: 16384,
+        reasoning: true,
+        input: ["text" as const, "image" as const],
+        cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+        contextWindow: 200000,
+      },
+      {
+        id: "minimax/minimax-m2.7",
+        name: "MiniMax M2.7",
+        maxTokens: 4096,
+        reasoning: true,
+        input: ["text" as const],
+        cost: { input: 0.3, output: 1.2, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 1000000,
+      },
+      {
+        id: "z-ai/glm-5",
+        name: "GLM-5",
+        maxTokens: 4096,
+        reasoning: true,
+        input: ["text" as const],
+        cost: { input: 1.02, output: 2.98, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+      },
+      {
+        id: "x-ai/grok-4.1-fast",
+        name: "Grok 4.1 Fast",
+        maxTokens: 4096,
+        reasoning: true,
+        input: ["text" as const],
+        cost: { input: 0.2, output: 1.5, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 2000000,
+      },
+      {
         id: "moonshotai/kimi-k2.5",
         name: "Kimi K2.5",
         maxTokens: 4096,
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0.15, output: 0.3, cacheRead: 0, cacheWrite: 0 },
+        reasoning: true,
+        input: ["text" as const],
+        cost: { input: 0.6, output: 3, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 262144,
       },
       {
@@ -37,9 +102,18 @@ const X402_PROVIDERS = {
         name: "MiniMax M2.5",
         maxTokens: 4096,
         reasoning: false,
-        input: ["text"],
-        cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 131072,
+        input: ["text" as const],
+        cost: { input: 0.3, output: 1.2, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 1000000,
+      },
+      {
+        id: "qwen/qwen-2.5-7b-instruct",
+        name: "Qwen 2.5 7B",
+        maxTokens: 4096,
+        reasoning: false,
+        input: ["text" as const],
+        cost: { input: 0.12, output: 0.75, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
       },
     ],
   },
@@ -63,7 +137,7 @@ const X402_PROVIDERS = {
 // Gateway's models.providers validates strictly - strip plugin-only fields
 const { upstreamUrl: _, ...agentboxGatewayProvider } = X402_PROVIDERS.agentbox;
 
-export const OPENCLAW_BASE_CONFIG = {
+export const OPENCLAW_BASE_CONFIG: OpenClawConfig = {
   gateway: {
     mode: "local",
     port: 18789,
@@ -72,12 +146,6 @@ export const OPENCLAW_BASE_CONFIG = {
     auth: { mode: "token" },
     controlUi: { dangerouslyDisableDeviceAuth: true },
     http: { endpoints: { chatCompletions: { enabled: true } } },
-    // Workaround for OpenClaw 2026.3.2 health-monitor false positives that restart
-    // Telegram every ~30min. `evaluateChannelHealth()` treats null `lastEventAt` as
-    // epoch 0, so `eventAge` always exceeds the stale threshold.
-    // https://github.com/openclaw-chat/openclaw/issues/34052
-    // Remove after PR #34103 ships in a release.
-    channelHealthCheckMinutes: 0,
   },
   update: { auto: { enabled: false }, checkOnStart: false },
   logging: { maxFileBytes: 104857600 },
@@ -132,7 +200,7 @@ export const OPENCLAW_BASE_CONFIG = {
       verboseDefault: "on",
       timeoutSeconds: 120,
       compaction: {
-        mode: "default",
+        mode: "safeguard",
         reserveTokensFloor: 20000,
       },
     },

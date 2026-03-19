@@ -116,7 +116,7 @@ echo 'export XDG_RUNTIME_DIR="/run/user/$(id -u)"' >> /home/openclaw/.bashrc
 
 echo ""
 echo "==> Installing OpenClaw via npm"
-su - openclaw -c "npm install -g openclaw@latest"
+su - openclaw -c "npm install -g openclaw@2026.3.12"
 ln -sf /home/openclaw/.npm-global/bin/openclaw /usr/local/bin/openclaw
 echo "    OpenClaw $(openclaw --version) at $(which openclaw)"
 
@@ -156,6 +156,11 @@ echo ""
 echo "==> Installing AgentBox skills"
 su - openclaw -c "INSTALL_INTERNAL_SKILLS=1 npx -y skills add -g --yes --copy cascade-protocol/agentbox"
 echo "    AgentBox skills installed to ~/.openclaw/skills/"
+
+echo ""
+echo "==> Installing Surf skills"
+su - openclaw -c "npx -y skills add -g --yes --copy cascade-protocol/surf"
+echo "    Surf skills installed to ~/.openclaw/skills/"
 
 # --- Homebrew + gh CLI ---
 #
