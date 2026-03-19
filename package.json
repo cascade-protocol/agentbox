@@ -34,8 +34,7 @@
       "node-llama-cpp",
       "protobufjs",
       "sharp",
-      "ssh2",
-      "utf-8-validate"
+      "ssh2"
     ]
   }
 }
