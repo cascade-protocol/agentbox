@@ -127,3 +127,4 @@ Skills are installed to `~/.openclaw/skills/` (OpenClaw's managed skills path, a
 - Always use `openclaw gateway restart` to restart the gateway. Never use systemctl directly for the gateway.
 - When editing `~/.openclaw/openclaw.json`, read the current file first, modify it, write it back. Don't write partial configs.
 - The wallet keys are at `~/.openclaw/agentbox/` (wallet-sol.json, wallet-evm.key, mnemonic). Never share them or display them to users.
+- `/thinking` and `/reasoning` are different commands. `/thinking` (alias `/think`, `/t`) controls extended thinking mode (off, low, medium, high). `/reasoning` controls whether reasoning output is visible to the user. Do NOT confuse them. When a user asks about thinking, refer to `/thinking`, not `/reasoning`.
