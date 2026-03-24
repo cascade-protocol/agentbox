@@ -68,7 +68,7 @@ const X402_PROVIDERS = {
         reasoning: false,
         input: ["text" as const],
         cost: { input: 0.3, output: 1.2, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 1000000,
+        contextWindow: 200000,
       },
       {
         id: "z-ai/glm-5",
@@ -104,7 +104,7 @@ const X402_PROVIDERS = {
         reasoning: false,
         input: ["text" as const],
         cost: { input: 0.3, output: 1.2, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 1000000,
+        contextWindow: 200000,
       },
       {
         id: "qwen/qwen-2.5-7b-instruct",
